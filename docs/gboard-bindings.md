@@ -125,6 +125,14 @@ still turn the thing off afterwards. Forcing a value on every start — what
 `forceScrubPreferencesPatch` does, because the scrub gesture cannot work otherwise — has no restore
 and fights anyone who changes it.
 
+**The store lives in device-protected storage.** `Lpnp;` ends up at
+`PreferenceManager.getDefaultSharedPreferences` on a `createDeviceProtectedStorageContext()`, so the
+file is `/data/user_de/<user>/<pkg>/shared_prefs/<packageName>_preferences.xml` and *not* the
+`/data/user/…` one an ordinary context gives you. Anything writing preferences from outside the
+store — an extension Activity, say — has to resolve the same context or it writes a file nobody
+reads. Patched bytecode calling through `Lpnp;` is unaffected. See the derivation in
+[`gboard-settings-ui.md`](gboard-settings-ui.md).
+
 The string-keyed forms matter for patch-added settings. A resource added by a patch has no id until
 aapt2 recompiles, long after the bytecode patch runs, so only a literal key can be read back.
 

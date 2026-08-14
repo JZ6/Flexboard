@@ -226,10 +226,35 @@ Settings first: the rename corrects it. Rename first: the settings patch already
 manifest, and the rename patch's sweep found nothing to do. Rename unticked: the row keeps the
 original package, which is then the right one.
 
-### Writing where Gboard reads
+### Writing where Gboard reads — the file name is not enough
 
 `Lpnp;-><init>(Context, String)` is called with a null name and falls through to
 `PreferenceManager.getDefaultSharedPreferences`, i.e. `<packageName>_preferences` in `MODE_PRIVATE`.
-The Activity names that file explicitly rather than going through the deprecated framework
-`PreferenceManager`, which keeps both sides provably identical, and derives it from
-`getPackageName()` so it stays correct after the rename patch.
+
+That much was known from the start, and it was not enough. **The store reads device-protected
+storage**, which the first version of the Activity missed entirely — so it wrote the right file name
+in the wrong directory and every slider silently did nothing, all the way from `v0.1.0-dev.3` to
+`v0.1.0-dev.6`. The tell was a word cap set to 1 that still deleted several words.
+
+The path runs `Lpnp;-><init>` → `Lpns;-><init>`, and the relevant part is offsets 115–141:
+
+```
+115: iget-object v5, v6, Lpns;->a:Landroid/content/Context;   # getApplicationContext()
+119: invoke-static {v5}, …ApiModelOutline1;->m(Context)Z      # isDeviceProtectedStorage()
+123: if-eqz v2, -> 127
+125: move-object v2, v5                                       # already device-protected
+127: invoke-static {v5}, …ApiModelOutline1;->m(Context)Context # createDeviceProtectedStorageContext()
+141: invoke-static {v5}, PreferenceManager;->getDefaultSharedPreferences(…)
+```
+
+The two `m(Context)` calls are D8 API-model outlines; disassembling them is what names them. A
+device-protected context stores under `/data/user_de/<user>/<pkg>/shared_prefs/`, an ordinary one
+under `/data/user/<user>/<pkg>/shared_prefs/`. Same file name, two unrelated files.
+
+Gboard does this because a keyboard has to work at the lock screen, before the device is unlocked
+and credential-encrypted storage is available. Any patch or extension writing preferences Gboard
+reads has to resolve the same context — `FlexboardSettingsActivity.preferenceContext()` mirrors
+those three lines rather than paraphrasing them.
+
+Nothing on the bytecode side was ever affected: it reads through `Lpnp;` itself, so it always got
+the right file. Only code outside the store had to know.

@@ -49,11 +49,12 @@ import java.util.List;
  * <p><b>It writes to Gboard's own preference file, deliberately.</b> Gboard's store
  * (<code>Lpnp;</code>) is constructed with a null name, which resolves to
  * <code>PreferenceManager.getDefaultSharedPreferences</code> — that is
- * <code>&lt;packageName&gt;_preferences</code> in <code>MODE_PRIVATE</code>. Naming that file
- * explicitly here, rather than going through the deprecated framework
- * <code>PreferenceManager</code>, keeps the two sides provably identical. Deriving it from
- * {@link #getPackageName()} is also what keeps it correct after the package-rename patch, since
- * both sides resolve the same running package.
+ * <code>&lt;packageName&gt;_preferences</code> in <code>MODE_PRIVATE</code>, on a
+ * <b>device-protected</b> context. See {@link #preferenceContext()} — that last part is not a
+ * detail but a different file on disk, and getting it wrong is why every slider on this screen did
+ * nothing at all before <code>v0.1.0-dev.7</code>. Deriving the name from
+ * {@link #getPackageName()} is what keeps it correct after the package-rename patch, since both
+ * sides resolve the same running package.
  *
  * <p>The keys must match the ones the bytecode patch reads. They are duplicated as literals in
  * <code>ScrubTuningPatch.kt</code>, because a patch-added resource has no id until aapt2 recompiles
@@ -130,7 +131,10 @@ public final class FlexboardSettingsActivity extends Activity {
         super.onCreate(savedInstanceState);
         setTitle(TITLE);
 
-        preferences = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+        preferences =
+                preferenceContext()
+                        .getSharedPreferences(
+                                getPackageName() + "_preferences", Context.MODE_PRIVATE);
 
         boolean night =
                 (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
@@ -438,6 +442,40 @@ public final class FlexboardSettingsActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.topMargin = margin;
         return params;
+    }
+
+    /**
+     * The context whose SharedPreferences Gboard's store actually reads.
+     *
+     * <p><b>Not this Activity's.</b> Getting this wrong is why the sliders did nothing at all until
+     * `v0.1.0-dev.7`: the file name was right and the file was the wrong one. `Lpnp;-><init>` ends
+     * up in `Lpns;`, which does this before asking for the default preferences:
+     *
+     * <pre>
+     *   v5 = context.getApplicationContext()
+     *   if (!v5.isDeviceProtectedStorage()) v5 = v5.createDeviceProtectedStorageContext()
+     *   PreferenceManager.getDefaultSharedPreferences(v5)
+     * </pre>
+     *
+     * A device-protected context stores under {@code /data/user_de/…}, while an ordinary Activity
+     * context stores under {@code /data/user/…} — same {@code <packageName>_preferences} name, two
+     * unrelated files. Gboard needs the keyboard to work before the device is unlocked, which is
+     * why it keeps its preferences in direct-boot storage.
+     *
+     * <p>Mirrored line for line rather than paraphrased, including the {@code getApplicationContext}
+     * call, so the two sides cannot drift. There is no version guard because there is nothing to
+     * guard against: both methods are API 24 and Gboard's manifest declares {@code minSdkVersion}
+     * 26, so they are below the floor this code can ever run on. A guard would also be worse than
+     * useless — falling back would silently return to reading the wrong file.
+     */
+    @SuppressLint("NewApi")
+    private Context preferenceContext() {
+        Context context = getApplicationContext();
+        if (context.isDeviceProtectedStorage()) {
+            return context;
+        }
+        Context deviceProtected = context.createDeviceProtectedStorageContext();
+        return deviceProtected != null ? deviceProtected : context;
     }
 
     private int dp(int value) {
