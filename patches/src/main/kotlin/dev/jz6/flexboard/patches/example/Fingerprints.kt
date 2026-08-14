@@ -1,4 +1,4 @@
-package app.template.patches.example
+package dev.jz6.flexboard.patches.example
 
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.InstructionLocation.MatchAfterImmediately

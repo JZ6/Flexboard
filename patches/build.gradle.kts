@@ -1,4 +1,4 @@
-group = "app.template"
+group = "dev.jz6.flexboard"
 
 patches {
     // Baked into the .mpp and shown as the source name in Morphe Manager, so it only changes when

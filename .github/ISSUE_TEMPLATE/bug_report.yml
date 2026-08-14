@@ -1,17 +1,17 @@
 name: 🐞 Bug report
 description: Report a bug or an issue.
 title: "bug: "
-labels: ["Bug report"]
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        # Patches template bug report
+        # Flexboard bug report
 
         Before creating a new bug report, please keep the following in mind:
 
-        - **Do not submit a duplicate bug report**: Search for existing bug reports [here](https://github.com/TEMPLATE/template-patches-template/issues?q=label%3A%22Bug+report%22).
-        - **Review the contribution guidelines**: Make sure your bug report adheres to it. You can find the guidelines [here](https://github.com/TEMPLATE/template-patches-template/blob/main/CONTRIBUTING.md).
+        - **Do not submit a duplicate bug report**: Search for existing bug reports [here](https://github.com/JZ6/Flexboard/issues?q=label%3Abug).
+        - **Flexboard targets one Gboard build.** It is pinned to `17.7.7.932364120-release-arm64-v8a`; any other build is refused rather than patched.
   - type: textarea
     attributes:
       label: Bug description
@@ -19,6 +19,13 @@ body:
         - Describe your bug in detail
         - Add steps to reproduce the bug if possible (Step 1. ... Step 2. ...)
         - Add images and videos if possible
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Gboard version
+      description: The exact version you patched, from the APK filename or Gboard's own settings.
+      placeholder: 17.7.7.932364120-release-arm64-v8a
     validations:
       required: true
   - type: textarea

@@ -1,4 +1,4 @@
-package app.template.patches.shared
+package dev.jz6.flexboard.patches.shared
 
 import app.morphe.patcher.patch.ApkFileType
 import app.morphe.patcher.patch.AppTarget

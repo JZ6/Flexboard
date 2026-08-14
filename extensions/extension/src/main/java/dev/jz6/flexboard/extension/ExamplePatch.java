@@ -1,4 +1,4 @@
-package app.template.extension.extension;
+package dev.jz6.flexboard.extension;
 
 @SuppressWarnings("unused")
 public class ExamplePatch {
