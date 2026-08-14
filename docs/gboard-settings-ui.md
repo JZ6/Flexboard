@@ -226,6 +226,76 @@ Settings first: the rename corrects it. Rename first: the settings patch already
 manifest, and the rename patch's sweep found nothing to do. Rename unticked: the row keeps the
 original package, which is then the right one.
 
+## Disabling one of Gboard's own rows
+
+`android:dependency` works in Gboard's screens — `setting_gesture.xml` already uses it, so the
+mechanism is live in this build rather than merely present in androidx:
+
+```
+PreferenceScreen                                   key=@0x7f140ac2  'Glide typing'
+  SwitchPreferenceCompat  key=@0x7f14097b  'enable_gesture_input'
+  SwitchPreferenceCompat  key=@0x7f1409ca  'pref_gesture_preview_trail'  dependency=@0x7f14097b
+  SwitchPreferenceCompat  key=@0x7f140995  'enable_scrub_delete'
+  SwitchPreferenceCompat  key=@0x7f140996  'enable_scrub_move'
+```
+
+androidx disables a preference whose dependency is **unchecked**, which is usually the wrong way
+round for a patch: what you have added is normally the thing that should *disable* the stock row
+when it is on. `TwoStatePreference` inverts on request:
+
+```java
+public boolean shouldDisableDependents() {
+    return (mDisableDependentsState ? mChecked : !mChecked) || super.shouldDisableDependents();
+}
+```
+
+so `android:disableDependentsState="true"` on the controlling switch is the whole trick.
+`dependency`, `disableDependentsState` and `defaultValue` are all **framework** attributes, so none
+of them depends on Gboard's own resource table surviving R8.
+
+Two things to know before using it:
+
+- **The dependency key must exist in the same hierarchy.** `Preference.registerDependency` throws
+  `IllegalStateException` when `findPreferenceInHierarchy` comes back null, which takes out the
+  whole screen — not just the row. Write both edits in one `finalize` on one document.
+- **It is live.** `setChecked` calls `notifyDependencyChange`, so the stock row greys and un-greys
+  on the tap without leaving the screen.
+
+### Naming a row whose key is obfuscated
+
+Every preference key in these files is a string resource named `0_resource_name_obfuscated` —
+`enable_gesture_input`, `pref_gesture_preview_trail`, `enable_scrub_delete` and `enable_scrub_move`
+all share that one name — so a row cannot be matched on the face of its decoded `@string/…`
+reference.
+
+Match it by what points at it instead. The trail row is the file's only `android:dependency` and it
+depends on glide typing, so the glide row is the one whose key that dependency names; both sides are
+the same resource id, so whatever the decoder emits for the collapsed name it emits the same string
+for both.
+
+This rests on the decoder giving colliding names distinct decoded forms, which it must:
+`res/xml/settings.xml` is decoded and recompiled by every build of this bundle and all sixteen of
+its rows carry `@string/0_resource_name_obfuscated` keys. Were those collapsed to a single name,
+recompiling would repoint them all at one resource and Gboard's settings would have been broken in
+every release so far. Assert the match is unique anyway, so that if it ever stops holding the patch
+fails at apply time instead of targeting the wrong row.
+
+### When there is no anchor at all
+
+**Glide delete** and **Glide cursor control** are indistinguishable in the decoded XML — same tag,
+same attribute set, and key, title and summary all collapsed to the same name. Nothing points at
+either. The only thing separating them is document order.
+
+Where that happens, elimination is the best available: four rows, one is glide typing, one depends
+on it, and of the two left Glide delete comes first. Assert the counts so a *shape* change fails
+loudly, and accept that a *reorder* would not be caught.
+
+What makes that acceptable here is the pin. `COMPATIBILITY_GBOARD` fixes the bundle to one build by
+version and signature, so a reorder cannot arrive without failing that gate first — and it is a
+milder bet than the hardcoded resource ids elsewhere in the project, which would silently write the
+wrong *preference* rather than grey the wrong *row*. Prefer a positional anchor whose worst case is
+cosmetic, and say in the code that it is positional.
+
 ### Writing where Gboard reads — the file name is not enough
 
 `Lpnp;-><init>(Context, String)` is called with a null name and falls through to

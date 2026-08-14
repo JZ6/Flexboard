@@ -58,8 +58,14 @@ It also changes two of Gboard's settings at startup, because the gesture cannot 
 
 | Setting | Set to | Why |
 |---|---|---|
-| **Delete swipe** | on | The gesture is Gboard's; with this off it is never attached at all |
+| **Glide delete** | on | The gesture is Gboard's; with this off it is never attached at all |
 | **Glide typing** | off | A leftward drag across the letters is also a glide input, so the two cannot both be live |
+
+Both are in Gboard's **Glide typing** screen, and because both are written on every start, both are
+**greyed out** while the gesture is on — otherwise changing either would appear to work and quietly
+revert at the next start. The switch that hands them back sits directly above them in that same
+screen, so the way out is where the problem is. It is the same setting as the switch on Flexboard's
+own screen, not a copy.
 
 Removing Flexboard leaves glide typing off — tick it back on in Gboard's own settings.
 
@@ -69,7 +75,7 @@ Gboard's settings gain a **Flexboard** entry that opens a screen with a switch a
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Swipe anywhere** | on | The master switch. Off puts Gboard back as it shipped — see below. |
+| **Swipe anywhere** | on | The master switch. Off puts Gboard back as it shipped — see below. Also appears in Gboard's own **Glide typing** screen, as the same setting rather than a copy. |
 | **Swipe length** | 100% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe. |
 | **Max words per swipe** | 10 | The most words one swipe can delete. Set it to **1** to delete a single word however far you swipe; 10 means no limit. Swiping back still restores. |
 | **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
@@ -113,7 +119,7 @@ add toggle to turn on swipe to delete or off
 
 flick up to undo autocorrect 
 
-can we prevent glide tying being turned on if swipe is on and vice versa
+auto turn delete swipe on, and then grey it out
 
 add select all copy paste hotkeys
 

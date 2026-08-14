@@ -69,6 +69,10 @@ val swipeToDeletePatch = bytecodePatch(
     // typing is live on the same pointer stream.
     dependsOn(forceScrubPreferencesPatch)
 
+    // Greys out Gboard's glide typing row for as long as the above is forcing it off, so the
+    // conflict shows up in the settings rather than as a setting that will not stay on.
+    dependsOn(glideTypingRowPatch)
+
     // Supplies the hold delay and swipe length, and the settings rows behind them. Its defaults are
     // what make the widened gesture answer to a flick rather than Gboard's 200 ms press-and-drag.
     dependsOn(scrubTuningPatch)
