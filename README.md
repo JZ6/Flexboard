@@ -93,6 +93,14 @@ It is a separate patch, so it can be unticked in Morphe if you do not want it.
 
 ## Roadmap
 
+single word swipe delete
+
+gesture down on a to select all
+
+add toggle to turn on swipe to delete or off
+
+flick up to undo autocorrect 
+
 can we prevent glide tying being turned on if swipe is on and vice versa
 
 add select all copy paste hotkeys
@@ -105,7 +113,6 @@ Hot keys as new tool bar objects
 
 increased tool bar size fit more buttons
 
-fork from morphe patch templates
 
 ## Development
 
