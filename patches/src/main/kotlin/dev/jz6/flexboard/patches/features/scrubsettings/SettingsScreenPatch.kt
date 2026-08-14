@@ -100,8 +100,16 @@ private const val ENTRY_SUMMARY = "Swipe length, word limit and hold delay"
 /** Ignored once the intent carries a component, but it is what v0.3 shipped. */
 private const val ENTRY_ACTION = "android.intent.action.MAIN"
 
-/** Follows the system light/dark setting without the Activity hardcoding a palette. */
-private const val SETTINGS_THEME = "@android:style/Theme.DeviceDefault.Settings"
+/**
+ * The Activity draws its own heading, palette and window insets, so the theme is asked for as
+ * little as possible.
+ *
+ * `Theme.DeviceDefault.Settings` came first and clipped the top row: Gboard targets SDK 37, so on
+ * Android 15+ the window is edge-to-edge, and how much of the status bar inset a themed action bar
+ * had already taken is not something a merged class can determine on every device. With no action
+ * bar the Activity is the only inset consumer and the arithmetic is its own.
+ */
+private const val SETTINGS_THEME = "@android:style/Theme.DeviceDefault.NoActionBar"
 
 private fun Document.registerSettingsActivity() {
     val application = documentElement.childElements("application").firstOrNull()
