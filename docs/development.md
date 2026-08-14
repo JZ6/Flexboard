@@ -94,11 +94,18 @@ git push origin dev:main
 SHAs, and `main` stays a literal prefix of `dev`. semantic-release then cuts the stable release and
 commits to `main`, and the backmerge plugin fast-forwards that commit back into `dev`.
 
-**Do not use the PR merge button.** GitHub offers merge-commit, squash and rebase — none of which is
-a fast-forward. "Rebase and merge" rewrites every SHA, which orphans the tags semantic-release
-placed on its own release commits and breaks the next version calculation. Squash is worse. The
-auto-opened `dev`→`main` PR is a preview of what is queued, not a button to press; it closes itself
-when you push.
+**Never promote through a pull request.** GitHub's merge button offers merge-commit, squash and
+rebase, and none of them is a fast-forward: merge-commit adds a commit `dev` does not have, squash
+collapses the history, and "rebase and merge" rewrites every SHA — which orphans the tags
+semantic-release placed on its own release commits and breaks the next version calculation. All
+three leave `main` and `dev` permanently divergent, and the backmerge then rebases that divergence
+back into `dev`.
+
+The template shipped a workflow that opened a `dev`→`main` PR on every push, as the intended way to
+cut a stable release. It was **deleted** rather than left as a do-not-press button, because a PR
+with a green merge button on it is not a warning, it is a trap. The one-liner above is the whole
+promotion mechanism. `git push` refuses a non-fast-forward by default, so it cannot go wrong
+quietly.
 
 Equally: never commit directly to `main`, and never force-push a semantic-release commit.
 
