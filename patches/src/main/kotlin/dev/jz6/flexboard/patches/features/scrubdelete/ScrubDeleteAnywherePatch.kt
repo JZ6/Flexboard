@@ -29,14 +29,17 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
  * ```
  *
  * So this patch does not implement a gesture. It widens where Gboard's own gesture is allowed to
- * start, in two edits:
+ * start, in three edits:
  *
  *  1. `ScrubDeleteMotionEventHandler.<init>` passes **-1** instead of `KEYCODE_DEL`.
  *  2. `g()` skips the comparison when the configured keycode is negative.
+ *  3. `p()` drops the 200 ms hold delay for that same negative keycode, so the gesture answers to a
+ *     flick rather than a press-and-drag.
  *
  * A negative sentinel is what makes the second edit register-free: every Android keycode is
  * non-negative, so the test is `if-ltz` — format 21t, one register, no constant, and therefore no
- * need to prove some register is dead at that point in a 259-instruction method.
+ * need to prove some register is dead at that point in a 259-instruction method. The third edit
+ * does need a scratch register, and borrows one whose deadness the gate's own shape establishes.
  *
  * The other two subclasses are untouched. `ScrubMoveMotionEventHandler` (spacebar cursor) and
  * `InlineSuggestionScrubSpaceMotionEventHandler` both pass 62, so their gate still enforces.
@@ -88,11 +91,17 @@ private const val WILDCARD_LABEL = "flexboard_any_start_key"
 /** The 200 ms the gesture must be held before it may activate, whatever the distance travelled. */
 private const val HOLD_DELAY_FIELD = "Lpbu;->b:J"
 
+/**
+ * Where the engine keeps the config the gate reads. Gboard reads it exactly this way itself, at
+ * offset 23 of `g()`.
+ */
+private const val CONFIG_FIELD = "$SCRUB_MOTION_EVENT_HANDLER->g:Lpbv;"
+
 /** `p(Landroid/view/MotionEvent;I)Z` — non-static, so `this` + MotionEvent + int = 3 words. */
 private const val ACTIVATION_TEST_REGISTER_COUNT = 10
 private const val ACTIVATION_TEST_PARAMETER_WORDS = 3
 
-private const val INSTANT_LABEL = "flexboard_no_hold"
+private const val KEEP_DELAY_LABEL = "flexboard_keep_delay"
 
 /** The gate is five instructions long; the window is slack, not a measurement. */
 private const val HOLD_GATE_WINDOW = 8
@@ -166,24 +175,37 @@ private fun MutableMethod.acceptWildcardStartKey() {
  * The activation test opens with a hold gate:
  *
  * ```
- * iget-wide v5, v0, Lpbu;->b:J     # 200 ms
- * add-long/2addr v3, v5            # downTime + delay
- * cmp-long v0, v1, v3
- * const/4 v1, 0x0
- * if-gez v0, :continue
- * return v1                        # too soon, whatever the distance
+ *  0: iget-object v0, v7, ScrubMotionEventHandler->c:Lpbu;
+ *  6: iget-wide   v3, v7, ScrubMotionEventHandler->l:J    # the down time
+ *  8: iget-wide   v5, v0, Lpbu;->b:J                      # 200 ms
+ * 10: add-long/2addr v3, v5
+ * 11: cmp-long    v0, v1, v3
+ * 13: const/4     v1, 0x0
+ * 14: if-gez      v0, :continue
+ * 16: return      v1                                      # too soon, whatever the distance
  * ```
  *
  * 200 ms of dead time makes the gesture feel like a press-and-drag rather than a flick. Gboard
  * itself varies this per handler — the inline-suggestion scrub passes 50 ms — so shortening it is
  * within the engine's design rather than a violation of it.
  *
- * Skipped only when the configured keycode is the wildcard, so the spacebar cursor-drag keeps its
- * full delay. Removing it there too would make accidental cursor drags off the spacebar far easier
- * while typing.
+ * **This zeroes the delay rather than branching past the gate.** Branching to `:continue` is the
+ * obvious edit and it is wrong: `const/4 v1, 0x0` at 13 is the only initialisation of v1, and v1
+ * is read four times downstream — as the early `return` value at 26, and as the history-loop
+ * counter at 31, 33 and 49. Skipping 13 leaves v1 undefined on one incoming edge, ART's verifier
+ * rejects the whole class, and every user of `ScrubMotionEventHandler` dies with a `VerifyError`
+ * the moment the keyboard builds its handlers. That shipped once, in v0.1.0-dev.1. Zeroing the
+ * delay instead keeps both paths converged ahead of the gate, so every register stays defined on
+ * every edge.
+ *
+ * Only the wildcard config gets the shortcut, so the spacebar cursor-drag keeps its full delay.
+ * Removing it there too would make accidental cursor drags off the spacebar far easier while
+ * typing.
  *
  * The distance requirement is deliberately left alone: the finger must still travel 8pt *and*
- * leave the key it started on, which is what stops a tap being read as a delete.
+ * leave the key it started on, which is what stops a tap being read as a delete. The other timing
+ * gate, `Lpbu;->a:J` in `g()`, is also left alone — it refuses a scrub within 150 ms of the last
+ * keystroke, which is an anti-misfire measure taken at ACTION_DOWN rather than a hold.
  */
 private fun MutableMethod.removeHoldDelayForWildcard() {
     val registerCount = implementation?.registerCount
@@ -202,11 +224,34 @@ private fun MutableMethod.removeHoldDelayForWildcard() {
         "Expected exactly one read of $HOLD_DELAY_FIELD in $SCRUB_MOTION_EVENT_HANDLER->p, " +
             "found ${reads.size}"
     }
-    val readIndex = reads.single().index
+    val (readIndex, read) = reads.single()
 
-    // Anchored on the branch rather than on the arithmetic between: the exact add/compare opcodes
-    // are an encoding detail, and asserting them buys nothing while giving a Gboard recompile an
-    // extra way to fail the patch for no reason.
+    // The pair the delay lands in, and the object register it was read from. That object is the
+    // `Lpbu;` whose only use in this method is the read itself, so it is free to borrow as scratch
+    // — the gate's next write to it is unconditional, at the `cmp-long`.
+    val delayRegister = (read as OneRegisterInstruction).registerA
+    val scratchRegister = (read as TwoRegisterInstruction).registerB
+    check(delayRegister + 1 < registerCount) {
+        "$HOLD_DELAY_FIELD lands in v$delayRegister, whose pair does not fit in $registerCount " +
+            "registers"
+    }
+    check(scratchRegister != thisRegister && scratchRegister !in delayRegister..delayRegister + 1) {
+        "v$scratchRegister is not free to borrow in $SCRUB_MOTION_EVENT_HANDLER->p — it collides " +
+            "with `this` (v$thisRegister) or the delay pair (v$delayRegister)"
+    }
+
+    // The delay is consumed by the very next instruction, a two-address long add onto the down
+    // time. Asserted by shape rather than by mnemonic: `dis.py` prints arithmetic opcodes as family
+    // placeholders, and asserting a guessed dexlib2 name has already produced one false failure.
+    // See tools/apk/README.md.
+    val consumer = instructions[readIndex + 1]
+    check(consumer is TwoRegisterInstruction && consumer.registerB == delayRegister) {
+        "Expected the instruction after $HOLD_DELAY_FIELD to consume v$delayRegister, found " +
+            "`${consumer.opcode.name}`"
+    }
+
+    // Not a jump target — purely a proof that what is being neutralised is the hold gate and not
+    // some other use of the delay.
     val gateBranch = (readIndex until minOf(readIndex + HOLD_GATE_WINDOW, instructions.size))
         .firstOrNull { instructions[it].opcodeName() == "IF_GEZ" }
         ?: error(
@@ -217,19 +262,18 @@ private fun MutableMethod.removeHoldDelayForWildcard() {
         "Expected `return` immediately after the hold gate's `if-gez`, found " +
             "`${instructions[gateBranch + 1].opcode.name}`"
     }
-    val gatePassed = instructions[gateBranch + 2]
 
-    // Injected at method entry rather than next to the gate: by the time the gate runs, v0 holds
-    // the Lpbu; the gate is about to read, so clobbering it there would break the very check being
-    // bypassed. At entry v0 is dead — the stock body's first act is to write it.
+    // Both edges reach `consumer` with v$scratchRegister an int and v$delayRegister a long, so the
+    // merge is clean and nothing downstream is skipped.
     addInstructionsWithLabels(
-        0,
+        readIndex + 1,
         """
-            iget-object v0, v$thisRegister, $SCRUB_MOTION_EVENT_HANDLER->g:Lpbv;
-            iget v0, v0, $CONFIG_START_KEY_FIELD
-            if-ltz v0, :$INSTANT_LABEL
+            iget-object v$scratchRegister, v$thisRegister, $CONFIG_FIELD
+            iget v$scratchRegister, v$scratchRegister, $CONFIG_START_KEY_FIELD
+            if-gez v$scratchRegister, :$KEEP_DELAY_LABEL
+            const-wide/16 v$delayRegister, 0x0
         """,
-        ExternalLabel(INSTANT_LABEL, gatePassed),
+        ExternalLabel(KEEP_DELAY_LABEL, consumer),
     )
 }
 

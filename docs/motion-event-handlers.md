@@ -163,7 +163,7 @@ that way deliberately.
 
 | Field | Resource | Value | Role |
 |---|---|---|---|
-| `a:J` | `0x7f0c00ee` | 150 ms | gate on the `ACTION_DOWN` time against `Lpbr;->c()` |
+| `a:J` | `0x7f0c00ee` | 150 ms | refuses a scrub starting within 150 ms of `Lpbr;->c()`; see below |
 | `b:J` | `0x7f0c00ef` | **200 ms** | **hold delay before activation is even considered** |
 | `c:F` | `0x7f07090f` | 8pt | activation distance, read via `c()F` in `o(IFF)Z` |
 | `d:F` | `0x7f070910` | 16pt | per-step distance when `Lpbv;->j` is 1 (scrub move) |
@@ -171,24 +171,69 @@ that way deliberately.
 | `f:J` | `0x7f0c00ed` | 1000 ms | delay before the `noScrubbing` toast |
 | `g:F` | `0x7f07090d` | 4mm | vertical inset applied to the tracking rect |
 
-`b:J` is the one that shapes the feel. `p(Landroid/view/MotionEvent;I)Z` opens with
+`b:J` is the one that shapes the feel. `p(Landroid/view/MotionEvent;I)Z` opens with it
+(`regs=10, ins=3`, so v7 is `this`, v8 the event, v9 the pointer id):
 
 ```
-iget-wide v5, v0, Lpbu;->b:J
-add-long/2addr v3, v5          # downTime + 200ms
-cmp-long v0, v1, v3
-if-gez v0, :continue
-return v1                      # too soon — regardless of distance travelled
+ 0: iget-object v0, v7, ScrubMotionEventHandler->c:Lpbu;
+ 2: invoke-virtual {v8}, MotionEvent;->getEventTime()J
+ 5: move-result-wide v1
+ 6: iget-wide v3, v7, ScrubMotionEventHandler->l:J    # the down time
+ 8: iget-wide v5, v0, Lpbu;->b:J                      # 200 ms
+10: add-long/2addr v3, v5
+11: cmp-long v0, v1, v3
+13: const/4 v1, 0x0
+14: if-gez v0, -> 17
+16: return v1                                         # too soon, whatever the distance
+17: …                                                 # findPointerIndex, then the distance tests
 ```
 
 so no amount of movement activates the gesture inside the first 200 ms. That is what makes the
 stock gesture a press-and-drag rather than a flick, and it is why a Fleksy-style flick — over in
 well under 200 ms — was being discarded before the distance test ever ran.
 
+**Do not branch past the gate to offset 17.** It is the obvious edit and it bricks the keyboard.
+`const/4 v1, 0x0` at 13 is the only write to v1 in the method, and v1 is read four times after 17 —
+as the early `return` value at 26, and as the history-loop counter at 31, 33 and 49. A branch from
+before 13 to 17 leaves v1 undefined on one incoming edge; ART's verifier merges the edges, finds
+the conflict, and rejects **the entire class**, so every consumer of `ScrubMotionEventHandler` —
+including the spacebar cursor drag and the inline-suggestion scrub — throws `VerifyError` as soon
+as the keyboard builds its handlers. Gboard crashes on open, not just the patched gesture.
+
+This shipped as v0.1.0-dev.1 and was caught on device. Nothing in a patch-time assertion catches it:
+the bytecode is well-formed and the patch applies cleanly. The working edit zeroes v5v6 between
+offsets 8 and 10 instead, leaving control flow converged so the gate itself still runs.
+
+The general rule, and it applies to any future edit here: **an inserted branch must land somewhere
+every register the target reads is already defined on both edges.** Jumping forward over a
+register initialisation is a verifier error, not a logic bug, and it fails at class load rather
+than at the moment the skipped value would have been used.
+
 The delay is **per handler**, not global: the 3-argument constructor supplies it from
 `0x7f0c00ef` (200), while `InlineSuggestionScrubSpaceMotionEventHandler` calls the 4-argument
 form with `0x7f0c006f` (50). Gboard already ships two different values, so changing it on one path
 follows the engine's design rather than fighting it.
+
+`a:J` is a **different kind of gate and is deliberately left alone.** It sits at offset 53 of `g()`,
+on the `ACTION_DOWN` path, and compares the down time against `Lpbr;->c()` plus 150 ms:
+
+```
+43: invoke-virtual {v12}, MotionEvent;->getEventTime()J
+47: invoke-interface {v0}, Lpbr;->c()J
+53: iget-wide v9, v0, Lpbu;->a:J
+55: add-long/2addr v7, v9
+56: cmp-long v2, v5, v7
+58: if-gez v2, -> 64          # far enough after the reference time: carry on
+60: iput-boolean v4, v11, ScrubMotionEventHandler->f:Z   # otherwise refuse outright
+```
+
+Because it is evaluated once at `ACTION_DOWN` against a *past* reference time, it adds no latency to
+the gesture in progress — it only declines to start one too soon after whatever `Lpbr;->c()` marks,
+which appears to be the last committed keystroke. That makes it an anti-misfire measure, not a hold,
+and it is why the "you have to hold the swipe" symptom traced to `b:J` alone.
+
+Also worth knowing: `g()` bails at offset 27 when `Lpbv;->g:Z` is set, before any of this. That flag
+is false for all three stock configs.
 
 Activation additionally requires, in `o(IFF)Z`:
 
@@ -218,8 +263,9 @@ surgical form is a sentinel:
 
 1. Patch `ScrubDeleteMotionEventHandler.<init>` to pass a keycode no real key uses.
 2. Patch the comparison at offset 112 in `g()` to skip when `Lpbv;->a` holds that sentinel.
+3. Patch `p()` to zero `Lpbu;->b` for that same sentinel, so the gesture answers to a flick.
 
-Two small bytecode edits, both on well-anchored sites, and the other subclasses are untouched
+Three small bytecode edits, all on well-anchored sites, and the other subclasses are untouched
 because their `a` is a genuine keycode. No pointer hooks, no dispatch veto, no thresholds of our
 own, and no settings rows to drive them — the engine brings its own feel.
 
