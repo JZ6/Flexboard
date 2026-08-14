@@ -7,52 +7,55 @@ import dev.jz6.flexboard.patches.shared.childElements
 import dev.jz6.flexboard.patches.shared.descendants
 import dev.jz6.flexboard.patches.shared.setAndroidAttribute
 import org.w3c.dom.Document
-import org.w3c.dom.Element
 
 /**
- * Adds a **Flexboard** screen to Gboard's settings.
+ * Adds a **Flexboard** entry to Gboard's settings that opens Flexboard's own screen.
  *
- * Gboard's settings are plain androidx. `res/xml/settings.xml` is a `PreferenceScreen` of
- * `androidx.preference.PreferenceCategory` groups, and `res/xml/setting_gesture.xml` — where
- * Gboard's own "Glide delete" switch lives — is nothing more exotic than `SwitchPreferenceCompat`
- * rows:
+ * ## Why an Activity and not a nested screen
  *
- * ```xml
- * <SwitchPreferenceCompat persistent="true" key="@string/enable_scrub_delete"
- *                         title="…Glide delete" summary="…"/>
+ * The first version of this patch appended a nested `<PreferenceScreen>` to
+ * `res/xml/settings.xml`, on the theory that androidx renders one as a row that opens a sub-screen.
+ * It shipped in `v0.1.0-dev.3` and the row rendered correctly but **did nothing when tapped**.
+ *
+ * androidx only navigates to a nested screen when the host implements
+ * `OnPreferenceStartScreenCallback`:
+ *
+ * ```java
+ * if (getCallbackFragment() instanceof OnPreferenceStartScreenCallback) { … }
+ * if (!handled && getActivity() instanceof OnPreferenceStartScreenCallback) { … }
+ * // no else — the tap is swallowed
  * ```
  *
- * Both files keep their real names through `aapt2 --collapse-resource-names` — 33 of Gboard's
- * 33,287 resource entries do, and the settings screens are among them. That is the only reason this
- * patch can address them at all; see the addressability note in `docs/development.md`.
+ * Gboard's `CommonPreferenceFragment` declares no interfaces and `SettingsActivity` declares none,
+ * so the tap went nowhere. Giving a screen its own fragment is no better: Gboard's fragments choose
+ * their XML by overriding `CommonPreferenceFragment.aB()I`, so ours would have to subclass a Gboard
+ * type, which an extension cannot do without stubbing it.
  *
- * **Keys and titles are literals, not resource references.** A newly added string resource has no
- * id until aapt2 recompiles, long after the bytecode patch that reads these values has run.
- * Literals sidestep the id problem on both sides, at the cost of no translations for now.
+ * So the entry launches an Activity carried in the extension DEX — the route v0.3 proved works.
  *
- * ## The one thing that might not work
+ * ## The row does not name a package
  *
- * The nested `<PreferenceScreen>` is what makes this a separate screen rather than two rows bolted
- * onto an existing one. androidx renders a nested screen as a row that opens a sub-screen — but
- * only when the host implements `OnPreferenceStartScreenCallback`. Gboard's
- * `CommonPreferenceFragment` declares no interfaces, `SettingsActivity` declares none, and the only
- * `PreferenceScreen`-taking method left on the obfuscated base `Ldgh;` is
- * `az(Landroidx/preference/PreferenceScreen;)V`, i.e. `setPreferenceScreen`. So the navigation may
- * well do nothing when tapped.
+ * `<intent>` is given an **action** rather than `targetPackage`/`targetClass`. The package-rename
+ * patch changes the application id, so anything naming it here would depend on which of the two
+ * `finalize` blocks ran first. An action resolves against the intent filter written below, in
+ * whatever package the app ends up as, and same-app implicit intents reach a non-exported Activity
+ * fine.
  *
- * That is deliberately being found out cheaply here rather than paid for up front. The alternative
- * is our own Activity in an extension DEX, which is what v0.3 did and what this rebuild exists to
- * avoid. **If the row does not open, this file is the only thing that changes** — the bytecode half
- * reads preferences by literal key and does not care what wrote them.
+ * Both files this touches keep their real names through `aapt2 --collapse-resource-names` — 33 of
+ * Gboard's 33,287 entries do, and the settings screens are among them. That is the only reason this
+ * patch can address them; see the addressability note in `docs/development.md`.
  */
 internal val scrubSettingsScreenPatch = resourcePatch(
-    description = "Adds a Flexboard screen to Gboard's settings with the swipe tunables.",
+    description = "Adds a Flexboard entry to Gboard's settings that opens Flexboard's own screen.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
     finalize {
+        document("AndroidManifest.xml").use { manifest ->
+            manifest.registerSettingsActivity()
+        }
         document(SETTINGS_XML).use { settings ->
-            settings.addFlexboardScreen()
+            settings.addFlexboardEntry()
         }
     }
 }
@@ -65,45 +68,68 @@ private const val PREFERENCE_CATEGORY_TAG = "androidx.preference.PreferenceCateg
 private const val FOOTER_PREFERENCE_TAG = "com.android.settingslib.widget.FooterPreference"
 private const val RATE_US_PREFERENCE_TAG =
     "com.google.android.libraries.inputmethod.rateus.RateUsPreference"
-private const val SEEK_BAR_PREFERENCE_TAG = "SeekBarPreference"
+private const val PREFERENCE_TAG = "Preference"
+private const val INTENT_TAG = "intent"
 
-private const val SCREEN_KEY = "flexboard_settings"
-private const val SCREEN_TITLE = "Flexboard"
+private const val ENTRY_KEY = "flexboard_settings"
+private const val ENTRY_TITLE = "Flexboard"
+private const val ENTRY_SUMMARY = "Swipe length, word limit and hold delay"
 
-/**
- * Percent of Gboard's own step distances. Below 100 deletes more words for the same travel; above
- * 100 makes each word a longer swipe. Bounded well away from zero — a collapsed step table would
- * make every pixel of movement another word.
- */
-private const val STEP_SCALE_MIN = 25
-private const val STEP_SCALE_MAX = 300
+/** Carried in the extension DEX, merged by `scrubTuningPatch`. */
+private const val SETTINGS_ACTIVITY =
+    "dev.jz6.flexboard.extension.settings.FlexboardSettingsActivity"
 
-/**
- * The upper bound doubles as "no limit" — the clamp is skipped at or above it, so the default
- * leaves Gboard's progressive delete untouched. 1 is the "one word at a time" case.
- */
-private const val MAX_WORDS_MIN = 1
+/** Unique to this project, so the implicit intent can only resolve to the Activity below. */
+private const val SETTINGS_ACTION = "dev.jz6.flexboard.action.SETTINGS"
 
-/**
- * Milliseconds the gesture must be held before it may activate. Gboard ships 200 for the backspace
- * scrub and 50 for the inline-suggestion one; 0 is what makes a flick register.
- */
-private const val HOLD_DELAY_MIN = 0
-private const val HOLD_DELAY_MAX = 300
+/** Follows the system light/dark setting without the Activity hardcoding a palette. */
+private const val SETTINGS_THEME = "@android:style/Theme.DeviceDefault.Settings"
 
-private fun Document.addFlexboardScreen() {
+private fun Document.registerSettingsActivity() {
+    val application = documentElement.childElements("application").firstOrNull()
+        ?: error("No <application> in AndroidManifest.xml")
+
+    // Idempotent: applying a bundle over an already-patched APK must not declare it twice.
+    if (application.childElements("activity")
+            .any { it.androidAttribute("name") == SETTINGS_ACTIVITY }
+    ) {
+        return
+    }
+
+    val activity = createElement("activity").apply {
+        setAndroidAttribute("name", SETTINGS_ACTIVITY)
+        // Reached only from Gboard's own settings, so nothing outside the app needs to start it.
+        setAndroidAttribute("exported", "false")
+        setAndroidAttribute("label", ENTRY_TITLE)
+        setAndroidAttribute("theme", SETTINGS_THEME)
+    }
+
+    val filter = createElement("intent-filter").apply {
+        appendChild(createElement("action").apply { setAndroidAttribute("name", SETTINGS_ACTION) })
+        appendChild(
+            createElement("category").apply {
+                setAndroidAttribute("name", "android.intent.category.DEFAULT")
+            },
+        )
+    }
+    activity.appendChild(filter)
+    application.appendChild(activity)
+}
+
+private fun Document.addFlexboardEntry() {
     val root = documentElement
     check(root.tagName == PREFERENCE_SCREEN_TAG) {
         "$SETTINGS_XML has root <${root.tagName}>, expected <$PREFERENCE_SCREEN_TAG> — Gboard's " +
             "settings are no longer the androidx screen this patch appends to"
     }
 
-    // Idempotent: applying a bundle over an already-patched APK must not stack a second screen.
-    if (root.descendants().any { it.androidAttribute("key") == SCREEN_KEY }) return
+    if (root.descendants().any { it.androidAttribute("key") == ENTRY_KEY }) return
 
-    val screen = createElement(PREFERENCE_SCREEN_TAG).apply {
-        setAndroidAttribute("key", SCREEN_KEY)
-        setAndroidAttribute("title", SCREEN_TITLE)
+    val entry = createElement(PREFERENCE_TAG).apply {
+        setAndroidAttribute("key", ENTRY_KEY)
+        setAndroidAttribute("title", ENTRY_TITLE)
+        setAndroidAttribute("summary", ENTRY_SUMMARY)
+        // Nothing to store: the row is a launcher, and the Activity owns the values.
         setAndroidAttribute("persistent", "false")
         // Borrowed so the row does not render iconless beside Gboard's own, which all carry one.
         root.descendants()
@@ -111,39 +137,8 @@ private fun Document.addFlexboardScreen() {
             ?.androidAttribute("icon")
             ?.let { setAndroidAttribute("icon", it) }
     }
-
-    screen.appendChild(
-        seekBar(
-            key = STEP_SCALE_KEY,
-            title = "Swipe length",
-            summary = "How far to swipe per deleted word, as a percent of Gboard's own distance. " +
-                "Lower deletes more words for the same swipe.",
-            min = STEP_SCALE_MIN,
-            max = STEP_SCALE_MAX,
-            default = STEP_SCALE_DEFAULT,
-        ),
-    )
-    screen.appendChild(
-        seekBar(
-            key = MAX_WORDS_KEY,
-            title = "Max words per swipe",
-            summary = "The most words one swipe can delete. Set to 1 to delete a single word " +
-                "however far you swipe. $MAX_WORDS_DEFAULT means no limit.",
-            min = MAX_WORDS_MIN,
-            max = MAX_WORDS_DEFAULT,
-            default = MAX_WORDS_DEFAULT,
-        ),
-    )
-    screen.appendChild(
-        seekBar(
-            key = HOLD_DELAY_KEY,
-            title = "Hold delay",
-            summary = "Milliseconds the swipe must be held before it starts deleting. 0 lets a " +
-                "quick flick register; Gboard's own delete swipe uses 200.",
-            min = HOLD_DELAY_MIN,
-            max = HOLD_DELAY_MAX,
-            default = HOLD_DELAY_DEFAULT,
-        ),
+    entry.appendChild(
+        createElement(INTENT_TAG).apply { setAndroidAttribute("action", SETTINGS_ACTION) },
     )
 
     // Placement matters: appending to the root would land the row *after* the footer, which reads
@@ -151,27 +146,8 @@ private fun Document.addFlexboardScreen() {
     val category = root.childElements(PREFERENCE_CATEGORY_TAG).lastOrNull()
     val footer = root.childElements(FOOTER_PREFERENCE_TAG).firstOrNull()
     when {
-        category != null -> category.appendChild(screen)
-        footer != null -> root.insertBefore(screen, footer)
-        else -> root.appendChild(screen)
+        category != null -> category.appendChild(entry)
+        footer != null -> root.insertBefore(entry, footer)
+        else -> root.appendChild(entry)
     }
-}
-
-private fun Document.seekBar(
-    key: String,
-    title: String,
-    summary: String,
-    min: Int,
-    max: Int,
-    default: Int,
-): Element = createElement(SEEK_BAR_PREFERENCE_TAG).apply {
-    setAndroidAttribute("key", key)
-    setAndroidAttribute("title", title)
-    setAndroidAttribute("summary", summary)
-    setAndroidAttribute("min", min.toString())
-    setAndroidAttribute("max", max.toString())
-    setAndroidAttribute("defaultValue", default.toString())
-    setAndroidAttribute("persistent", "true")
-    // Without this the slider shows no number, which makes a percentage meaningless.
-    setAndroidAttribute("showSeekBarValue", "true")
 }

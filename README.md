@@ -65,7 +65,7 @@ Removing Flexboard leaves glide typing off — tick it back on in Gboard's own s
 
 ### Settings
 
-Gboard's settings gain a **Flexboard** screen with three sliders:
+Gboard's settings gain a **Flexboard** entry that opens a screen with three sliders:
 
 | Setting | Default | What it does |
 |---|---|---|

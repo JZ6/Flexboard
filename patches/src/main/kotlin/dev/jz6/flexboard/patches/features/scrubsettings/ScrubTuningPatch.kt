@@ -51,9 +51,13 @@ internal val scrubTuningPatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
-    // The rows that write these preferences. Shipping the reader without them would leave two
-    // values nothing can ever set.
+    // The entry that reaches the screen writing these preferences. Shipping the reader without it
+    // would leave three values nothing can ever set.
     dependsOn(scrubSettingsScreenPatch)
+
+    // Carries FlexboardSettingsActivity, which the manifest entry that patch writes names. The
+    // merge has to happen from a bytecode patch; a resource patch cannot do it.
+    extendWith("extensions/extension.mpe")
 
     execute {
         ScrubEngineConstructorFingerprint.method.substituteHoldDelay()
@@ -65,8 +69,12 @@ internal val scrubTuningPatch = bytecodePatch(
 /**
  * Preference keys. Deliberately plain string literals rather than resource ids: `Lpnp;` exposes a
  * string-keyed getter alongside its resource-id one, and a *new* resource has no id until aapt2
- * recompiles, which is long after this patch runs. Literals sidestep the problem entirely, and the
- * settings rows use the same literals.
+ * recompiles, which is long after this patch runs. Literals sidestep the problem entirely.
+ *
+ * **These three are duplicated in `FlexboardSettingsActivity`**, which writes what this reads. They
+ * cannot be shared: that class is compiled into the extension DEX, a separate Gradle module with no
+ * dependency on the patches. Changing one without the other silently decouples the slider from the
+ * value the engine uses, so both sides carry a comment pointing at the other.
  */
 internal const val STEP_SCALE_KEY = "flexboard_scrub_step_scale"
 internal const val HOLD_DELAY_KEY = "flexboard_scrub_hold_ms"

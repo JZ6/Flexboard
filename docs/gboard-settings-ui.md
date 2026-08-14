@@ -135,3 +135,52 @@ for exactly this — see [`motion-event-handlers.md`](motion-event-handlers.md).
 Gesture handlers are attached declaratively and gated on a preference key, so removing a handler
 entry is another way to disable glide typing without touching the setting at all. See
 [`motion-event-handlers.md`](motion-event-handlers.md).
+
+## Nested `<PreferenceScreen>` does not navigate — confirmed on device
+
+`v0.1.0-dev.3` shipped the Flexboard settings as a nested `<PreferenceScreen>` appended to
+`res/xml/settings.xml`. **The row rendered correctly and did nothing when tapped.**
+
+That confirms the suspicion recorded above. androidx routes a nested screen through
+`PreferenceFragmentCompat.onNavigateToScreen`, which delegates to an
+`OnPreferenceStartScreenCallback` on the callback fragment or the activity and has **no fallback**:
+
+```java
+if (getCallbackFragment() instanceof OnPreferenceStartScreenCallback) { … }
+if (!handled && getActivity() instanceof OnPreferenceStartScreenCallback) { … }
+// no else — the tap is swallowed
+```
+
+Neither `CommonPreferenceFragment` nor `SettingsActivity` implements it, so the tap goes nowhere.
+
+The useful half of the result: everything *except* navigation worked. `res/xml/settings.xml` is
+editable by a resource patch, a patch-authored `PreferenceScreen` inflates, placement inside the
+last `PreferenceCategory` puts the row among Gboard's own, and literal `android:key`/`android:title`
+values compile fine without new string resources.
+
+### What replaced it
+
+An `<intent>` row launching an Activity carried in the extension DEX — the route v0.3 used.
+
+Giving the screen its own *fragment* is not an easier alternative: Gboard's fragments choose their
+XML by overriding `CommonPreferenceFragment.aB()I`, so ours would have to subclass a Gboard type,
+which an extension cannot do without stubbing that type and keeping the stub out of the merge.
+
+Two details worth keeping:
+
+- **The row names an action, not a package.** `android:targetPackage` would have to match whatever
+  the package-rename patch produced, making the result depend on which `finalize` block ran first.
+  A unique action resolves against the intent filter in the same app regardless, and same-app
+  implicit intents reach a non-exported Activity.
+- **The Activity has no resources of its own.** An extension merges DEX, not resources, so every
+  view is built in code with framework widgets. The theme is set on the manifest entry
+  (`@android:style/Theme.DeviceDefault.Settings`) so the screen still follows system dark mode
+  without hardcoding a palette.
+
+### Writing where Gboard reads
+
+`Lpnp;-><init>(Context, String)` is called with a null name and falls through to
+`PreferenceManager.getDefaultSharedPreferences`, i.e. `<packageName>_preferences` in `MODE_PRIVATE`.
+The Activity names that file explicitly rather than going through the deprecated framework
+`PreferenceManager`, which keeps both sides provably identical, and derives it from
+`getPackageName()` so it stays correct after the rename patch.
