@@ -4,6 +4,10 @@ import app.morphe.patcher.patch.resourcePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.Constants.GBOARD_PACKAGE_NAME
 import dev.jz6.flexboard.patches.shared.Constants.GBOARD_PATCHED_PACKAGE_NAME
+import dev.jz6.flexboard.patches.shared.Constants.GBOARD_SETTINGS_XML
+import dev.jz6.flexboard.patches.shared.Constants.SETTINGS_ACTIVITY_CLASS
+import dev.jz6.flexboard.patches.shared.androidAttribute
+import dev.jz6.flexboard.patches.shared.setAndroidAttribute
 import org.w3c.dom.Attr
 import org.w3c.dom.Document
 import org.w3c.dom.Element
@@ -39,7 +43,33 @@ val installAsGboardClonePatch = resourcePatch(
         document("AndroidManifest.xml").use { manifest ->
             manifest.renameGboardPackage()
         }
+        document(GBOARD_SETTINGS_XML).use { settings ->
+            settings.retargetFlexboardSettings()
+        }
     }
+}
+
+/**
+ * Points the Flexboard settings row at the renamed package.
+ *
+ * The row launches its Activity by explicit component — an implicit intent cannot reach a
+ * non-exported one on Android 14+, which is how `v0.1.0-dev.4` broke — so it names a package, and
+ * renaming the app without updating it would leave a row that resolves to nothing.
+ *
+ * Both patches write in `finalize` with no ordering guarantee between them, so this cannot assume
+ * the row is there yet. If the settings patch ran first this corrects what it wrote; if it runs
+ * second it reads the already-renamed manifest and writes the right value itself. Writing a value
+ * that is already correct is a no-op, which is what makes either order safe — and why this asserts
+ * nothing about finding the row. Not finding it is the ordinary case where the settings patch was
+ * not selected at all.
+ */
+private fun Document.retargetFlexboardSettings() {
+    getElementsByTagName("*")
+        .elements()
+        .filter { it.localElementName() == "intent" }
+        .filter { it.androidAttribute("targetClass") == SETTINGS_ACTIVITY_CLASS }
+        .toList()
+        .forEach { it.setAndroidAttribute("targetPackage", GBOARD_PATCHED_PACKAGE_NAME) }
 }
 
 private fun Document.renameGboardPackage() {

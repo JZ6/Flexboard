@@ -168,14 +168,63 @@ which an extension cannot do without stubbing that type and keeping the stub out
 
 Two details worth keeping:
 
-- **The row names an action, not a package.** `android:targetPackage` would have to match whatever
-  the package-rename patch produced, making the result depend on which `finalize` block ran first.
-  A unique action resolves against the intent filter in the same app regardless, and same-app
-  implicit intents reach a non-exported Activity.
+- **The row must name a component, not an action.** See the section below — an action was tried
+  first, and it does not work.
 - **The Activity has no resources of its own.** An extension merges DEX, not resources, so every
   view is built in code with framework widgets. The theme is set on the manifest entry
   (`@android:style/Theme.DeviceDefault.Settings`) so the screen still follows system dark mode
   without hardcoding a palette.
+
+## An implicit intent cannot reach the Activity — confirmed on device
+
+`v0.1.0-dev.4` gave the Activity an intent filter on a unique action and pointed the row at that
+action, so that the row would not have to name a package the rename patch might change afterwards.
+**Tapping it reported "no application found to handle the action."**
+
+Gboard declares `targetSdkVersion="37"`:
+
+```
+uses-sdk {'minSdkVersion': '26', 'targetSdkVersion': '37'}
+```
+
+Since Android 14, an app targeting 34 or higher may only deliver an implicit intent to an
+**exported** component, *including its own*. The Activity is `exported="false"`, so its filter was
+excluded from resolution, `startActivity` found no candidate, and the tap raised
+`ActivityNotFoundException`. Nothing about the Activity or the extension was wrong — the release
+built, the extension DEX merged, the manifest entry recompiled, and the row rendered.
+
+Note the manifest entry is provably present even though nothing on device can show it: the row and
+the `<activity>` are written by the same `finalize` block, the manifest first, and the row appeared.
+
+### What works instead
+
+An explicit component, which is what v0.3 shipped and why v0.3 worked:
+
+```xml
+<intent android:action="android.intent.action.MAIN"
+        android:targetPackage="…"
+        android:targetClass="dev.jz6.flexboard.extension.settings.FlexboardSettingsActivity" />
+```
+
+`PreferenceInflater` hands an `<intent>` child to `Intent.parseIntent`, which calls `setComponent`
+only when it has **both** `targetPackage` and `targetClass` — `targetClass` alone leaves the intent
+implicit and fails the same way. A same-app explicit intent reaches a non-exported component on
+every Android version, so `exported` stays `false` and the intent filter is gone.
+
+### Naming the package without depending on patch order
+
+Naming the package brings back the problem the action was meant to dodge: the rename patch and the
+settings patch both write in `finalize`, in no guaranteed order. The fix is the one v0.3 used —
+make the result the same either way rather than trying to force an order.
+
+- The settings patch writes whatever the manifest's `package` says when it runs, and asserts it is
+  one of the two known values.
+- The rename patch rewrites `targetPackage` on any `<intent>` naming the Flexboard Activity, and
+  asserts nothing about finding one.
+
+Settings first: the rename corrects it. Rename first: the settings patch already reads the renamed
+manifest, and the rename patch's sweep found nothing to do. Rename unticked: the row keeps the
+original package, which is then the right one.
 
 ### Writing where Gboard reads
 
