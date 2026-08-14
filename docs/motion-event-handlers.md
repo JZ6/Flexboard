@@ -293,6 +293,43 @@ Past the last entry, offsets 109–118 extrapolate linearly using `ScrubMotionEv
 which is written in `g()` and `l()` rather than the constructor. Scaling the table therefore does
 not scale very long swipes.
 
+### Capping how many words a swipe deletes
+
+The count is produced at exactly two sites, both a multiply of a magnitude by the direction, and
+both feeding one convergence point:
+
+```
+103: mul-int/2addr v3, v6      # bucket index × direction              (opcode 0xb2)
+118: mul-int v3, v6, v0        # extrapolated magnitude × direction    (opcode 0x92)
+120: if-nez v11, -> 132        # 79, 104 and 118 all arrive here
+122: iget v0, v9, ->r:I        # the last count dispatched
+124: if-ne v0, v3, -> 132      # dispatched only when it changes
+```
+
+Clamping the count to ±N caps the words per swipe for free: swiping further produces a raw count
+that clamps back to the same value, so the comparison at 124 sees no change and nothing more is
+dispatched, while swiping back still reduces the magnitude and restores.
+
+Two constraints make the clamp go where it does.
+
+**It must land before offset 124.** Clamping later would leave the change detection comparing a
+clamped `this.r` against an unclamped count, so every further pixel of travel would re-dispatch the
+same value and delete another word — precisely the opposite of a cap.
+
+**It cannot go at the convergence.** Offset 120 is a branch target, and *dexlib2 keeps labels
+attached to the original instruction*: code inserted before it is not branched to, it is jumped
+over. Inserting there would catch only the extrapolation fall-through and silently leave the common
+bucket path uncapped. So both producing sites are patched instead.
+
+That is the general rule, and it is a different failure from the verifier one above: **inserting
+before a branch target only affects the fall-through path.** Anything that must run on every path
+has to go where every path passes through it — which usually means the producing sites, not the
+place they converge.
+
+Register choice in `r()` is also not free-lowest-first. `v1` is set to null early and passed as the
+`Louc;` argument of `Loud;-><init>` at offsets 158 and 179, so staging anything there would put the
+wrong reference type into a live argument. `v4`, `v6` and `v8` are dead from both sites.
+
 ### Reading a preference from patched bytecode
 
 `Lpnp;` is the preference store, and it exposes string-keyed getters alongside the resource-id ones:

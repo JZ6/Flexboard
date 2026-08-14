@@ -5,19 +5,25 @@ import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
+import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_DISABLED_FIELD
+import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_FIELD
 import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_START_KEY_FIELD
 import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_STEP_TABLE_FIELD
+import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_FIELD
+import dev.jz6.flexboard.patches.features.scrubdelete.INTEGER_VALUE_OF
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_GET_INT
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
 import dev.jz6.flexboard.patches.features.scrubdelete.SCRUB_DELETE_MOTION_EVENT_HANDLER
 import dev.jz6.flexboard.patches.features.scrubdelete.SCRUB_MOTION_EVENT_HANDLER
 import dev.jz6.flexboard.patches.features.scrubdelete.ScrubDeleteConstructorFingerprint
+import dev.jz6.flexboard.patches.features.scrubdelete.ScrubDispatchFingerprint
 import dev.jz6.flexboard.patches.features.scrubdelete.ScrubEngineConstructorFingerprint
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
+import dev.jz6.flexboard.patches.shared.opcodeName
 
 /**
  * Makes the scrub engine's feel adjustable from Gboard's own settings.
@@ -40,8 +46,8 @@ import dev.jz6.flexboard.patches.shared.invokeRegisterCount
  * See `docs/motion-event-handlers.md` for how the engine was derived.
  */
 internal val scrubTuningPatch = bytecodePatch(
-    description = "Reads the swipe length and hold delay from Gboard's preference store, so the " +
-        "scrub engine's feel can be adjusted from its settings.",
+    description = "Reads the swipe length, word cap and hold delay from Gboard's preference " +
+        "store, so the scrub engine's feel can be adjusted from its settings.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
@@ -52,6 +58,7 @@ internal val scrubTuningPatch = bytecodePatch(
     execute {
         ScrubEngineConstructorFingerprint.method.substituteHoldDelay()
         ScrubDeleteConstructorFingerprint.method.scaleStepTable()
+        ScrubDispatchFingerprint.method.capWordCount()
     }
 }
 
@@ -63,12 +70,19 @@ internal val scrubTuningPatch = bytecodePatch(
  */
 internal const val STEP_SCALE_KEY = "flexboard_scrub_step_scale"
 internal const val HOLD_DELAY_KEY = "flexboard_scrub_hold_ms"
+internal const val MAX_WORDS_KEY = "flexboard_max_words"
 
 /** Percent, so the default means "exactly what Gboard ships" without knowing the pixel value. */
 internal const val STEP_SCALE_DEFAULT = 100
 
 /** Milliseconds. Zero reproduces the flick behaviour that shipped before this was adjustable. */
 internal const val HOLD_DELAY_DEFAULT = 0
+
+/**
+ * Doubles as the slider's top position and as "no limit": at or above it the clamp is skipped
+ * entirely, so the default leaves the engine's progressive delete exactly as it was.
+ */
+internal const val MAX_WORDS_DEFAULT = 10
 
 /** `regs=11, ins=4` — asserted so the scratch register below is provably the one that was read. */
 private const val ENGINE_CONSTRUCTOR_REGISTER_COUNT = 11
@@ -246,8 +260,135 @@ private fun MutableMethod.scaleStepTable() {
     )
 }
 
+/**
+ * Caps how many words one swipe can delete.
+ *
+ * `r()` turns the travelled distance into a **signed** count and dispatches it, and the consumer
+ * deletes to match. Two sites produce that count — the in-table bucket walk and the past-the-table
+ * extrapolation — and both are a multiply of a magnitude by the direction:
+ *
+ * ```
+ * 103: mul-int/2addr v3, v6      # bucket index × direction        (opcode 0xb2)
+ * 118: mul-int v3, v6, v0        # extrapolated magnitude × direction (opcode 0x92)
+ * 120: if-nez v11, -> 132        # both converge here
+ * 122: iget v0, v9, ->r:I        # the last count dispatched
+ * 124: if-ne v0, v3, -> 132      # only re-dispatched when it changes
+ * ```
+ *
+ * Clamping the count to ±N gives "at most N words per swipe" for free: swiping further produces a
+ * raw count that clamps back to the same value, the comparison at 124 finds no change, and nothing
+ * more is dispatched. Swiping back still reduces the magnitude, so restore keeps working.
+ *
+ * **Both sites are patched rather than the convergence at 120**, because 120 is a branch target:
+ * dexlib2 keeps labels attached to the original instruction, so code inserted before it would be
+ * jumped straight over by the two `goto`s that reach it — catching only the extrapolation path and
+ * silently leaving the common one uncapped.
+ *
+ * The clamp must also land *before* offset 124. Clamping any later would leave the change detection
+ * comparing a clamped `this.r` against an unclamped count, so every further pixel of travel would
+ * re-dispatch the same value and delete another word — the exact opposite of the intent.
+ *
+ * The two multiply opcodes are asserted by name, which the `dis.py` caveat in `tools/apk/README.md`
+ * otherwise warns against. It is safe here because the placeholders that tool prints encode the
+ * opcode bytes directly — `binop2addrb2` is `0xb2` and `binop92` is `0x92` — and the Dalvik spec
+ * fixes those as `mul-int/2addr` and `mul-int`.
+ */
+private fun MutableMethod.capWordCount() {
+    val registerCount = implementation?.registerCount
+        ?: error("$SCRUB_MOTION_EVENT_HANDLER->r has no implementation")
+    check(registerCount == DISPATCH_REGISTER_COUNT) {
+        "$SCRUB_MOTION_EVENT_HANDLER->r has $registerCount registers, expected " +
+            "$DISPATCH_REGISTER_COUNT — refusing to guess which registers are free"
+    }
+    val thisRegister = registerCount - DISPATCH_PARAMETER_WORDS
+
+    // Boxing the payload is what identifies the count register beyond doubt.
+    val boxIndex = instructions.indexOfSoleCall(INTEGER_VALUE_OF, "$SCRUB_MOTION_EVENT_HANDLER->r")
+    val countRegister = instructions[boxIndex].invokeRegisterAt(0)
+
+    val producers = instructions.withIndex()
+        .filter { (_, instruction) ->
+            instruction.opcodeName() in COUNT_PRODUCER_OPCODES &&
+                (instruction as? OneRegisterInstruction)?.registerA == countRegister
+        }
+        .map { it.index }
+    check(producers.size == EXPECTED_COUNT_PRODUCERS) {
+        "Expected $EXPECTED_COUNT_PRODUCERS multiplies writing v$countRegister in " +
+            "$SCRUB_MOTION_EVENT_HANDLER->r, found ${producers.size} — the count is no longer " +
+            "computed as magnitude × direction at exactly the bucket and extrapolation sites"
+    }
+
+    // Named rather than picked lowest-first, because the low registers are not free: v1 is set to
+    // null early and passed as the `Louc;` argument of `Loud;-><init>` at offsets 158 and 179, so
+    // staging a string key there would put a String where a reference of another type is expected.
+    // These three are dead from both insertion points onward — v4 and v6 are the -1 constant and
+    // the direction, both consumed by the multiply being patched, and v8 is a spent comparison
+    // result. The register-count assertion above is what makes that analysis binding.
+    val (store, key, limit) = CLAMP_SCRATCH_REGISTERS
+    check(setOf(store, key, limit).size == CLAMP_SCRATCH_REGISTERS.size) {
+        "Scratch registers $CLAMP_SCRATCH_REGISTERS are not distinct"
+    }
+    check(countRegister !in CLAMP_SCRATCH_REGISTERS && thisRegister !in CLAMP_SCRATCH_REGISTERS) {
+        "Scratch registers $CLAMP_SCRATCH_REGISTERS collide with the count (v$countRegister) or " +
+            "`this` (v$thisRegister) in $SCRUB_MOTION_EVENT_HANDLER->r"
+    }
+    check(CLAMP_SCRATCH_REGISTERS.all { it < PACKED_INVOKE_REGISTER_LIMIT }) {
+        "Scratch registers $CLAMP_SCRATCH_REGISTERS do not all fit a 35c invoke's nibbles"
+    }
+
+    // Descending, so inserting at one site cannot shift the index of the other.
+    producers.sortedDescending().forEachIndexed { ordinal, producerIndex ->
+        val done = "${CAP_DONE_LABEL}_$ordinal"
+        val low = "${CAP_LOW_LABEL}_$ordinal"
+        val resume = instructions[producerIndex + 1]
+
+        addInstructionsWithLabels(
+            producerIndex + 1,
+            """
+                iget-object v$store, v$thisRegister, $CONFIG_FIELD
+                iget v$store, v$store, $CONFIG_START_KEY_FIELD
+                if-gez v$store, :$done
+                iget-object v$store, v$thisRegister, $HANDLER_CONTEXT_FIELD
+                invoke-static { v$store }, $PREFERENCE_STORE_GET
+                move-result-object v$store
+                const-string v$key, "$MAX_WORDS_KEY"
+                const/16 v$limit, $MAX_WORDS_DEFAULT
+                invoke-virtual { v$store, v$key, v$limit }, $PREFERENCE_GET_INT
+                move-result v$store
+                const/16 v$key, $MAX_WORDS_DEFAULT
+                if-ge v$store, v$key, :$done
+                if-lez v$store, :$done
+                if-le v$countRegister, v$store, :$low
+                move v$countRegister, v$store
+                :$low
+                neg-int v$store, v$store
+                if-ge v$countRegister, v$store, :$done
+                move v$countRegister, v$store
+            """,
+            ExternalLabel(done, resume),
+        )
+    }
+}
+
 /** store, table, length, index, element. */
 private const val SCRATCH_REGISTERS_NEEDED = 5
+
+/**
+ * store, key, limit — dead at both clamp sites in `r()`. Deliberately *not* the lowest free
+ * registers: v1 carries the null `Louc;` that the dispatch path passes to `Loud;-><init>`.
+ */
+private val CLAMP_SCRATCH_REGISTERS = listOf(4, 6, 8)
+
+/** `regs=12, ins=3` — `this`, the MotionEvent and the boolean. */
+private const val DISPATCH_REGISTER_COUNT = 12
+private const val DISPATCH_PARAMETER_WORDS = 3
+
+/** `mul-int/2addr` (0xb2) at the bucket site, `mul-int` (0x92) at the extrapolation site. */
+private val COUNT_PRODUCER_OPCODES = setOf("MUL_INT_2ADDR", "MUL_INT")
+private const val EXPECTED_COUNT_PRODUCERS = 2
+
+private const val CAP_DONE_LABEL = "flexboard_capped"
+private const val CAP_LOW_LABEL = "flexboard_cap_low"
 
 /** A `35c` invoke addresses its registers in 4-bit nibbles, so v15 is the highest usable one. */
 private const val PACKED_INVOKE_REGISTER_LIMIT = 16

@@ -17,8 +17,22 @@ internal const val SCRUB_MOTION_EVENT_HANDLER =
 internal const val SCRUB_DELETE_MOTION_EVENT_HANDLER =
     "Lcom/google/android/libraries/inputmethod/motioneventhandler/scrubmove/ScrubDeleteMotionEventHandler;"
 
+/** The per-handler config. Gboard reads it this way itself, at offset 23 of `g()`. */
+internal const val CONFIG_FIELD = "$SCRUB_MOTION_EVENT_HANDLER->g:Lpbv;"
+
 /** The keycode a drag must start on, and the sentinel the patches test for. */
 internal const val CONFIG_START_KEY_FIELD = "Lpbv;->a:I"
+
+/**
+ * The Context the base handler stores, set by `AbstractMotionEventHandler.<init>` and read exactly
+ * this way at offset 4 of `r()`. The engine's own Context register is overwritten with `Resources`
+ * early in its constructor, so this is how later code gets one.
+ */
+internal const val HANDLER_CONTEXT_FIELD =
+    "$SCRUB_MOTION_EVENT_HANDLER->o:Landroid/content/Context;"
+
+/** Boxes the signed word count into the dispatched event, which is what identifies it. */
+internal const val INTEGER_VALUE_OF = "Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;"
 
 /**
  * The distance table. `r()` counts how many of its entries `abs(delta)` has passed, and that count
@@ -78,5 +92,17 @@ object ScrubEngineConstructorFingerprint : Fingerprint(
     definingClass = SCRUB_MOTION_EVENT_HANDLER,
     name = "<init>",
     parameters = listOf("Landroid/content/Context;", "Lpbr;", "Lpbv;"),
+    returnType = "V",
+)
+
+/**
+ * Where the signed word count is computed and dispatched. Two sites produce it — the in-table
+ * bucket walk and the past-the-table extrapolation — and both multiply a magnitude by the
+ * direction, which is what makes them identifiable.
+ */
+object ScrubDispatchFingerprint : Fingerprint(
+    definingClass = SCRUB_MOTION_EVENT_HANDLER,
+    name = "r",
+    parameters = listOf("Landroid/view/MotionEvent;", "Z"),
     returnType = "V",
 )

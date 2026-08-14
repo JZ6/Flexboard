@@ -79,6 +79,12 @@ private const val STEP_SCALE_MIN = 25
 private const val STEP_SCALE_MAX = 300
 
 /**
+ * The upper bound doubles as "no limit" — the clamp is skipped at or above it, so the default
+ * leaves Gboard's progressive delete untouched. 1 is the "one word at a time" case.
+ */
+private const val MAX_WORDS_MIN = 1
+
+/**
  * Milliseconds the gesture must be held before it may activate. Gboard ships 200 for the backspace
  * scrub and 50 for the inline-suggestion one; 0 is what makes a flick register.
  */
@@ -115,6 +121,17 @@ private fun Document.addFlexboardScreen() {
             min = STEP_SCALE_MIN,
             max = STEP_SCALE_MAX,
             default = STEP_SCALE_DEFAULT,
+        ),
+    )
+    screen.appendChild(
+        seekBar(
+            key = MAX_WORDS_KEY,
+            title = "Max words per swipe",
+            summary = "The most words one swipe can delete. Set to 1 to delete a single word " +
+                "however far you swipe. $MAX_WORDS_DEFAULT means no limit.",
+            min = MAX_WORDS_MIN,
+            max = MAX_WORDS_DEFAULT,
+            default = MAX_WORDS_DEFAULT,
         ),
     )
     screen.appendChild(
