@@ -100,3 +100,46 @@ Tools and worked examples are in [`../tools/apk/`](../tools/apk/README.md).
    names, and log strings survive minification and are the fastest way into an unfamiliar area.
 4. **Assert frames, do not adapt to them.** `requireRegisterCount` turns a Gboard change into a
    loud patch-time failure instead of a register that silently means something else.
+
+## Preference keys and the store API
+
+Preference keys are string *resources*, not literals in code: none of `enable_scrub_delete`,
+`enable_gesture_input`, `enable_secondary_symbols` or `pref_enable_flick_symbols` appears in the dex
+string table. Code addresses them by **resource id**, and the settings XML by `@string` reference.
+Searching the dex for a key by name therefore finds nothing, which is misleading rather than
+informative.
+
+`Lpnp;` is the store, and it mirrors most of its API across both keying styles:
+
+| By resource id | By string | Meaning |
+|---|---|---|
+| `at(I)Z` | `k(Ljava/lang/String;Z)Z` | getBoolean |
+| `F(II)I` | `b(Ljava/lang/String;I)I` | getInt |
+| `z(IF)F` | `a(Ljava/lang/String;F)F` | getFloat |
+| `ar(I)Z` | `as(Ljava/lang/String;)Z` | **contains** — distinguishes unset from off |
+| `aa(ILjava/lang/Object;)V` | — | set, dispatching on the boxed type |
+| `N(Landroid/content/Context;)Lpnp;` | | static accessor |
+
+`ar`/`as` are what make a real default possible: write only when the key is absent, so the user can
+still turn the thing off afterwards. Forcing a value on every start — what
+`forceScrubPreferencesPatch` does, because the scrub gesture cannot work otherwise — has no restore
+and fights anyone who changes it.
+
+The string-keyed forms matter for patch-added settings. A resource added by a patch has no id until
+aapt2 recompiles, long after the bytecode patch runs, so only a literal key can be read back.
+
+### Finding which resource id a method uses
+
+`dexlib.walk()` does **not** report `const` literals, so scanning it for a resource id returns zero
+matches whether or not the id is used. Verified: `0x7f0c00ef` is `const v1, 0x7f0c00ef` at offset 4
+of `ScrubMotionEventHandler.<init>` and the walk finds nothing. Search the raw instruction bytes
+instead, the same way `res/**.xml` is searched:
+
+```python
+needle = struct.pack('<I', 0x7f140977)
+raw = d.b[c['insns_off']:c['insns_off'] + c['insns_size'] * 2]
+if needle in raw: ...
+```
+
+That is what located `pref_enable_flick_symbols` in `LatinApp->d`, `Lpbj;->fn` and
+`LatinGestureMotionEventHandler->d`.

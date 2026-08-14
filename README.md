@@ -76,6 +76,21 @@ Gboard's settings gain a **Flexboard** screen with three sliders:
 All three are read out of Gboard's own preference store, so there is no separate settings app and
 nothing to keep in sync. The defaults reproduce the behaviour Flexboard shipped before they existed.
 
+### Flick keys for symbols
+
+Gboard can already enter a key's hinted symbol when you pull down on it — **Flick keys to enter
+symbols**, in its Preferences screen — and ships it off. Flexboard turns it on.
+
+It is written **once**, only if you have never set it, so it behaves as a default rather than
+something forced: turn it off in Gboard's settings and it stays off.
+
+One quirk worth knowing. Gboard's own settings row for it depends on **Touch & hold keys for
+numbers**, so while that is off the flick row shows as on but greyed out — the feature works, you
+just cannot toggle it from there. Enabling "Touch & hold keys for numbers" un-greys it. Flexboard
+deliberately does not change that setting for you, since nothing at runtime needs it.
+
+It is a separate patch, so it can be unticked in Morphe if you do not want it.
+
 ## Roadmap
 
 can we prevent glide tying being turned on if swipe is on and vice versa

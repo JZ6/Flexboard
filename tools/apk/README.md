@@ -133,3 +133,18 @@ The operands and control flow are correct; only those mnemonics are cosmetic. Do
 assertion against a mnemonic read out of `dis.py` without checking it against dexlib2's `Opcode`
 enum first — asserting `ADD_LONG_2ADDR` from a dump that says `binop2addrbb` has already produced
 one false failure. Anchoring on branches and field references instead avoids the question.
+
+**`dexlib.walk` does not report `const` literals.** Scanning it for a resource id returns nothing
+whether or not the id is used — verified against `0x7f0c00ef`, which is `const v1, 0x7f0c00ef` at
+offset 4 of `ScrubMotionEventHandler.<init>` and yields zero matches. To find where a resource id is
+used in code, search the raw instruction bytes for it, exactly as you would for `res/**.xml`:
+
+```python
+needle = struct.pack('<I', 0x7f140977)
+for d in dl:
+    for cname, af, cd in d.classes():
+        for m, maf, co in d.class_methods(cd):
+            c = d.code(co)
+            if c and needle in d.b[c['insns_off']:c['insns_off'] + c['insns_size'] * 2]:
+                print(m)
+```
