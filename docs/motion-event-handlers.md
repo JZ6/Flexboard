@@ -155,6 +155,49 @@ Gboard's existing word-scrub delete, merely startable from anywhere on the keybo
 That is a structural argument rather than an exhaustive read of `LatinIme;->d`, and it is stated
 that way deliberately.
 
+## The tunables, and why the stock gesture feels like a hold
+
+`Lpbu;` is the shared tuning struct, built in
+`ScrubMotionEventHandler.<init>(Context;Lpbr;Lpbv;J)V` from resources. Its constructor is
+`(JJFFFJF)V` and the arguments land in field order, so each one is identifiable:
+
+| Field | Resource | Value | Role |
+|---|---|---|---|
+| `a:J` | `0x7f0c00ee` | 150 ms | gate on the `ACTION_DOWN` time against `Lpbr;->c()` |
+| `b:J` | `0x7f0c00ef` | **200 ms** | **hold delay before activation is even considered** |
+| `c:F` | `0x7f07090f` | 8pt | activation distance, read via `c()F` in `o(IFF)Z` |
+| `d:F` | `0x7f070910` | 16pt | per-step distance when `Lpbv;->j` is 1 (scrub move) |
+| `e:F` | `0x7f07090e` | 8pt | per-step distance otherwise (scrub delete) |
+| `f:J` | `0x7f0c00ed` | 1000 ms | delay before the `noScrubbing` toast |
+| `g:F` | `0x7f07090d` | 4mm | vertical inset applied to the tracking rect |
+
+`b:J` is the one that shapes the feel. `p(Landroid/view/MotionEvent;I)Z` opens with
+
+```
+iget-wide v5, v0, Lpbu;->b:J
+add-long/2addr v3, v5          # downTime + 200ms
+cmp-long v0, v1, v3
+if-gez v0, :continue
+return v1                      # too soon — regardless of distance travelled
+```
+
+so no amount of movement activates the gesture inside the first 200 ms. That is what makes the
+stock gesture a press-and-drag rather than a flick, and it is why a Fleksy-style flick — over in
+well under 200 ms — was being discarded before the distance test ever ran.
+
+The delay is **per handler**, not global: the 3-argument constructor supplies it from
+`0x7f0c00ef` (200), while `InlineSuggestionScrubSpaceMotionEventHandler` calls the 4-argument
+form with `0x7f0c006f` (50). Gboard already ships two different values, so changing it on one path
+follows the engine's design rather than fighting it.
+
+Activation additionally requires, in `o(IFF)Z`:
+
+- the finger to have left the rect captured at `ScrubMotionEventHandler->i` — the *starting key* —
+  but only when `Lpbv;->b:Z` is set, which is true for delete and false for move;
+- `|x - startX| >= c()`, i.e. 8pt.
+
+Both are worth keeping: together they are what stops a tap being read as a delete.
+
 ## What is still not known
 
 - **What `Lpbv;`'s second argument (`true`/`false`) does.** Not read by either `g()` or `r()`.

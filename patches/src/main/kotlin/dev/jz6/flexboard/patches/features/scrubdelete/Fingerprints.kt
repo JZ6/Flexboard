@@ -26,6 +26,17 @@ object ScrubHandleMotionEventFingerprint : Fingerprint(
 )
 
 /**
+ * The activation test. Returns false until the gesture has both waited out a hold delay and
+ * travelled far enough, so it is what decides whether a flick registers or only a deliberate drag.
+ */
+object ScrubActivationTestFingerprint : Fingerprint(
+    definingClass = SCRUB_MOTION_EVENT_HANDLER,
+    name = "p",
+    parameters = listOf("Landroid/view/MotionEvent;", "I"),
+    returnType = "Z",
+)
+
+/**
  * `ScrubDeleteMotionEventHandler` declares exactly one method. Its whole contribution is building
  * the `Lpbv;` config it hands to the shared engine, the first argument of which is the keycode the
  * drag must start on.

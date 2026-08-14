@@ -126,3 +126,10 @@ wins. Those were never needed; a caller that needs them should read `values()` a
 The instruction walk in `dexlib.walk` only decodes opcodes worth searching for. `dis.disasm`
 decodes every format properly and is what to use when reading a method rather than scanning for
 one.
+
+**`dis.py` does not print real names for every opcode.** Arithmetic and conversion opcodes come out
+as family placeholders — `binop2addrbb` for `add-long/2addr`, `unop82`, `binop2addrc7` and so on.
+The operands and control flow are correct; only those mnemonics are cosmetic. Do not write a patch
+assertion against a mnemonic read out of `dis.py` without checking it against dexlib2's `Opcode`
+enum first — asserting `ADD_LONG_2ADDR` from a dump that says `binop2addrbb` has already produced
+one false failure. Anchoring on branches and field references instead avoids the question.

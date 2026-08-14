@@ -60,6 +60,7 @@ val swipeToDeletePatch = bytecodePatch(
     execute {
         ScrubDeleteConstructorFingerprint.method.widenStartKeyToWildcard()
         ScrubHandleMotionEventFingerprint.method.acceptWildcardStartKey()
+        ScrubActivationTestFingerprint.method.removeHoldDelayForWildcard()
     }
 }
 
@@ -83,6 +84,18 @@ private const val CONFIG_START_KEY_FIELD = "Lpbv;->a:I"
 private const val SCRUB_HANDLE_REGISTER_COUNT = 13
 
 private const val WILDCARD_LABEL = "flexboard_any_start_key"
+
+/** The 200 ms the gesture must be held before it may activate, whatever the distance travelled. */
+private const val HOLD_DELAY_FIELD = "Lpbu;->b:J"
+
+/** `p(Landroid/view/MotionEvent;I)Z` — non-static, so `this` + MotionEvent + int = 3 words. */
+private const val ACTIVATION_TEST_REGISTER_COUNT = 10
+private const val ACTIVATION_TEST_PARAMETER_WORDS = 3
+
+private const val INSTANT_LABEL = "flexboard_no_hold"
+
+/** The gate is five instructions long; the window is slack, not a measurement. */
+private const val HOLD_GATE_WINDOW = 8
 
 /**
  * Replaces the `const/16 vN, 67` feeding `Lpbv;-><init>`'s first argument. The literal is matched
@@ -146,6 +159,77 @@ private fun MutableMethod.acceptWildcardStartKey() {
         gateIndex,
         "if-ltz v$configRegister, :$WILDCARD_LABEL",
         ExternalLabel(WILDCARD_LABEL, gatePassed),
+    )
+}
+
+/**
+ * The activation test opens with a hold gate:
+ *
+ * ```
+ * iget-wide v5, v0, Lpbu;->b:J     # 200 ms
+ * add-long/2addr v3, v5            # downTime + delay
+ * cmp-long v0, v1, v3
+ * const/4 v1, 0x0
+ * if-gez v0, :continue
+ * return v1                        # too soon, whatever the distance
+ * ```
+ *
+ * 200 ms of dead time makes the gesture feel like a press-and-drag rather than a flick. Gboard
+ * itself varies this per handler — the inline-suggestion scrub passes 50 ms — so shortening it is
+ * within the engine's design rather than a violation of it.
+ *
+ * Skipped only when the configured keycode is the wildcard, so the spacebar cursor-drag keeps its
+ * full delay. Removing it there too would make accidental cursor drags off the spacebar far easier
+ * while typing.
+ *
+ * The distance requirement is deliberately left alone: the finger must still travel 8pt *and*
+ * leave the key it started on, which is what stops a tap being read as a delete.
+ */
+private fun MutableMethod.removeHoldDelayForWildcard() {
+    val registerCount = implementation?.registerCount
+        ?: error("$SCRUB_MOTION_EVENT_HANDLER->p has no implementation")
+    check(registerCount == ACTIVATION_TEST_REGISTER_COUNT) {
+        "$SCRUB_MOTION_EVENT_HANDLER->p has $registerCount registers, " +
+            "expected $ACTIVATION_TEST_REGISTER_COUNT — refusing to guess register mapping"
+    }
+    // Non-static, (MotionEvent, int) -> three parameter words, so `this` is resolvable.
+    val thisRegister = registerCount - ACTIVATION_TEST_PARAMETER_WORDS
+
+    val reads = instructions.withIndex().filter { (_, instruction) ->
+        instruction.opcodeName() == "IGET_WIDE" && instruction.readsField(HOLD_DELAY_FIELD)
+    }
+    check(reads.size == 1) {
+        "Expected exactly one read of $HOLD_DELAY_FIELD in $SCRUB_MOTION_EVENT_HANDLER->p, " +
+            "found ${reads.size}"
+    }
+    val readIndex = reads.single().index
+
+    // Anchored on the branch rather than on the arithmetic between: the exact add/compare opcodes
+    // are an encoding detail, and asserting them buys nothing while giving a Gboard recompile an
+    // extra way to fail the patch for no reason.
+    val gateBranch = (readIndex until minOf(readIndex + HOLD_GATE_WINDOW, instructions.size))
+        .firstOrNull { instructions[it].opcodeName() == "IF_GEZ" }
+        ?: error(
+            "No `if-gez` within $HOLD_GATE_WINDOW instructions of $HOLD_DELAY_FIELD in " +
+                "$SCRUB_MOTION_EVENT_HANDLER->p — the hold gate is not the shape expected",
+        )
+    check(instructions[gateBranch + 1].opcodeName() == "RETURN") {
+        "Expected `return` immediately after the hold gate's `if-gez`, found " +
+            "`${instructions[gateBranch + 1].opcode.name}`"
+    }
+    val gatePassed = instructions[gateBranch + 2]
+
+    // Injected at method entry rather than next to the gate: by the time the gate runs, v0 holds
+    // the Lpbu; the gate is about to read, so clobbering it there would break the very check being
+    // bypassed. At entry v0 is dead — the stock body's first act is to write it.
+    addInstructionsWithLabels(
+        0,
+        """
+            iget-object v0, v$thisRegister, $SCRUB_MOTION_EVENT_HANDLER->g:Lpbv;
+            iget v0, v0, $CONFIG_START_KEY_FIELD
+            if-ltz v0, :$INSTANT_LABEL
+        """,
+        ExternalLabel(INSTANT_LABEL, gatePassed),
     )
 }
 
