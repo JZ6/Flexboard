@@ -11,6 +11,7 @@ Everything the `docs/` findings rest on was produced with these three files.
 | `dexlib.py` | DEX reader — strings, types, methods, fields, classes, code items, and a coarse instruction walk that decodes calls, field access and constants |
 | `dis.py` | Full-format Dalvik disassembler on top of `dexlib`, with registers and branch targets |
 | `axml.py` | Binary XML (AXML) reader — walks elements and attributes of compiled `res/**.xml` |
+| `arsc.py` | Resource table reader — resource id to name and value, and the reverse lookup from a packed path back to its id |
 
 ## Setup
 
@@ -95,11 +96,32 @@ hits = [n for n in z.namelist()
         if n.startswith('res/') and n.endswith('.xml') and needle in z.read(n)]
 ```
 
+## Resolve a resource id, name or packed path
+
+```python
+import zipfile, arsc
+z = zipfile.ZipFile('gboard.apk')
+t = arsc.load(z.read('resources.arsc'))
+
+t.value(0x7f14097b)            # 'enable_gesture_input'
+t.name(0x7f170e7e)             # 'xml/settings'
+t.value(0x7f170e7e)            # 'res/B_o.xml'      — the packed path
+t.find_value('res/aDh.xml')    # [(0x7f170779, 'xml/0_resource_name_obfuscated')]
+t.find_name('setting_')        # every settings screen, by name
+```
+
+`values()` returns every configuration variant rather than guessing which one applies; `value()`
+takes the first, which is right for ids with a single definition.
+
+Most names come back as `0_resource_name_obfuscated` — Gboard is built with aapt2
+`--collapse-resource-names`, and only 619 of 33,287 entries keep a real name. Which ones survive,
+and why it matters for resource patches, is in
+[`../../docs/gboard-bindings.md`](../../docs/gboard-bindings.md).
+
 ## What these deliberately do not do
 
-No ARSC parsing — resolving a resource id to its *value* (or a name to an id) was done ad hoc and
-is described in [`../../docs/glide-detection.md`](../../docs/glide-detection.md) rather than
-implemented here. If you need it more than once, that is the first thing worth adding.
+`arsc.py` does not chase references, resolve styles or bags, or decide which configuration variant
+wins. Those were never needed; a caller that needs them should read `values()` and choose.
 
 The instruction walk in `dexlib.walk` only decodes opcodes worth searching for. `dis.disasm`
 decodes every format properly and is what to use when reading a method rather than scanning for

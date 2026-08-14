@@ -132,6 +132,23 @@ intended iteration loop — no throwaway tags, no downloading artifacts by hand.
 A `chore:` commit publishes nothing but still runs `./gradlew :patches:buildAndroid clean` in CI, so
 it is a free compile check.
 
+## Which Gboard resources a patch can address
+
+`ResourcePatchContext.document(path)` returns a decoded W3C DOM, and the path is the resource's
+*decoded* name — `res/xml/settings.xml`, never the packed `res/B_o.xml`. That only works for
+resources whose name survived: Gboard is built with aapt2 `--collapse-resource-names`, and 32,668
+of its 33,287 entries report `0_resource_name_obfuscated`.
+
+The survivors are the ones Android itself resolves by name at runtime. For `xml` that is 33
+resources — the settings screens plus `method`, `file_provider_paths` and `spell_checker`. The
+keyboard layouts are **not** among them, so `res/aDh.xml` has no clean name to address it by.
+
+The practical consequence: patches that touch the settings screens or the manifest are
+straightforward, and anything wanting to change a keyboard layout should prefer a bytecode patch
+over a resource one. The id ↔ name ↔ path table is in
+[`gboard-bindings.md`](gboard-bindings.md), and [`../tools/apk/arsc.py`](../tools/apk/README.md)
+regenerates it.
+
 ## Supporting a new Gboard
 
 `COMPATIBILITY_GBOARD` pins the bundle to one build, so a newer Gboard is refused rather than

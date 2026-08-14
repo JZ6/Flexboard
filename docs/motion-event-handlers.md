@@ -30,7 +30,9 @@ A handler is attached only when its `preference_key` resolves true, or false whe
 `reverse_preference="true"`. Handlers without a `preference_key` are always attached.
 
 Note `@0x7f14097b` on the Hindi gesture handler — that is `enable_gesture_input`, the same
-preference Flexboard writes. See [`glide-detection.md`](glide-detection.md).
+preference Flexboard writes. See [`glide-detection.md`](glide-detection.md). `@0x7f140995` on the
+scrub delete handler is **`enable_scrub_delete`**; both were resolved with
+[`../tools/apk/arsc.py`](../tools/apk/README.md).
 
 ## Scrub delete is Gboard's own word-delete
 
@@ -55,51 +57,178 @@ ScrubDeleteMotionEventHandler.<init>          ScrubMoveMotionEventHandler.<init>
   invoke-direct {…}, ScrubMotionEventHandler;-><init>(Landroid/content/Context;Lpbr;Lpbv;)V
 ```
 
-| `Lpbv;` argument | ScrubDelete | ScrubMove | reading |
-|---|---|---|---|
-| 1 | **67** | **62** | `KeyEvent.KEYCODE_DEL` / `KEYCODE_SPACE` |
-| 2 | `true` | `false` | unidentified flag |
-| 3 | 2 | 1 | unidentified; direction or mode |
-| 4–7 | −10050, −10051, −10052, −10063 | −10061, −10053, −10054, −10062 | Gboard-internal event codes |
-| 8 | `0x7f0300b5` | `0x7f0300b6` | resource reference, `0x7f03` is the `attr` type |
+| `Lpbv;` argument | field | ScrubDelete | ScrubMove | reading |
+|---|---|---|---|---|
+| 1 | `a:I` | **67** | **62** | `KeyEvent.KEYCODE_DEL` / `KEYCODE_SPACE` — the start-key gate |
+| 2 | `b:Z`? | `true` | `false` | not read by `g()` or `r()`; still unidentified |
+| 3 | `j:I` | 2 | 1 | threshold selector: `1` picks `Lpbu;->d:F`, anything else `Lpbu;->e:F` |
+| 4 | `c:I` | −10050 | −10061 | event code dispatched on the activating move |
+| 5–6 | `d:I`, `e:I` | −10051, −10052 | −10053, −10054 | event codes chosen by `t(MotionEvent)Z` |
+| 7 | `f:I` | −10063 | −10062 | event code dispatched when the finger leaves the rect |
+| 8 | → `h:[F` | `0x7f0300b5` | `0x7f0300b6` | `attr` reference; resolves to the array of distance steps |
 
 **The scope of the whole feature is one integer: which key the drag must start on.** Everything
 else — thresholds, direction handling, progressive delete — is generic engine code.
 
-## What is not known
+There is already a **third** subclass, `InlineSuggestionScrubSpaceMotionEventHandler`, with the
+same `<init>(Landroid/content/Context;Lpbr;)V` and the same frame (`registers=12, ins=3, outs=9`).
+So the engine is not a two-off; taking a fourth config is its normal mode of use.
 
-- **Where the keycode is enforced.** It is not in `o(IFF)Z` (that is the distance threshold
-  against `c()F`), `fb(Lnbj;)Z` (handles internal event `-10091`), or `t(MotionEvent)Z` (terminal
-  action check). Most likely `g(Landroid/view/MotionEvent;)V`, 259 instructions, unread.
-- **Whether a wildcard keycode is accepted**, or whether the engine can be scoped to a region
-  rather than a key.
-- **Whether the engine supports the restore half.** Gboard's backspace scrub appears to restore
-  when you drag back, which is what Flexboard's right-swipe does, but that has not been confirmed
-  in the bytecode.
-- **What `0x7f140995` is** — the preference gating scrub delete. Unresolved; the method in
-  `glide-detection.md` would resolve it.
-- **What the `-100xx` codes mean.** They are Gboard-internal event ids.
+## Where the keycode gate is
+
+`g(Landroid/view/MotionEvent;)V`, and it is a **single comparison**. On `ACTION_DOWN` the handler
+resolves the view under the finger, requires it to be a `SoftKeyView`, requires it to carry an
+`Loth;->a` action and *not* an `Loth;->e` one, then:
+
+```
+104: invoke-virtual  {v6}, Lotk;->b()Loud;
+108: iget            v5, v5, Loud;->c:I     # keycode of the key under the finger
+110: iget            v6, v1, Lpbv;->a:I     # the configured keycode
+112: if-ne           v5, v6, -> 60          # mismatch: f = false, gesture never starts
+```
+
+Everything downstream of offset 114 is key-agnostic. In particular the tracking rect built at
+118–145 is set to the **full keyboard width**:
+
+```
+123: iput  v4, v6, Landroid/graphics/Rect;->left:I         # 0
+125: invoke-virtual {v5}, SoftKeyboardView;->getWidth()I
+129: iput  v7, v6, Landroid/graphics/Rect;->right:I
+```
+
+with only `top`/`bottom` inset by `Lpbu;->g:F`. So the engine already tracks across the whole
+keyboard once a gesture starts — the key restriction applies solely to where it *begins*.
+
+## The engine is bidirectional by construction
+
+`r(Landroid/view/MotionEvent;Z)V` computes a **signed** step count, so the restore half is not a
+separate feature — it is the same code path with the opposite sign:
+
+```
+ 64: v0 = getX(pointer) - this.k        # delta from the start X
+ 81: cmpl-float                         # direction = +1 if delta > 0 else -1
+ 88: Math.abs(delta)
+ 92: walk Lpbv;->h:[F                   # which distance bucket the delta falls into
+118: v3 = direction * bucket            # signed step count
+154: Integer.valueOf(v3)                # dispatched as the event payload
+168: this.r = v3                        # only re-dispatched when the count changes
+```
+
+What a negative versus positive count *means* is the downstream processor's business, not the
+engine's. Dragging back reduces the count and emits it again, which is the restore behaviour.
+
+Two further constraints found in `r()`:
+
+- **Apps can opt out.** `Lmvr;->w(packageName, "noScrubbing", EditorInfo)Z` is checked first; when
+  an editor sets that private option the gesture is refused and a toast (`0x7f1411d8`) is shown
+  once. Some text fields will therefore never scrub, through no fault of the patch.
+- **Leaving the rect ends it.** `Rect.contains` failing dispatches `Lpbv;->f:I` and clears `f`.
+
+## Who consumes the events
+
+`q(Loud;J)V` wraps the payload in an `Lnbj;` event — action `Loth;->a`, `w = 6` — and hands it to
+`Lpbr;->n(Lnbj;)V`. From there the two halves of the engine diverge:
+
+| Codes | Consumer |
+|---|---|
+| −10061, −10053, −10054, −10062 (**move**) | `…/ime/processor/ScrubMoveProcessor;->af(Lnbj;)Z` and `dT(Lnsx;)Z`, driving `Lnta;` |
+| −10050, −10051, −10052, −10063 (**delete**) | `…/libs/latin5/LatinIme;->d(Lnbj;)Z`, with `aq(Lnbj;)Z` as a pre-filter |
+
+Found by scanning every method's instruction bytes for the `const/16` encodings of each code, with
+the move codes as a control — the control landed exactly on `ScrubMoveProcessor` and
+`ScrubMoveMotionEventHandler.<init>`, which is what makes the delete result trustworthy.
+
+Scrub delete has no processor of its own; `LatinIme` handles it directly, which is unsurprising
+since deleting words needs the input connection. `La;->W(Lnbj;)I` is what unpacks the signed count
+from the event. `LatinIme;->d(Lnbj;)Z` is 3254 code units and has not been read in full; the
+branch all scrub codes share (offset 514) is generic housekeeping that cancels the Delight5
+decoder's in-flight async decode.
+
+### Why the granularity question is already answered
+
+The gate at `g()` offset 112 sits **upstream of all of this**. It decides only whether a gesture
+starts. Once started, the tracking rect, the signed count, the event codes, the dispatch and the
+consumer are byte-for-byte the ones today's backspace scrub uses — nothing downstream reads which
+key the finger began on. So a widened gate cannot change what a scrub *does*; it produces exactly
+Gboard's existing word-scrub delete, merely startable from anywhere on the keyboard.
+
+That is a structural argument rather than an exhaustive read of `LatinIme;->d`, and it is stated
+that way deliberately.
+
+## What is still not known
+
+- **What `Lpbv;`'s second argument (`true`/`false`) does.** Not read by either `g()` or `r()`.
+- **What the `-100xx` numbers mean individually** beyond the role each plays in `Lpbv;`.
+- **How password fields differ.** `PasswordIme;->d(Lnbj;)Z` handles −10063 but none of the other
+  three, which has not been chased down.
 
 ## Why this matters for Flexboard
 
-If the keycode gate can be widened, or a third subclass registered with its own `Lpbv;`, then
-Flexboard's core could become a resource patch plus a small config class instead of pointer
-hooks, a dispatch veto, three tunable thresholds and the settings rows that drive them. It would
-also inherit Gboard's own feel and, possibly, its restore behaviour.
+The gate is one `if-ne`, the tracking rect is already full width, and the direction handling is
+already signed. So the whole of Flexboard's gesture — swipe left to delete a word, swipe right to
+restore — is behaviour Gboard already implements and merely declines to start unless the finger
+lands on backspace.
 
-Two things it would **not** solve:
+The catch is that `g()` is on the **shared** engine. Simply removing the comparison would also let
+the spacebar cursor-drag and the inline-suggestion scrub start anywhere, which is not wanted. The
+surgical form is a sentinel:
+
+1. Patch `ScrubDeleteMotionEventHandler.<init>` to pass a keycode no real key uses.
+2. Patch the comparison at offset 112 in `g()` to skip when `Lpbv;->a` holds that sentinel.
+
+Two small bytecode edits, both on well-anchored sites, and the other subclasses are untouched
+because their `a` is a genuine keycode. No pointer hooks, no dispatch veto, no thresholds of our
+own, and no settings rows to drive them — the engine brings its own feel.
+
+Two things this would **not** solve:
 
 - **The glide typing conflict.** Same pointer stream, same collision. That stays solved by
-  writing the preference.
-- **Risk.** It replaces the working core of a shipped release. This is a v0.4 experiment at the
-  earliest, and it needs the unknowns above closed first.
+  writing the preference — though note `g()` bails before any of this when the key under the
+  finger is wrong, so the conflict window is the same one as before.
+- **Editors that opt out.** `noScrubbing` is honoured by the engine and there is nothing to be
+  done about it from a patch.
 
-## The glide angle
+It also depends on **not** needing to touch `res/aDh.xml`. Attaching a new handler declaratively
+would require addressing that layout by name, and its resource name is collapsed — see the
+addressability note in [`development.md`](development.md). Patching the existing subclass avoids
+the problem entirely, which is the main reason to prefer it.
 
-The same declarative gate attaches gesture handlers, so a resource patch that removes the entry
-or flips `reverse_preference` is in principle another way to stop glide typing — without touching
-the user's setting at all. Flexboard writes the setting instead, because that is simpler and every
-consumer agrees with it. Worth remembering if the write ever stops being viable.
+## The glide angle — a dead end, checked
+
+It looked as though the declarative gate might offer another way to stop glide typing: remove the
+handler entry, or flip `reverse_preference`, and never touch the user's setting. It does not work
+for Latin, for two reasons.
+
+`res/bsB.xml`, the `<include>` at the end of the Latin layout, holds only the spacebar handler:
+
+```xml
+<framework>
+  <if android_software_xr_api_spatial="false">
+    <if free_cursor="false">
+      <motion_event_handler class=".motioneventhandler.scrubmove.ScrubMoveMotionEventHandler"
+                            preference_key="@0x7f140996" reverse_preference="false"/>
+    <else>
+      <motion_event_handler class=".freecursor.TriggerFreeCursorMotionEventHandler"
+                            preference_key="@0x7f140996" reverse_preference="false"/>
+```
+
+So the full handler list for Latin contains **no glide handler at all**. The only
+`preference_key="@0x7f14097b"` entry is the *Hindi* dynamic-keyboard handler.
+`AbstractGestureMotionEventHandler`, the Latin glide path, is attached by some other mechanism —
+unidentified, and not through this list.
+
+Even if it were listed, the layout's resource name is collapsed, so a resource patch has no name
+to address it by.
+
+Writing the preference stays the way to resolve the conflict.
+
+For the record, the three scrub preferences resolve as:
+
+| Id | Name |
+|---|---|
+| `0x7f140995` | `enable_scrub_delete` |
+| `0x7f140996` | `enable_scrub_move` |
+| `0x7f14097b` | `enable_gesture_input` (glide) |
 
 ## How this was derived
 

@@ -119,6 +119,10 @@ gradle-app.setting
 # Ignore vscode config
 .vscode/
 
+# Python bytecode from tools/apk
+__pycache__/
+*.py[cod]
+
 # Dependency directories
 node_modules/
 

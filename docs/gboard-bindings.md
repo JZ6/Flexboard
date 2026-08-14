@@ -50,12 +50,41 @@ Full derivation of the glide preference id and why the write path is used:
 | `Lgmb;->c()V` | Reads gesture preferences and builds the `HmmGestureDecoder` into `Lgmb;->a`. Runs on keyboard show. Never tears an existing decoder down; only `b()` does. |
 | `Lgmb;->h(Lnbj;)Z` | Per-event handler. Called only from the Pinyin, Zhuyin and Korean decode processors. |
 | `…/libs/gestureui/AbstractGestureMotionEventHandler` | The **Latin** glide handler. Not obfuscated. `g(Landroid/view/MotionEvent;)V` is the live path, 1453 instructions. |
-| `…/motioneventhandler/scrubmove/ScrubMotionEventHandler` | Generic scrub engine. Not obfuscated. |
-| `Lpbv;` | Config struct for the scrub engine, `<init>(IZIIIIII)V`. First argument is an Android keycode. |
+| `…/motioneventhandler/scrubmove/ScrubMotionEventHandler` | Generic scrub engine. Not obfuscated. 18 methods; `g(Landroid/view/MotionEvent;)V` is the entry point and `r(Landroid/view/MotionEvent;Z)V` the movement handler. |
+| — start gate | `g(…)V` offset 112, `if-ne` on `Loud;->c:I` vs `Lpbv;->a:I` | The single comparison that scopes scrub delete to backspace. `registers=13`. |
+| `Lpbv;` | Config struct for the scrub engine, `<init>(IZIIIIII)V`. First argument is an Android keycode; see the field map in [`motion-event-handlers.md`](motion-event-handlers.md). |
+| `Lpbu;` | Tuning constants shared by all scrub subclasses — `a:J` hold delay, `d:F`/`e:F` step thresholds, `f:J` toast delay, `g:F` rect inset. |
+| `Loud;->c:I` | The keycode carried by a soft key's action. `Loud;-><init>(ILouc;Ljava/lang/Object;)V` is also how the engine dispatches, with a boxed signed step count as the payload. |
+| `Lotk;->b()Loud;` | Action to its key data. Reached via `SoftKeyView;->f(Loth;)Lotk;`. |
+| `Loth;->a`, `Loth;->e` | Action enum constants. The gate requires `a` present and `e` absent. |
+| `Lmvr;->w(Ljava/lang/String;Ljava/lang/String;Landroid/view/inputmethod/EditorInfo;)Z` | Reads an EditorInfo private option. The engine checks `"noScrubbing"` before doing anything. |
 | `Lpax;->a:Lnea;` | Phenotype flag consulted alongside the preference in both `Lgmb;->c()` and `AbstractGestureMotionEventHandler.d()`. `Lnea;->g()` returns a boxed value. |
 
 See [`motion-event-handlers.md`](motion-event-handlers.md) for how handlers are attached and what
 the scrub engine does.
+
+## Resources
+
+Gboard is built with aapt2 `--collapse-resource-names`. Of **33,287** resource entries, only
+**619** keep a real name; the rest read `0_resource_name_obfuscated`. Files are packed flat under
+obfuscated paths (`res/aDh.xml`), and the resource table is the only way back.
+
+| Resource | Id | Packed path |
+|---|---|---|
+| `enable_gesture_input` (glide preference) | `0x7f14097b` | — (string) |
+| `enable_scrub_delete` (scrub preference) | `0x7f140995` | — (string) |
+| Latin keyboard layout | `0x7f170779` | `res/aDh.xml` — **name collapsed** |
+| `xml/settings` | `0x7f170e7e` | `res/B_o.xml` |
+| `xml/settings_legacy` | `0x7f170e7f` | `res/IeH.xml` |
+| `xml/setting_gesture` | `0x7f170e70` | `res/J_u.xml` |
+| the `<include>` in the Latin layout | `0x7f170e54` | `res/bsB.xml` — **name collapsed** |
+
+Only 33 `xml` names survive, and they are the settings screens plus the framework-mandated
+`method`, `file_provider_paths` and `spell_checker`. That is exactly why a resource patch can
+address `res/xml/settings.xml` but not the keyboard layout — Android resolves those few by name at
+runtime, so they could not be collapsed.
+
+Resolve ids with [`../tools/apk/arsc.py`](../tools/apk/README.md).
 
 ## How to re-derive these
 
