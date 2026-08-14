@@ -74,8 +74,61 @@ say so.
 3. From there the hook is ordinary: find the preference by key and call `setEnabled` plus
    `setSummary` on it.
 
-Step 1 is the only real work. `tools/apk/` has no ARSC reader — adding one is the single highest
--value addition to that toolkit, since resolving ids by hand has now been needed three times.
+Step 1 is no longer work: [`../tools/apk/arsc.py`](../tools/apk/README.md) resolves ids both ways
+now, and the screens it resolves are listed below.
+
+## What is now known about adding rows
+
+Flexboard's own settings screen is built by
+`patches/.../features/scrubsettings/SettingsScreenPatch.kt`, and establishing it settled several
+questions this document had open.
+
+**The settings screens are addressable by name.** 33 of Gboard's 33,287 resource entries survive
+`--collapse-resource-names`, and every settings screen is among them:
+
+| Id | Name | Packed path |
+|---|---|---|
+| `0x7f170e7e` | `xml/settings` | `res/B_o.xml` |
+| `0x7f170e7f` | `xml/settings_legacy` | `res/IeH.xml` |
+| `0x7f170e70` | `xml/setting_gesture` | `res/J_u.xml` |
+
+plus `setting_about`, `setting_correction`, `setting_privacy` and the rest of the `setting_*` family.
+So a resource patch can edit `res/xml/settings.xml` directly, without ever finding the fragment that
+inflates it — which is what makes the dead end above survivable.
+
+`xml/settings` is an index: `PreferenceCategory` groups of `HeaderPreference` rows, each carrying a
+`fragment=` attribute naming a `CommonPreferenceFragment` subclass. Those subclasses pick their
+screen by overriding `aB()I`, so a *new* screen with its own fragment would mean shipping a class
+that extends a Gboard type — the stub-class problem that pushed v0.3 into an extension.
+
+**The androidx preference widgets survive minification with real names.** All 16 of them, including
+the ones Gboard never uses in XML:
+
+```
+CheckBoxPreference  DialogPreference  DropDownPreference  EditTextPreference
+ListPreference  MultiSelectListPreference  Preference  PreferenceCategory
+PreferenceGroup  PreferenceScreen  SeekBarPreference  SwitchPreference
+SwitchPreferenceCompat  TwoStatePreference
+```
+
+This is worth checking again on a future Gboard, and it is not a safe assumption in general: R8 keeps
+these because AGP generates keep rules from XML-referenced class names, and Gboard's own screens only
+ever name `PreferenceScreen` and `SwitchPreferenceCompat`. That `SeekBarPreference` survived anyway
+is what makes a slider row possible; if a later build strips it, `ListPreference` and
+`SwitchPreferenceCompat` are the ones Gboard's own XML guarantees.
+
+**Sub-screen navigation is doubtful.** androidx opens a nested `<PreferenceScreen>` only when the
+host implements `OnPreferenceStartScreenCallback`. `CommonPreferenceFragment` declares no interfaces,
+`SettingsActivity` declares none, and the only `PreferenceScreen`-taking method left on the
+obfuscated base `Ldgh;` is `az(Landroidx/preference/PreferenceScreen;)V` — `setPreferenceScreen`, not
+a navigation path. Flexboard ships a nested screen anyway, because falsifying it costs one build and
+the fallback is the expensive one: an `<intent>` row launching an Activity carried in an extension
+DEX, which is exactly what v0.3 did.
+
+**Keys can be literal strings.** Gboard's own rows use `@string` references, but nothing requires it,
+and a patch-added preference has no choice: a new string resource has no id until aapt2 recompiles,
+which is long after any bytecode patch that wants to read the value. `Lpnp;` has string-keyed getters
+for exactly this — see [`motion-event-handlers.md`](motion-event-handlers.md).
 
 ## Related
 

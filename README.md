@@ -63,6 +63,18 @@ It also changes two of Gboard's settings at startup, because the gesture cannot 
 
 Removing Flexboard leaves glide typing off — tick it back on in Gboard's own settings.
 
+### Settings
+
+Gboard's settings gain a **Flexboard** screen with two sliders:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Swipe length** | 100% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe. |
+| **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
+
+Both are read out of Gboard's own preference store, so there is no separate settings app and nothing
+to keep in sync. The defaults reproduce the behaviour Flexboard shipped before they existed.
+
 ## Roadmap
 
 can we prevent glide tying being turned on if swipe is on and vice versa

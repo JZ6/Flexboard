@@ -138,6 +138,13 @@ Found by scanning every method's instruction bytes for the `const/16` encodings 
 the move codes as a control — the control landed exactly on `ScrubMoveProcessor` and
 `ScrubMoveMotionEventHandler.<init>`, which is what makes the delete result trustworthy.
 
+**That scan has a blind spot, and the table above is therefore a lower bound.** A `packed-switch`
+stores only `first_key` and a target array — the individual keys it matches are never present in
+the instruction stream, so any consumer that dispatches scrub codes through a switch is invisible
+to a byte search for their encodings. `PasswordIme` is exactly such a consumer and was missed. To
+find switch-based consumers, decode the payload: `ident` `0x0100`, `size` (u16), `first_key` (i32),
+then `size` branch targets, and test whether a code falls in `first_key .. first_key + size - 1`.
+
 Scrub delete has no processor of its own; `LatinIme` handles it directly, which is unsurprising
 since deleting words needs the input connection. `La;->W(Lnbj;)I` is what unpacks the signed count
 from the event. `LatinIme;->d(Lnbj;)Z` is 3254 code units and has not been read in full; the
@@ -235,6 +242,77 @@ and it is why the "you have to hold the swipe" symptom traced to `b:J` alone.
 Also worth knowing: `g()` bails at offset 27 when `Lpbv;->g:Z` is set, before any of this. That flag
 is false for all three stock configs.
 
+## Making the tunables configurable
+
+**Every field of `Lpbu;` is `public final`.** Gboard writes them only inside `Lpbu;-><init>`, so a
+patch cannot `iput` them — ART rejects a final-field write from outside the declaring class. The way
+to change one is to substitute the **constructor argument** that produces it, and the four-argument
+engine constructor makes each argument easy to identify:
+
+```
+25: const v1, 0x7f0c00ee   → getInteger        → int-to-long v1  → a:J
+33: const v3, 0x7f07090f   → getDimensionPixel → int-to-float v5 → c:F
+41: const v3, 0x7f070910                       → v6             → d:F
+49: const v3, 0x7f07090e                       → v7             → e:F
+57: const v3, 0x7f0c00ed   → getInteger        → v8v9           → f:J
+65: const v3, 0x7f07090d                       → v10            → g:F
+73: move-wide v3, v15      ← the J parameter                    → b:J
+74: invoke-direct/range {v0 .. v10}, Lpbu;-><init>(JJFFFJF)V
+```
+
+The hold delay is the easy one, because it is a *parameter* rather than a resource read: the
+three-argument constructor reads `0x7f0c00ef` (200 ms) and forwards it, so substituting the value
+there means `Lpbu;->b:J` is simply built with a different number and the gate in `p()` runs exactly
+as Gboard wrote it. That is strictly safer than editing `p()`, which is what caused the `VerifyError`
+above.
+
+`Lpbv;` is the opposite case — `g:Z` and `h:[F` are **not** final, and array *contents* are writable
+regardless.
+
+### Distance per word lives in `h:[F`, not in a scalar
+
+`r()` offsets 92–108 walk the table and count how many entries the travelled distance has passed;
+that count is the number of words:
+
+```
+ 92: array-length v7, v5
+ 93: if-gt v2, v7, -> 109       # past the end: extrapolate
+ 95: v3 = v2 - 1
+ 97: aget v7, v5, v3            # h[index - 1]
+ 99: cmpg-float v8, v0, v7      # abs(delta) vs that threshold
+101: if-gez v8, -> 105          # passed it: keep walking
+103: v3 = (v2 - 1) * direction  # otherwise the count is the index reached
+```
+
+So scaling the table scales the swipe length, and a positive factor preserves the strictly
+increasing order the constructor checks at offset 108 — which matters, because failing that check
+sets `Lpbv;->g:Z`, points `h` at the **shared static** `Lmbs;->c:[F`, and makes `g()` bail at offset
+27. Anything scaling the table must skip that case rather than mutate a global.
+
+Past the last entry, offsets 109–118 extrapolate linearly using `ScrubMotionEventHandler->a:I`,
+which is written in `g()` and `l()` rather than the constructor. Scaling the table therefore does
+not scale very long swipes.
+
+### Reading a preference from patched bytecode
+
+`Lpnp;` is the preference store, and it exposes string-keyed getters alongside the resource-id ones:
+
+| | |
+|---|---|
+| `Lpnp;->N(Landroid/content/Context;)Lpnp;` | static, store from a Context |
+| `Lpnp;->b(Ljava/lang/String;I)I` | getInt(key, default) |
+| `Lpnp;->a(Ljava/lang/String;F)F` | getFloat(key, default) |
+| `Lpnp;->k(Ljava/lang/String;Z)Z` | getBoolean(key, default) |
+
+The string forms are what make patch-added settings practical: a newly added resource has no id
+until aapt2 recompiles, long after the bytecode patch runs, so a resource-id getter cannot address
+a preference the patch itself introduced. A literal key sidesteps it on both sides.
+
+A Context is in hand in `ScrubDeleteMotionEventHandler.<init>` and in the three-argument engine
+constructor. The four-argument one overwrites its Context register with `Resources` almost
+immediately, so there `this.o:Landroid/content/Context;` — set by
+`AbstractMotionEventHandler.<init>` and read the same way at offset 4 of `r()` — is the way to it.
+
 Activation additionally requires, in `o(IFF)Z`:
 
 - the finger to have left the rect captured at `ScrubMotionEventHandler->i` — the *starting key* —
@@ -247,8 +325,17 @@ Both are worth keeping: together they are what stops a tap being read as a delet
 
 - **What `Lpbv;`'s second argument (`true`/`false`) does.** Not read by either `g()` or `r()`.
 - **What the `-100xx` numbers mean individually** beyond the role each plays in `Lpbv;`.
-- **How password fields differ.** `PasswordIme;->d(Lnbj;)Z` handles −10063 but none of the other
-  three, which has not been chased down.
+## Password fields do scrub
+
+An earlier version of this document said `PasswordIme;->d(Lnbj;)Z` handled −10063 and none of the
+other three. That was an artefact of the byte-scan blind spot above. `PasswordIme` extends
+`AbstractIme`, not `LatinIme`, and dispatches through two packed-switches whose payloads decode to
+key ranges **−10063 .. −10061** and **−10054 .. −10050** — between them every scrub code, delete and
+move alike. It unpacks the signed count with the same `La;->W(Lnbj;)I` that `LatinIme` uses and
+feeds it to `Lnsz;->e(I)V`.
+
+So password fields are not an exception, and no input type is excluded from scrubbing anywhere in
+the engine.
 
 ## Why this matters for Flexboard
 
