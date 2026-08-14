@@ -190,10 +190,22 @@ private fun MutableMethod.substituteHoldDelay() {
  * percentage is the whole knob. Unlike `Lpbu;`, the table field is not final, and array contents
  * are writable regardless, so this needs no constructor-argument substitution.
  *
- * Done in `ScrubDeleteMotionEventHandler.<init>` rather than the shared engine constructor for two
- * reasons: it is scoped to delete by construction, needing no sentinel test, and the Context is
- * still in a parameter register there — the engine constructor overwrites its own Context register
- * with `Resources` before the table is built.
+ * Done in `ScrubDeleteMotionEventHandler.<init>` rather than the shared engine constructor because
+ * the Context is still in a parameter register there — the engine constructor overwrites its own
+ * Context register with `Resources` before the table is built.
+ *
+ * ## Why this one tests the sentinel
+ *
+ * Living in the delete constructor scopes it to delete, so it needs no sentinel test to avoid the
+ * spacebar and inline-suggestion handlers. It tests one anyway, and is alone among the three in
+ * having to: the other two run in the *shared* engine and so already gate on `Lpbv;->a:I` being
+ * negative, which means turning Flexboard off silences them for free. Without its own copy of that
+ * test this one would keep rescaling the distance of Gboard's own backspace swipe after the switch
+ * was turned off — the one setting that would leak out of a disabled Flexboard.
+ *
+ * The gate branches to the same target the rest of the block uses, which is the instruction after
+ * the super call: `return-void`. It reads no registers, so nothing there can be upset by the extra
+ * edge.
  *
  * A positive scale preserves the strictly-increasing invariant the engine checks, so this cannot
  * trip the `Lpbv;->g:Z` bail-out. Where that flag is already set the table points at a *shared
@@ -238,6 +250,8 @@ private fun MutableMethod.scaleStepTable() {
     addInstructionsWithLabels(
         superIndex + 1,
         """
+            iget v$table, v$configRegister, $CONFIG_START_KEY_FIELD
+            if-gez v$table, :$STEPS_DONE_LABEL
             invoke-static { v$contextRegister }, $PREFERENCE_STORE_GET
             move-result-object v$store
             const-string v$table, "$STEP_SCALE_KEY"

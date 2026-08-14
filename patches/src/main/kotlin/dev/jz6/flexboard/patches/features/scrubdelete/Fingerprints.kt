@@ -56,6 +56,7 @@ internal const val PREFERENCE_STORE = "Lpnp;"
 internal const val PREFERENCE_STORE_GET =
     "$PREFERENCE_STORE->N(Landroid/content/Context;)$PREFERENCE_STORE"
 internal const val PREFERENCE_GET_INT = "$PREFERENCE_STORE->b(Ljava/lang/String;I)I"
+internal const val PREFERENCE_GET_BOOLEAN = "$PREFERENCE_STORE->k(Ljava/lang/String;Z)Z"
 
 /**
  * The shared engine's entry point. Holds the single comparison that decides whether a scrub may

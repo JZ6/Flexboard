@@ -65,16 +65,28 @@ Removing Flexboard leaves glide typing off — tick it back on in Gboard's own s
 
 ### Settings
 
-Gboard's settings gain a **Flexboard** entry that opens a screen with three sliders:
+Gboard's settings gain a **Flexboard** entry that opens a screen with a switch and three sliders:
 
 | Setting | Default | What it does |
 |---|---|---|
+| **Swipe anywhere** | on | The master switch. Off puts Gboard back as it shipped — see below. |
 | **Swipe length** | 100% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe. |
 | **Max words per swipe** | 10 | The most words one swipe can delete. Set it to **1** to delete a single word however far you swipe; 10 means no limit. Swiping back still restores. |
 | **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
 
-All three are read out of Gboard's own preference store, so there is no separate settings app and
+All four are read out of Gboard's own preference store, so there is no separate settings app and
 nothing to keep in sync. The defaults reproduce the behaviour Flexboard shipped before they existed.
+
+**Turning the switch off does not turn the delete swipe off** — it hands it back to Gboard. The
+swipe works on the backspace key again and nowhere else, at Gboard's own distance and its 200 ms
+hold, and the three sliders grey out. That is the difference between the switch and unticking the
+patch in Morphe: the switch changes behaviour, unticking it means the code is never installed.
+
+Two things it deliberately does not do. **Glide typing stays off** — Flexboard turned it off and
+does not turn it back on, so tick it back on in Gboard's settings if you want it; the switch does
+stop Flexboard rewriting it, so it will stay on once you do. And changes are not instant: the
+gesture picks up the new setting the next time the keyboard is opened, and the preference writes
+stop at the next time Gboard's process starts.
 
 ### Flick keys for symbols
 

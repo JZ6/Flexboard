@@ -2,7 +2,6 @@ package dev.jz6.flexboard.patches.features.scrubdelete
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
-import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
@@ -11,6 +10,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import dev.jz6.flexboard.patches.features.scrubsettings.scrubTuningPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.usesField
 
@@ -39,6 +39,17 @@ import dev.jz6.flexboard.patches.shared.usesField
  * need to prove some register is dead at that point in a 259-instruction method. The same sentinel
  * is what [scrubTuningPatch] tests to scope its values to this handler.
  *
+ * ## The sentinel is also the off switch
+ *
+ * Because *everything* Flexboard does keys off that one negative value, writing `KEYCODE_DEL`
+ * instead turns the whole feature off and leaves Gboard exactly as it shipped — the delete swipe
+ * back on the backspace key alone, at stock distance and stock hold. So the first edit is not a
+ * constant but a choice, read from `flexboard_enabled` at construction.
+ *
+ * That covers three of the four edits for free: this patch's own `g()` gate, and
+ * [scrubTuningPatch]'s hold delay and word cap, all test the sentinel already. Its step-table
+ * scaling is the exception and carries its own copy of the test.
+ *
  * The other two subclasses are untouched. `ScrubMoveMotionEventHandler` (spacebar cursor) and
  * `InlineSuggestionScrubSpaceMotionEventHandler` both pass 62, so their gate still enforces.
  *
@@ -63,10 +74,17 @@ val swipeToDeletePatch = bytecodePatch(
     dependsOn(scrubTuningPatch)
 
     execute {
-        ScrubDeleteConstructorFingerprint.method.widenStartKeyToWildcard()
+        ScrubDeleteConstructorFingerprint.method.chooseStartKeyFromPreference()
         ScrubHandleMotionEventFingerprint.method.acceptWildcardStartKey()
     }
 }
+
+/**
+ * The switch on Flexboard's settings screen. Absent means on, so a fresh install behaves as it did
+ * before the setting existed. Duplicated as a literal in `FlexboardSettingsActivity.java` — a
+ * patch-added resource has no id until aapt2 recompiles, so bytecode cannot address one.
+ */
+internal const val SCRUB_ENABLED_KEY = "flexboard_enabled"
 
 /** `KeyEvent.KEYCODE_DEL`, the key Gboard scopes its word-scrub delete to. */
 private const val STOCK_START_KEYCODE = 67
@@ -76,6 +94,21 @@ private const val STOCK_START_KEYCODE = 67
  * is negative, so it cannot collide with a real key.
  */
 private const val WILDCARD_START_KEYCODE = "-0x1"
+
+/** `Lpbv;`, the per-handler config. Its constructor is the boundary the scratch scan stops at. */
+private const val CONFIG_CONSTRUCTOR = "Lpbv;-><init>(IZIIIIII)V"
+
+private const val DELETE_INIT_REGISTER_COUNT = 12
+
+private val DELETE_INIT_PARAMETERS = listOf("Landroid/content/Context;", "Lpbr;")
+
+/** A `35c` invoke packs its registers into nibbles, so nothing above v15 can be passed to one. */
+private const val NIBBLE_REGISTER_LIMIT = 16
+
+/** The store, the key string, and the default passed to the getter. */
+private const val START_KEY_SCRATCH_NEEDED = 3
+
+private const val STOCK_START_KEY_LABEL = "flexboard_stock_start_key"
 
 /**
  * Asserted rather than adapted to. `p2` resolving to a different register on an unexpected build
@@ -87,11 +120,51 @@ private const val SCRUB_HANDLE_REGISTER_COUNT = 13
 private const val WILDCARD_LABEL = "flexboard_any_start_key"
 
 /**
- * Replaces the `const/16 vN, 67` feeding `Lpbv;-><init>`'s first argument. The literal is matched
- * rather than the position, and exactly one match is required — the constructor also loads four
- * negative event codes and an attr reference, none of which can be confused with a keycode.
+ * Overrides the `const/16 vN, 67` feeding `Lpbv;-><init>`'s first argument with the wildcard, but
+ * only when the preference says so. The literal is matched rather than the position, and exactly one
+ * match is required — the constructor also loads four negative event codes and an attr reference,
+ * none of which can be confused with a keycode.
+ *
+ * The stock constant is **kept** and conditionally overwritten rather than replaced, which is what
+ * makes "off" mean stock rather than broken:
+ *
+ * ```
+ *   const/16 v1, 67                 <- stock, untouched
+ *   …read flexboard_enabled…
+ *   if-eqz vStore, :stock_start_key
+ *   const/16 v1, -1
+ *   :stock_start_key
+ *   const/4 v2, 1                   <- stock resumes
+ * ```
+ *
+ * Three things have to hold, and each is asserted rather than assumed:
+ *
+ *  - **Every instruction between the constant and `Lpbv;-><init>` is itself a `const`.** That is
+ *    what proves the registers they write are dead at the insertion point: they are written before
+ *    anything reads them, so borrowing them for the preference call cannot lose a live value. If
+ *    Gboard ever computes one of those arguments instead of loading it, this fails loudly.
+ *  - **Nothing writes the Context register before the insertion point.** It is derived from the
+ *    Dalvik calling convention — parameters occupy the last `ins` registers — rather than guessed.
+ *  - **The scratch registers fit in a nibble**, because a `35c` invoke cannot address above v15.
+ *
+ * One thing is worth naming because it looks alarming and is not. `v0` holds an **uninitialised**
+ * `Lpbv;` across the inserted block, since `new-instance` runs before the arguments are built. That
+ * is exactly the shape javac emits for `new Foo(cond ? a : b)`: a forward branch merges the same
+ * uninitialised type from the same allocation site, which verifies fine. Only a *backward* branch,
+ * or an exception handler, with an uninitialised reference live is rejected.
  */
-private fun MutableMethod.widenStartKeyToWildcard() {
+private fun MutableMethod.chooseStartKeyFromPreference() {
+    val registerCount = implementation?.registerCount
+        ?: error("$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init> has no implementation")
+    check(registerCount == DELETE_INIT_REGISTER_COUNT) {
+        "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init> has $registerCount registers, expected " +
+            "$DELETE_INIT_REGISTER_COUNT — refusing to guess which registers are free"
+    }
+    check(parameterTypes.map(Any::toString) == DELETE_INIT_PARAMETERS) {
+        "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init> takes $parameterTypes, " +
+            "expected $DELETE_INIT_PARAMETERS"
+    }
+
     val matches = instructions.withIndex().filter { (_, instruction) ->
         instruction.opcodeName() == "CONST_16" &&
             (instruction as? NarrowLiteralInstruction)?.narrowLiteral == STOCK_START_KEYCODE
@@ -101,9 +174,60 @@ private fun MutableMethod.widenStartKeyToWildcard() {
             "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>, found ${matches.size}. " +
             "Gboard's scrub delete no longer starts on KEYCODE_DEL, or the constructor changed."
     }
-    val (index, instruction) = matches.single()
-    val register = (instruction as OneRegisterInstruction).registerA
-    replaceInstruction(index, "const/16 v$register, $WILDCARD_START_KEYCODE")
+    val (keyIndex, keyInstruction) = matches.single()
+    val startKeyRegister = (keyInstruction as OneRegisterInstruction).registerA
+
+    val configIndex = instructions.indexOfSoleCall(
+        CONFIG_CONSTRUCTOR,
+        "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>",
+    )
+    check(keyIndex < configIndex) {
+        "The keycode constant is at $keyIndex, after the $CONFIG_CONSTRUCTOR call at $configIndex"
+    }
+
+    // `this` occupies the first parameter register, so the Context is the one after it.
+    val contextRegister = registerCount - (parameterTypes.size + 1) + 1
+    val clobbersContext = (0 until keyIndex).any {
+        (instructions[it] as? OneRegisterInstruction)?.registerA == contextRegister
+    }
+    check(!clobbersContext) {
+        "v$contextRegister is written before index $keyIndex, so it may no longer hold the Context"
+    }
+
+    val window = (keyIndex + 1 until configIndex).map { instructions[it] }
+    val computed = window.firstOrNull { !it.opcodeName().startsWith("CONST") }
+    check(computed == null) {
+        "`${computed?.opcode?.name}` sits between the keycode constant and $CONFIG_CONSTRUCTOR — " +
+            "the arguments are no longer all constants, so no register can be shown to be dead"
+    }
+    val scratch = window
+        .mapNotNull { (it as? OneRegisterInstruction)?.registerA }
+        .distinct()
+        .filter { it != startKeyRegister && it != contextRegister && it < NIBBLE_REGISTER_LIMIT }
+        .take(START_KEY_SCRATCH_NEEDED)
+    check(scratch.size == START_KEY_SCRATCH_NEEDED) {
+        "Only ${scratch.size} of the $START_KEY_SCRATCH_NEEDED registers needed are free in " +
+            "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>"
+    }
+    val (store, key, fallback) = scratch
+
+    // Captured before the insertion shifts indices; the label resolves by instruction identity.
+    val stockResumes = instructions[keyIndex + 1]
+
+    addInstructionsWithLabels(
+        keyIndex + 1,
+        """
+            invoke-static { v$contextRegister }, $PREFERENCE_STORE_GET
+            move-result-object v$store
+            const-string v$key, "$SCRUB_ENABLED_KEY"
+            const/4 v$fallback, 0x1
+            invoke-virtual { v$store, v$key, v$fallback }, $PREFERENCE_GET_BOOLEAN
+            move-result v$store
+            if-eqz v$store, :$STOCK_START_KEY_LABEL
+            const/16 v$startKeyRegister, $WILDCARD_START_KEYCODE
+        """,
+        ExternalLabel(STOCK_START_KEY_LABEL, stockResumes),
+    )
 }
 
 /**

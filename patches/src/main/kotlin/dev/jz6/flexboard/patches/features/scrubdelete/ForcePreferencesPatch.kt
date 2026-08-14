@@ -1,9 +1,11 @@
 package dev.jz6.flexboard.patches.features.scrubdelete
 
 import app.morphe.patcher.Fingerprint
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
+import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
+import app.morphe.patcher.util.smali.ExternalLabel
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 
 /**
@@ -32,11 +34,19 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
  * caches only refresh when the keyboard is shown, so glide typing kept coming back. See
  * `docs/glide-detection.md`.
  *
- * There is no restore. With no in-app toggle there is nothing to restore *to* — removing
- * Flexboard leaves glide typing off, and it is ticked back on in Gboard's own settings.
+ * ## Both writes are skipped when Flexboard is switched off
+ *
+ * There is still no restore: turning the switch off leaves glide typing off, to be ticked back on
+ * in Gboard's own settings. Skipping the writes is what makes that possible rather than merely
+ * documented — left unconditional, this would re-force glide typing off at every app start, so
+ * ticking it back on would silently undo itself on the next launch.
+ *
+ * The `enable_scrub_delete` write is skipped for symmetry rather than necessity. It is Gboard's own
+ * default and harmless to leave on, but a disabled Flexboard has no business writing preferences.
  */
 internal val forceScrubPreferencesPatch = bytecodePatch(
-    description = "Forces Gboard's scrub delete preference on and glide typing off at app start."
+    description = "Forces Gboard's scrub delete preference on and glide typing off at app start, " +
+        "unless Flexboard's own switch is off."
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
@@ -83,6 +93,8 @@ private const val GLIDE_TYPING_PREFERENCE = "0x7f14097b" // enable_gesture_input
 
 private const val APPLY_PREFERENCES_REGISTER_COUNT = 13
 
+private const val NOT_ENABLED_LABEL = "flexboard_not_enabled"
+
 private fun MutableMethod.forcePreferences(setterDescriptor: String) {
     val registerCount = implementation?.registerCount
         ?: error("LatinApp->d(Lpnp;)V has no implementation")
@@ -94,15 +106,28 @@ private fun MutableMethod.forcePreferences(setterDescriptor: String) {
         "LatinApp->d takes $parameterTypes, expected a single Lpnp;"
     }
 
+    // Captured before the insertion shifts indices; the label resolves by instruction identity.
+    val stockResumes = instructions.first()
+
     // v0..v2 are dead at method entry — the stock body's first act is to load v0 with a string —
     // so they are free to claim. The store is copied out of its parameter register with
     // `move-object/from16`, whose 16-bit source field can address it wherever it lands; an
     // `invoke` could not, and emitting `pN` into one is what produced an unappliable bundle once
     // before. See docs/register-encoding.md.
-    addInstructions(
+    //
+    // The branch leaves v0 and v1 holding different types on the two edges — an int against a
+    // `Boolean` — which is harmless because the stock body writes both before reading either.
+    // `flickSymbolsPatch` relies on exactly the same thing in this method.
+    addInstructionsWithLabels(
         0,
         """
             move-object/from16 v2, p1
+
+            const-string v0, "$SCRUB_ENABLED_KEY"
+            const/4 v1, 0x1
+            invoke-virtual {v2, v0, v1}, $PREFERENCE_GET_BOOLEAN
+            move-result v0
+            if-eqz v0, :$NOT_ENABLED_LABEL
 
             const v0, $SCRUB_DELETE_PREFERENCE
             const/4 v1, 0x1
@@ -116,5 +141,6 @@ private fun MutableMethod.forcePreferences(setterDescriptor: String) {
             move-result-object v1
             invoke-virtual {v2, v0, v1}, $setterDescriptor
         """,
+        ExternalLabel(NOT_ENABLED_LABEL, stockResumes),
     )
 }

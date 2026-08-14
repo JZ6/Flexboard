@@ -19,7 +19,10 @@ import android.view.WindowInsetsController;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Flexboard's settings screen.
@@ -58,6 +61,8 @@ import android.widget.TextView;
  */
 public final class FlexboardSettingsActivity extends Activity {
 
+    /** Must match SCRUB_ENABLED_KEY in ScrubDeleteAnywherePatch.kt. */
+    private static final String KEY_ENABLED = "flexboard_enabled";
     /** Must match STEP_SCALE_KEY in ScrubTuningPatch.kt. */
     private static final String KEY_STEP_SCALE = "flexboard_scrub_step_scale";
     /** Must match MAX_WORDS_KEY in ScrubTuningPatch.kt. */
@@ -81,6 +86,14 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final String SUBTITLE = "Swipe anywhere to delete the previous word.";
     private static final String SECTION = "Swipe to delete";
 
+    private static final String ENABLED_TITLE = "Swipe anywhere";
+    private static final String ENABLED_SUMMARY =
+            "Off puts Gboard back as it shipped: the delete swipe works on the backspace key and "
+                    + "nowhere else, at Gboard's own distance and hold. Glide typing does not come "
+                    + "back on its own — turn it on in Gboard's settings if you want it.";
+    private static final String TAKES_EFFECT =
+            "Changes apply the next time the keyboard is opened.";
+
     private static final int COLOR_DARK_BACKGROUND = 0xFF202124;
     private static final int COLOR_DARK_TITLE = 0xFFE8EAED;
     private static final int COLOR_DARK_SUMMARY = 0xFF9AA0A6;
@@ -96,10 +109,15 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final int TIGHT_DP = 3;
     private static final int LOOSE_DP = 8;
 
+    private static final float DISABLED_ALPHA = 0.4f;
+
     /** Renders the stored int as the value shown beside a row's title. */
     private interface Label {
         String of(int value);
     }
+
+    /** Everything the switch greys out. Collected as the rows are built. */
+    private final List<View> tunables = new ArrayList<>();
 
     private SharedPreferences preferences;
     private int colorBackground;
@@ -131,6 +149,7 @@ public final class FlexboardSettingsActivity extends Activity {
 
         addHeading(column);
         addSectionHeader(column);
+        addEnabledSwitch(column);
 
         addSlider(
                 column,
@@ -165,6 +184,14 @@ public final class FlexboardSettingsActivity extends Activity {
                 HOLD_DELAY_MAX,
                 HOLD_DELAY_DEFAULT,
                 value -> value == 0 ? "Off" : value + " ms");
+
+        TextView footnote = new TextView(this);
+        footnote.setText(TAKES_EFFECT);
+        footnote.setTextColor(colorSummary);
+        footnote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        column.addView(footnote, marginTop(dp(EDGE_DP)));
+
+        setTunablesEnabled(preferences.getBoolean(KEY_ENABLED, true));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(colorBackground);
@@ -274,6 +301,58 @@ public final class FlexboardSettingsActivity extends Activity {
     }
 
     /**
+     * The master switch. Everything below it is Flexboard's; turning it off hands the gesture back
+     * to Gboard unchanged.
+     *
+     * <p>The switch is deliberately not in {@link #tunables} — it is the thing doing the disabling.
+     */
+    private void addEnabledSwitch(LinearLayout parent) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView titleView = new TextView(this);
+        titleView.setText(ENABLED_TITLE);
+        titleView.setTextColor(colorTitle);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        row.addView(
+                titleView,
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        Switch toggle = new Switch(this);
+        toggle.setChecked(preferences.getBoolean(KEY_ENABLED, true));
+        // Tinted for the same reason the sliders are: the widget follows the theme, the palette
+        // follows the system night setting, and untinted they disagree in light mode.
+        ColorStateList checkedAccent =
+                new ColorStateList(
+                        new int[][] {new int[] {android.R.attr.state_checked}, new int[0]},
+                        new int[] {colorAccent, colorSummary});
+        toggle.setThumbTintList(checkedAccent);
+        toggle.setTrackTintList(checkedAccent);
+        toggle.setOnCheckedChangeListener(
+                (button, isChecked) -> {
+                    preferences.edit().putBoolean(KEY_ENABLED, isChecked).apply();
+                    setTunablesEnabled(isChecked);
+                });
+        row.addView(toggle);
+
+        parent.addView(row, marginTop(dp(ROW_TOP_DP)));
+
+        TextView summaryView = new TextView(this);
+        summaryView.setText(ENABLED_SUMMARY);
+        summaryView.setTextColor(colorSummary);
+        summaryView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        parent.addView(summaryView, marginTop(dp(TIGHT_DP)));
+    }
+
+    private void setTunablesEnabled(boolean enabled) {
+        for (View view : tunables) {
+            view.setEnabled(enabled);
+            view.setAlpha(enabled ? 1f : DISABLED_ALPHA);
+        }
+    }
+
+    /**
      * One row: title with its current value on the right, summary beneath, slider under that.
      *
      * <p>{@link SeekBar} counts from zero, so the stored value is offset by {@code min} on the way
@@ -344,6 +423,13 @@ public final class FlexboardSettingsActivity extends Activity {
                     public void onStopTrackingTouch(SeekBar seekBar) {}
                 });
         parent.addView(bar, marginTop(dp(LOOSE_DP)));
+
+        // The whole row dims together. The SeekBar is the only one that also has to stop
+        // responding, which setEnabled(false) handles.
+        tunables.add(titleView);
+        tunables.add(valueView);
+        tunables.add(summaryView);
+        tunables.add(bar);
     }
 
     private LinearLayout.LayoutParams marginTop(int margin) {
