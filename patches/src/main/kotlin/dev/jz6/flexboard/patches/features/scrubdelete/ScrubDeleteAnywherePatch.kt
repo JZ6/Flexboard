@@ -53,6 +53,10 @@ val swipeToDeletePatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
+    // Widening the gate is pointless if the handler is never attached, and unusable while glide
+    // typing is live on the same pointer stream.
+    dependsOn(forceScrubPreferencesPatch)
+
     execute {
         ScrubDeleteConstructorFingerprint.method.widenStartKeyToWildcard()
         ScrubHandleMotionEventFingerprint.method.acceptWildcardStartKey()

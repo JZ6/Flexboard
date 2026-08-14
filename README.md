@@ -8,9 +8,10 @@ corner and back for every correction. Flexboard puts that gesture wherever your 
 It is a [Morphe](https://github.com/MorpheApp) patch bundle for Gboard
 `17.7.7.932364120-release-arm64-v8a`, and only that build.
 
-> **Status: early rebuild.** This repository was restarted on the Morphe patches template. The
-> patch listed below is the template's example and does nothing useful yet. The previous working
-> implementation is preserved at [JZ6/Flexboard0](https://github.com/JZ6/Flexboard0).
+> **Status: pre-release.** This is a rebuild on the Morphe patches template, and releases are
+> currently published to the **pre-release** channel only — enable pre-releases on the patch
+> source in Morphe to see them. The earlier implementation is preserved at
+> [JZ6/Flexboard0](https://github.com/JZ6/Flexboard0).
 
 ## Install
 
@@ -42,6 +43,25 @@ Both keyboards stay installed, so you can switch back whenever you like.
 #### A list of your patches will automatically be shown here after your first patches release is created.
 
 <!-- PATCHES_END -->
+
+## How it works, and what it changes
+
+Flexboard does not add a gesture. Gboard already has one — swiping on the backspace key deletes
+the previous word — and everything about it, including dragging back to restore, works across the
+whole keyboard once started. The only thing keeping it to the backspace key is a single check on
+which key your finger landed on. Flexboard removes that check for the delete gesture, and leaves
+the spacebar cursor-drag alone.
+
+So the feel, the thresholds and the restore behaviour are all Gboard's own.
+
+It also changes two of Gboard's settings at startup, because the gesture cannot work otherwise:
+
+| Setting | Set to | Why |
+|---|---|---|
+| **Delete swipe** | on | The gesture is Gboard's; with this off it is never attached at all |
+| **Glide typing** | off | A leftward drag across the letters is also a glide input, so the two cannot both be live |
+
+Removing Flexboard leaves glide typing off — tick it back on in Gboard's own settings.
 
 ## Roadmap
 
