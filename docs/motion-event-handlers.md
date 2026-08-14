@@ -456,3 +456,60 @@ Read-only inspection of the APK with Python; no apktool, aapt or adb.
 3. **Read the handlers.** Locate the class in the dex by name — these are not obfuscated — and
    disassemble the constructors. The comparison against the sibling is what makes the config
    struct legible; neither constructor means much alone.
+
+## Event codes, and the undo that already exists
+
+The scrub handlers dispatch **event codes**, and `Lovm;-><clinit>()V` is a code-to-name table — a
+long run of `const/16 vN, CODE` immediately followed by `const-string vM, 'NAME'`. Decoding it is
+the fastest way to learn what a code means:
+
+| | | | |
+|---|---|---|---|
+| `-10050` | `SCRUB_DELETE_START` | `-10133` | `DELETE_WORD` |
+| `-10051` | `SCRUB_DELETE` | `-10134` | `DELETE_WORD_OR_PUNCTUATION` |
+| `-10052` | `SCRUB_DELETE_FINISH` | `-10135` | `DELETE_SENTENCE` |
+| `-10063` | `SCRUB_DELETE_CANCEL` | `-10136` | `DELETE_ALL` |
+| `-10045` | `UNDO` | `-10137` | `UNDO_MULTI_DELETION` |
+
+`LatinIme->d(Lnbj;)Z` is where they land — 1,608 instructions, 36 registers. Its scrub codes are
+routed by a `packed-switch` whose payload decodes to `-10050 → pc 2520`, `-10051 → 2952`,
+`-10052 → 2969`, `-10063 → 3150`. **Switch keys never appear in the instruction stream**, so
+byte-scanning for a code will not find the handler it routes to; decode the payload, or anchor on a
+call unique to the handler. `Lnsz;->a(I)Ljava/lang/CharSequence;` is called exactly once in the
+whole method, which is what makes `SCRUB_DELETE_FINISH` addressable.
+
+### The delete already records its own undo
+
+This was the surprise. `SCRUB_DELETE_FINISH` does:
+
+```java
+CharSequence text = this.S.a(count);            // Lnsz; deletes, and returns what it removed
+if (text.length() > 0 && this.C().B(this.B(), text))
+    this.y.b(text, this.H);                      // Lqcy; — a one-slot undo store
+```
+
+`Lqcy;` is as small as it looks: `b(CharSequence, boolean)` set, `c()` clear, `d()` available?,
+`a()` get, where `a()` wraps the text in an `Lnpx;` via `Lnpu;` and returns an `Optional`. The
+restore is inline in the same method on `UNDO_MULTI_DELETION`: check `d()`, pull `a()`, re-commit
+through `AbstractIme->s(Lnpx;Z)V`, then `c()`. Its gate is
+`Lned;->a("nga_enable_undo_delete", true)` — **default on**.
+
+So a scrub delete is undoable by Gboard already; nothing consumes it. Two caveats before relying on
+it: `Lqcy;->c()` is called from six points in `d()` alone and from `k()`, `G()`, `H()`, `I()`, `J()`
+and `s()`, so the slot survives roughly one further input; and it holds one phrase, not a stack.
+
+### A rightward scrub is a no-op by construction
+
+`Lnsz;->e(I)` opens with `count = Math.min(0, count)`. Positive counts clamp to zero, so a rightward
+drag never deletes forward — which is both a safety property and the reason a right swipe was free
+to be given a meaning. The clamp is inside `Lnsz;`, not in the event, so the **signed** count still
+reaches the finish handler and `count > 0` is a reliable "this was a rightward gesture".
+
+### Reusing a stock branch instead of naming a target
+
+The finish handler opens `iget-boolean vFlag, vThis, AbstractIme->N:Z` / `if-nez vFlag, :handled`,
+where `:handled` is the stock treat-as-handled exit. A patch that wants that exit should **set
+`vFlag`** and let the stock test jump, rather than resolve a label reachable only through the
+switch. It also avoids an early `return`, which would skip the `Trace.endSection()` in the epilogue
+and leave the trace stack unbalanced — the method body sits inside a `try` whose handler exists to
+call it.

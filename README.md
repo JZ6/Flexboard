@@ -94,6 +94,23 @@ stop Flexboard rewriting it, so it will stay on once you do. And changes are not
 gesture picks up the new setting the next time the keyboard is opened, and the preference writes
 stop at the next time Gboard's process starts.
 
+### Swipe right to undo
+
+Swiping right *during* a delete puts the words back — that is Gboard's own behaviour, and it stops
+the moment you lift your finger. Swiping right **after** you have lifted now undoes the delete too.
+
+This is Gboard's undo, not a reimplementation. Its delete swipe already records what it removed, and
+it already knows how to put it back; the only thing missing was a way to ask, and a rightward swipe
+was doing nothing at all beforehand.
+
+Two limits worth knowing, both inherited rather than chosen:
+
+- **It only works as the very next thing you do.** Gboard keeps one deleted phrase and clears it on
+  almost any other input, so typing a character after the delete loses the undo.
+- **One level.** Undo once and the slot is empty; a second right-swipe does nothing.
+
+It is a separate patch, so it can be unticked in Morphe if you do not want it.
+
 ### Flick keys for symbols
 
 Gboard can already enter a key's hinted symbol when you pull down on it — **Flick keys to enter
@@ -110,24 +127,19 @@ deliberately does not change that setting for you, since nothing at runtime need
 It is a separate patch, so it can be unticked in Morphe if you do not want it.
 
 ## Roadmap
+swipe right to undo delete
 
-single word swipe delete
-
-gesture down on a to select all
-
-add toggle to turn on swipe to delete or off
 
 flick up to undo autocorrect 
 
-auto turn delete swipe on, and then grey it out
 
-add select all copy paste hotkeys
-
-Configurable Swipe distance
-
-Make the configuration more user intuitive, like short medium long instead of ms or px
+set default swipe length to 25%, and max words to 1
 
 Hot keys as new tool bar objects
+
+gesture down on a to select all
+
+add select all copy paste hotkeys
 
 increased tool bar size fit more buttons
 
