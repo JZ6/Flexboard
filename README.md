@@ -8,16 +8,16 @@ corner and back for every correction. Flexboard puts that gesture wherever your 
 It is a [Morphe](https://github.com/MorpheApp) patch bundle for Gboard
 `17.7.7.932364120-release-arm64-v8a`, and only that build.
 
-> **Status: pre-release.** This is a rebuild on the Morphe patches template, and releases are
-> currently published to the **pre-release** channel only — enable pre-releases on the patch
-> source in Morphe to see them. The earlier implementation is preserved at
-> [JZ6/Flexboard0](https://github.com/JZ6/Flexboard0).
-
 ## Install
 
-Click here to add Flexboard to Morphe: https://morphe.software/add-source?github=JZ6/Flexboard
+<p align="center">
+  <a href="https://morphe.software/add-source?github=JZ6/Flexboard" title="Add Flexboard as a patch source in Morphe">
+    <img src="docs/assets/add-to-morphe.svg" alt="Add Flexboard to Morphe" width="320"/>
+  </a>
+</p>
 
-Or manually add this repository URL as a patch source in Morphe: https://github.com/JZ6/Flexboard
+Or add the repository URL by hand as a patch source in Morphe:
+`https://github.com/JZ6/Flexboard`
 
 Patch Gboard from that source in Morphe and install the result. The patched build installs as a
 separate app rather than replacing the Gboard you already have, so once it is on the device:
