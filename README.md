@@ -30,17 +30,25 @@ Both keyboards stay installed, so you can switch back whenever you like.
 ## Patches
 
 <!-- PATCHES_START EXPANDED -->
+> **[v0.0.0](https://github.com/JZ6/Flexboard/releases/tag/v0.0.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;5 patches total
+<details open>
+<summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;5 patches</summary>
+<br>
 
-<!-- Do not modify this section by hand. The patch list is generated when release.yml creates a
-     new release.
+**🎯 Supported versions:**
 
-     If you wish for the patches list to be collapsed, then remove the word 'EXPANDED' from the
-     comment tag above.
+| 17.7.7.932364120-release-arm64-v8a |
+| :---: |
 
-     Anything between the PATCHES_START and PATCHES_END markers is overwritten on every release,
-     so keep hand-written prose outside them. -->
+| 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
+|----------|----------------|-----------|
+| [Bypass Gboard Signature](#bypass-gboard-signature) | Bypass Gboard's signature whitelist checks and force them to pass. |  |
+| [Flick Keys for Symbols](#flick-keys-for-symbols) | Turn on Gboard's "Flick keys to enter symbols" — pull down on a key to enter the symbol hinted in its corner. Written once as a default, so it can still be turned off in Gboard's own settings. |  |
+| [Install as Gboard Clone](#install-as-gboard-clone) | Rename the package to dev.jz6.com.google.android.inputmethod.latin so the patched build installs alongside the official Gboard instead of replacing it. |  |
+| [Swipe Right to Undo](#swipe-right-to-undo) | Swipe right after deleting to put the words back. Uses Gboard's own undo, which already records what a delete swipe removed. |  |
+| [Swipe to Delete](#swipe-to-delete) | Swipe left anywhere on the keyboard to delete the previous word, and swipe right to restore it. Uses Gboard's own word-scrub engine, so it behaves exactly like swiping on the backspace key already does — only it can start anywhere. |  |
 
-#### A list of your patches will automatically be shown here after your first patches release is created.
+</details>
 
 <!-- PATCHES_END -->
 
