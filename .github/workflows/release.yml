@@ -103,6 +103,8 @@ jobs:
             exit 1
           fi
 
+      # This re-runs `jar` and so DESTROYS the classes.dex that `buildAndroid` merged in — see the
+      # re-merge step below, which must stay after it.
       - name: Regenerate the patch inventory
         if: steps.decide.outputs.release == 'true'
         env:
@@ -115,6 +117,40 @@ jobs:
           mv patches-list.json.tmp patches-list.json
           python3 .github/scripts/generate_patches_readme.py \
             "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" patches-list.json README.md
+
+      # `buildAndroid` compiles the patches to DEX and merges classes.dex *into the jar that `jar`
+      # already wrote*, mutating it in place. Any later Gradle run that re-runs `jar` — and
+      # generatePatchesList does, via `build` — sees a changed output, rebuilds the archive, and
+      # drops the DEX. So the merge has to be the last thing that touches the file.
+      #
+      # The manager loads patches on Android through a DEX class loader. Without classes.dex the
+      # bundle still downloads, still parses, still reports its name and version, and contains
+      # every patch as a JVM .class — and offers zero patches on device. That is what shipped in
+      # v0.0.0 through v1.0.0. The template avoided it only by ordering: semantic-release ran
+      # generatePatchesList in `prepare`, then `./gradlew publish` in `publish`, and the Morphe
+      # Gradle plugin hangs buildAndroid off `publish`.
+      - name: Re-merge the Android DEX
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew buildAndroid --no-daemon
+
+      # The one check that would have caught the above. Everything else about a DEX-less bundle
+      # looks correct, including the post-publish verification, which compared the uploaded asset
+      # against the same broken file it was built from.
+      - name: Check the bundle is loadable on Android
+        if: steps.decide.outputs.release == 'true'
+        env:
+          MPP: ${{ steps.decide.outputs.mpp }}
+        run: |
+          set -euo pipefail
+          if ! unzip -l "$MPP" | grep -qE '[[:space:]]classes\.dex$'; then
+            echo "::error::$MPP contains no classes.dex, so Morphe would load zero patches from it."
+            unzip -l "$MPP" | head -20
+            exit 1
+          fi
+          echo "classes.dex present:"
+          unzip -l "$MPP" | grep -E '[[:space:]]classes\.dex$'
 
       # This file *is* the release as far as Morphe is concerned; the GitHub release is only where
       # the .mpp lives. created_at must carry no timezone — the manager parses it as a kotlinx

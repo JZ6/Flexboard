@@ -102,7 +102,7 @@ happens to live; the JSON is what announces it.
 deserialisation in the manager with no useful error. **`created_at` must carry no timezone**: it is
 parsed as a kotlinx `LocalDateTime`, so a trailing `Z` or an offset breaks it.
 
-## The three failure modes this guards against
+## The four failure modes this guards against
 
 Each of these fails *silently*, which is why the workflow checks rather than trusts.
 
@@ -121,6 +121,24 @@ against the manager, and the guard runs it before trusting it.
 must be `v<version>`, the asset must be `patches-<version>.mpp`, and the JSON must say the same.
 The workflow writes all three from one input and asserts the built file is named as expected, so
 they cannot drift.
+
+**A bundle with no `classes.dex`.** The manager loads patches on Android through a DEX class
+loader. `buildAndroid` compiles the patches with D8 and merges `classes.dex` **into the jar `jar`
+already wrote**, mutating it in place — so any later Gradle run that re-runs `jar` sees a changed
+output, rebuilds the archive, and drops the DEX. `generatePatchesList` does exactly that, via
+`build`.
+
+A bundle in that state is convincing: it downloads, parses, reports the right name and version, and
+contains every patch as a JVM `.class`, so `loadPatchesFromJar` on the JVM enumerates them all and
+`patches-list.json` comes out correct. On device it offers **zero patches**. It shipped that way in
+v0.0.0 through v1.0.0.
+
+The template only avoided this by ordering: semantic-release ran `generatePatchesList` in its
+`prepare` step and `./gradlew publish` in its `publish` step, and the Morphe Gradle plugin hangs
+`buildAndroid` off `publish` — so the merge happened last by luck of the lifecycle rather than by
+design. The workflow now re-merges after the inventory and asserts `classes.dex` is present before
+publishing. **Any new Gradle invocation added after the build must come before that re-merge**, or
+it will silently undo it again.
 
 **A tag left behind by a rewrite.** Nothing reads tags to *decide* a version any more — they only
 answer "have I already shipped this exact string" — so the worst a rewrite can do is make CI attempt
