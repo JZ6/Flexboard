@@ -1,8 +1,9 @@
 # Gboard's settings screens
 
-Notes toward greying out Gboard's glide typing checkbox while the swipe gesture is enabled —
-preventing the conflict rather than reacting to it. Not implemented. This records what is known
-so the next attempt starts from the dead end rather than rediscovering it.
+How Flexboard adds rows to Gboard's settings screens, and how it greys out Gboard's own glide
+typing checkbox while the swipe gesture is enabled — preventing the conflict rather than reacting
+to it. This is now implemented; the sections below are in the order they were worked out, so the
+dead ends are kept alongside what replaced them rather than deleted.
 
 ## Why bother
 

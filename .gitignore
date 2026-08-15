@@ -123,13 +123,10 @@ gradle-app.setting
 __pycache__/
 *.py[cod]
 
-# Dependency directories
-node_modules/
-
-# NOTE: gradle.properties is deliberately TRACKED — semantic-release commits the release version
-# into it, so it cannot be ignored. (The rule that used to sit here, `./gradle.properties`, never
-# matched anything: a leading `./` is not valid gitignore syntax, so it implied a protection that
-# did not exist.)
+# NOTE: gradle.properties is deliberately TRACKED — its `version` line is the release trigger, so
+# it cannot be ignored. (The rule that used to sit here, `./gradle.properties`, never matched
+# anything: a leading `./` is not valid gitignore syntax, so it implied a protection that did not
+# exist.)
 #
 # Never put `gpr.user` / `gpr.key` in it. Morphe registry credentials go in
 # ~/.gradle/gradle.properties, which is outside the repository.
