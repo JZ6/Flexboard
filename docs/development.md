@@ -57,7 +57,7 @@ falls back to.
 ## Releasing
 
 Bumping `version` in `gradle.properties` **is** the release. CI sees a version with no matching tag,
-builds the bundle, writes `patches-bundle.json`, tags, and publishes. `tools/bump 0.0.2` does the
+builds the bundle, writes `patches-bundle.json`, tags, and publishes. `tools/bump 1.0.1-dev.1` does the
 same thing with the checks run before the push rather than after it.
 
 The branch is the channel: `dev` publishes a pre-release, `main` a stable one. That is not a

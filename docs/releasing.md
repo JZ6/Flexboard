@@ -8,7 +8,7 @@ history rewrite cannot change what the next version will be.
 **Bumping the version is the release.**
 
 ```bash
-tools/bump 0.0.2
+tools/bump 1.0.1-dev.1
 ```
 
 That edits `version` in `gradle.properties`, shows you what will be published, and pushes once you
@@ -28,7 +28,7 @@ re-running a run that failed partway.
 
 ### The rule
 
-> `gradle.properties` says `0.0.2` **and** no `v0.0.2` tag exists → release it.
+> `gradle.properties` says `1.0.1-dev.1` **and** no `v1.0.1-dev.1` tag exists → release it.
 
 Deliberately not "the file changed in this commit". This version is idempotent: amends,
 force-pushes, re-runs and several commits in one push all behave, and re-running on an
@@ -59,6 +59,29 @@ to release from one.
 With pre-releases enabled the manager fetches **both** branches and keeps whichever `version` is
 higher, ties going to `dev`.
 
+## Choosing the version
+
+Pre-releases on `dev` are `MAJOR.MINOR.PATCH-dev.N` — `1.0.1-dev.1`, `1.0.1-dev.2`, and so on.
+Stable releases on `main` drop the suffix entirely.
+
+**The dot before the counter is load-bearing.** Morphe orders two pre-releases by parsing the final
+dot-segment as a number, and falls back to a plain string comparison when it will not parse. So
+`-dev.10` parses as ten and correctly beats `-dev.9`, while `-pr10` yields the string `"0-pr10"` —
+under which `1.0.0-pr9` outranks `1.0.0-pr10` and the tenth pre-release is silently never offered.
+`check_version.sh` rejects any suffix that is not `-<dev|beta|rc|alpha|preview>.<number>`.
+
+**A pre-release always ranks below the stable version of the same base**: `1.0.0-dev.1 < 1.0.0`.
+Two consequences worth internalising:
+
+- Once `main` ships `1.0.0`, no `1.0.0-dev.N` can ever be seen again. Move the base up to
+  `1.0.1-dev.1` rather than continuing the counter.
+- Cutting a stable release is therefore just bumping `dev` to the bare version and fast-forwarding
+  to `main`, which then outranks every pre-release that preceded it.
+
+`1.0.0-pr0` predates this rule. It orders correctly against stable versions so it stays published,
+but it gets no `-pr1`: the next pre-release is `1.0.1-dev.1`, because `1.0.0-dev.1` would rank
+*below* the `1.0.0-pr0` already out there.
+
 ## What Morphe actually reads
 
 Only `patches-bundle.json`. Not the tag, not the GitHub release, not `patches-list.json`, not the
@@ -68,10 +91,10 @@ happens to live; the JSON is what announces it.
 ```json
 {
   "created_at": "2026-08-15T06:01:42",
-  "description": "## 0.0.2\n\n- feat: a thing",
-  "download_url": "https://github.com/OWNER/REPO/releases/download/v0.0.2/patches-0.0.2.mpp",
+  "description": "## 1.0.1-dev.1\n\n- feat: a thing",
+  "download_url": "https://github.com/OWNER/REPO/releases/download/v1.0.1-dev.1/patches-1.0.1-dev.1.mpp",
   "signature_download_url": "",
-  "version": "0.0.2"
+  "version": "1.0.1-dev.1"
 }
 ```
 
@@ -86,6 +109,13 @@ Each of these fails *silently*, which is why the workflow checks rather than tru
 **A version that isn't higher than `main`'s.** Publish `0.0.1` from `dev` while `main` is on `0.0.2`
 and nobody ever sees it — the manager fetches both and serves the higher one. The workflow compares
 against `main`'s `patches-bundle.json` and refuses.
+
+That comparison runs through [`compare_versions.py`](../.github/scripts/compare_versions.py), a port
+of the manager's own `compareVersions`, because ordering pre-releases is exactly where an
+approximation goes wrong. `sort -V` — the obvious choice, and what this used at first — ranks
+`1.0.0-dev.1` *above* `1.0.0`, so it would have approved a dev release that Morphe then refuses to
+serve: the guard failing at the one job it exists for. The port carries a self-test of cases checked
+against the manager, and the guard runs it before trusting it.
 
 **A version that doesn't agree with itself.** `download_url` is built from the version, so the tag
 must be `v<version>`, the asset must be `patches-<version>.mpp`, and the JSON must say the same.
@@ -104,10 +134,16 @@ compares the bytes against the bundle it just built. Any mismatch fails the run.
 
 ## The version rules live in one place
 
-`.github/scripts/check_version.sh` — the branch check, the format, the tag-already-exists check and
-the must-beat-`main` comparison. Both `tools/bump` and the workflow call it, so there is a single
-definition rather than two that drift. It reads only and changes nothing, so it is safe to run
-whenever you want to know if a version is usable.
+`.github/scripts/check_version.sh` — the branch check, the format, the pre-release shape, the
+tag-already-exists check and the must-beat-`main` comparison, the last of which it delegates to
+`.github/scripts/compare_versions.py`. Both `tools/bump` and the workflow call it, so there is a
+single definition rather than two that drift. It reads only and changes nothing, so it is safe to
+run whenever you want to know if a version is usable:
+
+```bash
+.github/scripts/check_version.sh 1.0.1-dev.1 dev
+.github/scripts/compare_versions.py --selftest      # does the port still match the manager?
+```
 
 ## Things worth knowing
 

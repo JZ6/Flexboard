@@ -2,7 +2,7 @@
 #
 # Cut a release by bumping the version.
 #
-#   tools/bump 0.0.2
+#   tools/bump 1.0.1-dev.1
 #
 # Edits the version in gradle.properties, shows what will be published, and — once you agree —
 # commits and pushes. CI takes it from there: it sees a version with no matching tag, builds the
@@ -18,7 +18,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
-    printf 'usage: tools/bump <version>    e.g. tools/bump 0.0.2\n' >&2
+    printf 'usage: tools/bump <version>    e.g. tools/bump 1.0.1-dev.1\n' >&2
     printf 'currently: %s\n' "$(sed -nE 's/^version *= *(.+)$/\1/p' gradle.properties)" >&2
     exit 2
 fi
