@@ -1,14 +1,16 @@
 group = "app.template"
 
 patches {
-    // TODO: Update this section with your project details.
+    // Baked into the .mpp and shown as the source name in Morphe Manager, so it only changes when
+    // a new bundle is published. A distinct name is also required rather than preferred: see the
+    // project name restriction in NOTICE.
     about {
-        name = "UserXYZ Patches"
-        description = "Patches for apps I like"
-        source = "git@github.com:UserXYZ/morphe-patches.git"
-        author = "Awesome dev"
-        contact = "na"
-        website = "na"
+        name = "Flexboard"
+        description = "Swipe anywhere on the keyboard to delete the previous word."
+        source = "https://github.com/JZ6/Flexboard"
+        author = "JZ6"
+        contact = "https://github.com/JZ6/Flexboard/issues"
+        website = "https://github.com/JZ6/Flexboard"
         license = "GPLv3"
     }
 }
