@@ -1,15 +1,39 @@
 name: Release
 
+# Bumping the version *is* the release.
+#
+# Every push compiles. A push that also changes `version` in gradle.properties to something not yet
+# tagged builds the bundle, writes patches-bundle.json, tags, and publishes. Nothing else triggers a
+# release, so commit to dev as often as you like.
+#
+# The rule is "gradle.properties says X and no vX tag exists", not "the file changed in this
+# commit". That is idempotent: amends, force-pushes, re-runs and two-commits-in-one-push all behave,
+# and re-running on an already-released version is a no-op rather than a duplicate.
+#
+# **The branch is the channel.** Morphe fetches `<branch>/patches-bundle.json` for a custom source
+# and rewrites the branch segment when the user toggles pre-releases; `dev` and `main` are
+# compile-time constants in the manager. dev publishes a pre-release, main a stable one.
+#
+# To release from a phone, edit the version line on github.com and commit. workflow_dispatch takes
+# no input — it just re-evaluates the same rule, for re-running a failed run.
+#
+# See docs/releasing.md.
+
 on:
-  workflow_dispatch:
   push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
     name: Release
     permissions:
       contents: write
-      packages: write
+      packages: read
       id-token: write
       attestations: write
     runs-on: ubuntu-latest
@@ -25,34 +49,196 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 'lts/*'
-          cache: 'npm'
+      # Decides, before anything is built, whether this push is a release and what version it is.
+      - name: Decide
+        id: decide
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -nE 's/^version *= *(.+)$/\1/p' gradle.properties | tr -d '[:space:]')
 
-      - name: Install dependencies
-        run: npm install
+          if [ -z "$VERSION" ]; then
+            echo "::error::No 'version =' line in gradle.properties."
+            exit 1
+          fi
 
-      # Semantic release runs its own Gradle build command.
-      # Only dev and main branch will generate a release as specified by .releaserc
-      - name: Release
-        uses: cycjimmy/semantic-release-action@v6
-        id: release
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already released. Compiling only."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$VERSION is new. This push releases it."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "mpp=patches/build/libs/patches-$VERSION.mpp" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_NAME" = "dev" ]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Rejected before the build, so a bad version costs seconds. Same script the local helper
+      # runs, so there is one definition of "valid" rather than two that drift.
+      - name: Validate the version
+        if: steps.decide.outputs.release == 'true'
+        run: .github/scripts/check_version.sh "${{ steps.decide.outputs.version }}" "$GITHUB_REF_NAME"
+
+      # Runs on every push. When this is a release it also produces the artifact; when it is not,
+      # it is the compile check. One code path either way.
+      - name: Build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew buildAndroid --no-daemon
+
+      # download_url is built from the version, so a filename that disagrees would publish a bundle
+      # nobody can download. Asserted rather than assumed.
+      - name: Check the bundle filename
+        if: steps.decide.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          if [ ! -f "${{ steps.decide.outputs.mpp }}" ]; then
+            echo "::error::Expected ${{ steps.decide.outputs.mpp }}, but the build produced:"
+            ls -1 patches/build/libs/ || true
+            exit 1
+          fi
+
+      - name: Regenerate the patch inventory
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: |
+          set -euo pipefail
+          ./gradlew generatePatchesList --no-daemon
+          jq --arg v "$VERSION" '.version = $v' patches-list.json > patches-list.json.tmp
+          mv patches-list.json.tmp patches-list.json
+          python3 .github/scripts/generate_patches_readme.py \
+            "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" patches-list.json README.md
+
+      # This file *is* the release as far as Morphe is concerned; the GitHub release is only where
+      # the .mpp lives. created_at must carry no timezone — the manager parses it as a kotlinx
+      # LocalDateTime, and a trailing Z fails deserialisation with no useful error.
+      - name: Write patches-bundle.json
+        if: steps.decide.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.decide.outputs.version }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$PREVIOUS" ]; then
+            NOTES=$(git log --no-merges --format='- %s' "$PREVIOUS..HEAD")
+          else
+            NOTES=$(git log --no-merges --format='- %s' -20)
+          fi
+          [ -n "$NOTES" ] || NOTES="- No changes recorded."
+          DESCRIPTION=$(printf '## %s\n\n%s\n' "$VERSION" "$NOTES")
+          printf '%s' "$DESCRIPTION" > release-notes.md
+
+          jq -n \
+            --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%S)" \
+            --arg description "$DESCRIPTION" \
+            --arg download_url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/patches-$VERSION.mpp" \
+            --arg version "$VERSION" \
+            '{created_at: $created_at,
+              description: $description,
+              download_url: $download_url,
+              signature_download_url: "",
+              version: $version}' > patches-bundle.json
+
+          cat patches-bundle.json
+
+      # Commit and tag together, then push together, so the tag can never be left behind.
+      - name: Commit and tag
+        if: steps.decide.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add patches-bundle.json patches-list.json README.md
+          git commit -m "chore: release $TAG [skip ci]"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "HEAD:$GITHUB_REF_NAME" "refs/tags/$TAG"
+
+      - name: Publish the release
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.decide.outputs.tag }}
+          MPP: ${{ steps.decide.outputs.mpp }}
+          PRERELEASE: ${{ steps.decide.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          # Labelled for the humans reading the releases page. Morphe ignores this and goes by the
+          # branch, but the page disagreeing with the channel would be odd.
+          FLAG=""
+          [ "$PRERELEASE" = "true" ] && FLAG="--prerelease"
+          # shellcheck disable=SC2086
+          gh release create "$TAG" "$MPP" \
+            --title "$TAG" \
+            --notes-file release-notes.md \
+            --target "$GITHUB_REF_NAME" \
+            $FLAG
+
+      # Every Morphe-side failure here is silent — a bad created_at never appears, a broken
+      # download_url shows an update that fails on tap. Without a manual release step there is no
+      # moment where anyone is watching, so the run proves its own work.
+      - name: Verify the release
+        if: steps.decide.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.decide.outputs.version }}
+          TAG: ${{ steps.decide.outputs.tag }}
+          MPP: ${{ steps.decide.outputs.mpp }}
+        run: |
+          set -euo pipefail
+          RAW="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GITHUB_REF_NAME/patches-bundle.json"
+
+          # Fetch what a phone would actually fetch, not what we wrote. The raw CDN lags, so retry.
+          PUBLISHED=""
+          for attempt in 1 2 3 4 5 6; do
+            PUBLISHED=$(curl -fsSL "$RAW?cachebust=$(date +%s)" || true)
+            [ -n "$PUBLISHED" ] && [ "$(printf '%s' "$PUBLISHED" | jq -r '.version')" = "$VERSION" ] && break
+            echo "raw CDN not caught up yet (attempt $attempt); waiting"
+            sleep 15
+            PUBLISHED=""
+          done
+          if [ -z "$PUBLISHED" ]; then
+            echo "::error::$RAW never served version $VERSION. Morphe would not see this release."
+            exit 1
+          fi
+
+          printf '%s' "$PUBLISHED" | jq -e '
+            (.download_url | type == "string" and length > 0)
+            and (.version | type == "string" and length > 0)
+            and (.description | type == "string" and length > 0)
+            and (.created_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$"))
+          ' > /dev/null || {
+            echo "::error::patches-bundle.json is not loadable by Morphe. Required: download_url," \
+                 "version, description, and a timezone-less created_at."
+            printf '%s\n' "$PUBLISHED"
+            exit 1
+          }
+
+          [ "$(printf '%s' "$PUBLISHED" | jq -r '.version')" = "${TAG#v}" ] || {
+            echo "::error::version disagrees with the tag $TAG."; exit 1; }
+
+          # The asset must actually be downloadable, and be the file that was built.
+          URL=$(printf '%s' "$PUBLISHED" | jq -r '.download_url')
+          curl -fsSL "$URL" -o downloaded.mpp || {
+            echo "::error::download_url does not resolve: $URL"; exit 1; }
+          cmp -s downloaded.mpp "$MPP" || {
+            echo "::error::The published asset differs from the bundle that was built."; exit 1; }
+          rm -f downloaded.mpp
+
+          echo "Verified: $RAW serves $VERSION and its download_url matches the built bundle."
 
       - name: Attest
-        if: steps.release.outputs.new_release_published == 'true'
+        if: steps.decide.outputs.release == 'true'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-name: 'Morphe Patches ${{ steps.release.outputs.new_release_git_tag }}'
-          subject-path: patches/build/libs/patches-*.mpp
-
-      # Always verify compilation when semantic-release did not publish a release.
-      # This covers non-main/dev branches, chore commits, docs commits, etc.
-      - name: Verify project compiles
-        if: steps.release.outputs.new_release_published != 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew :patches:buildAndroid clean --no-daemon
+          subject-name: 'Morphe Patches ${{ steps.decide.outputs.tag }}'
+          subject-path: ${{ steps.decide.outputs.mpp }}

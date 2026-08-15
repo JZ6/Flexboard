@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+#
+# Cut a release by bumping the version.
+#
+#   tools/bump 0.0.2
+#
+# Edits the version in gradle.properties, shows what will be published, and — once you agree —
+# commits and pushes. CI takes it from there: it sees a version with no matching tag, builds the
+# bundle, writes patches-bundle.json, tags, and publishes.
+#
+# The checks below are the same ones CI runs, via .github/scripts/check_version.sh. They are
+# repeated here for one reason: the push is the point of no return. Failing in two seconds on your
+# machine beats failing three minutes later with a commit already on the branch.
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+VERSION="${1:-}"
+if [ -z "$VERSION" ]; then
+    printf 'usage: tools/bump <version>    e.g. tools/bump 0.0.2\n' >&2
+    printf 'currently: %s\n' "$(sed -nE 's/^version *= *(.+)$/\1/p' gradle.properties)" >&2
+    exit 2
+fi
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# A dirty tree means CI would build something other than what you have in front of you.
+if [ -n "$(git status --porcelain)" ]; then
+    printf 'error: working tree is not clean. Commit or stash first.\n' >&2
+    git status --short >&2
+    exit 1
+fi
+
+.github/scripts/check_version.sh "$VERSION" "$BRANCH"
+
+# An unpushed commit would be released by a later push, at a moment you were not expecting.
+git fetch --quiet origin "$BRANCH"
+if [ -n "$(git rev-list "origin/$BRANCH..HEAD")" ]; then
+    printf 'error: %s has commits that are not pushed. Push them first, so the release is of what is on the remote.\n' "$BRANCH" >&2
+    git --no-pager log --oneline "origin/$BRANCH..HEAD" >&2
+    exit 1
+fi
+
+CURRENT=$(sed -nE 's/^version *= *(.+)$/\1/p' gradle.properties)
+PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
+if [ "$BRANCH" = "dev" ]; then CHANNEL="pre-release"; else CHANNEL="stable"; fi
+
+printf '\n'
+printf '  %-12s %s -> %s\n' "version" "$CURRENT" "$VERSION"
+printf '  %-12s %s (%s)\n'  "branch"  "$BRANCH" "$CHANNEL"
+printf '  %-12s %s\n'       "tag"     "v$VERSION"
+printf '  %-12s https://github.com/%s/releases/download/v%s/patches-%s.mpp\n' \
+    "download" "$(git remote get-url origin | sed -E 's#.*github\.com[:/]##; s#\.git$##')" "$VERSION" "$VERSION"
+printf '\n  including:\n'
+if [ -n "$PREVIOUS" ]; then
+    git --no-pager log --no-merges --format='    %s' "$PREVIOUS..HEAD" | head -20
+else
+    git --no-pager log --no-merges --format='    %s' -10
+fi
+printf '\n'
+
+read -r -p "Release this? [y/N] " reply
+case "$reply" in
+    [yY]) ;;
+    *) printf 'Nothing changed.\n'; exit 0 ;;
+esac
+
+sed -i.bak -E "s/^version *=.*/version = $VERSION/" gradle.properties && rm -f gradle.properties.bak
+git add gradle.properties
+git commit -m "chore: bump to $VERSION"
+git push origin "$BRANCH"
+
+printf '\nPushed. CI is building v%s; watch it with:\n  gh run watch\n' "$VERSION"
