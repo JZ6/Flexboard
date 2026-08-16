@@ -37,6 +37,55 @@ device inside Gboard. A patch reaches the extension by emitting an `invoke-stati
 get that descriptor wrong and the failure surfaces at patch time, far from the cause, which is what
 [`register-encoding.md`](register-encoding.md) is about.
 
+## Upstream
+
+This repository was created from
+[`MorpheApp/morphe-patches-template`](https://github.com/MorpheApp/morphe-patches-template). GitHub's
+template instantiation does **not** share git ancestry, so there is no merge base and never will be:
+`git pull` from upstream is not available at any price. Picking up a template improvement means
+comparing a file and porting the change by hand.
+
+```bash
+git remote add template https://github.com/MorpheApp/morphe-patches-template.git   # once
+git fetch template
+git diff template/main -- gradle/libs.versions.toml
+```
+
+Which makes the list below the useful thing: an empty diff for anything in the first group means
+there is nothing to port.
+
+**Upstream's — keep byte-identical.** These are deliberately untouched so a future comparison is a
+clean yes/no. `gradle/libs.versions.toml` is the busiest file in the template's history, and
+`PatchListGenerator.kt` had a two-line comment reworded once and reverted for exactly this reason.
+
+| | |
+|---|---|
+| `gradle/libs.versions.toml`, `gradle/wrapper/`, `gradlew`, `gradlew.bat` | Build tooling and dependency versions |
+| `.github/scripts/generate_patches_readme.py` | README patches table |
+| `patches/src/main/kotlin/util/PatchListGenerator.kt` | Builds `patches-list.json` |
+| `NOTICE`, `LICENSE`, `.editorconfig`, `.gitattributes` | Legal and formatting |
+| `.github/ISSUE_TEMPLATE/config.yml`, `extensions/extension/src/main/AndroidManifest.xml` | Untouched by chance, worth keeping so |
+
+**Ours — never take upstream's.** The release pipeline is a deliberate departure (see
+[`releasing.md`](releasing.md)); no upstream change makes semantic-release acceptable here, so its
+version of `release.yml` is never the answer, and neither is its README, which is setup instructions
+for a fresh template.
+
+`release.yml` · `.github/scripts/check_version.sh` · `compare_versions.py` ·
+`check_shared_constants.py` · `tools/bump` · `tools/apk/` · `docs/` · `README.md` ·
+everything under `patches/src/main/kotlin/dev/jz6/` and `extensions/.../dev/jz6/`
+
+**Shared — the template expects these to be edited**, so a diff against upstream is signal, not
+noise: `gradle.properties` (version), `settings.gradle.kts` (project name, plugin pin),
+`patches/build.gradle.kts` (group, `about`), `extensions/extension/build.gradle.kts` (namespace),
+the two issue templates (links), `.github/dependabot.yml`, `.gitignore`.
+
+Of those, `settings.gradle.kts` is the one to watch: it carries the `app.morphe.patches` plugin
+version, which upstream bumps and this project should follow.
+
+**Generated, never hand-edited:** `patches-bundle.json`, `patches-list.json`, `CHANGELOG.md`, and
+the `README.md` block between the `PATCHES_START` and `PATCHES_END` markers.
+
 ## Building
 
 Needs JDK 21, the Android SDK, and credentials for the Morphe package registry:
