@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+#
+# Promote what is on dev to a stable release on main.
+#
+#   tools/promote 0.0.1
+#
+# Builds the bump commit on top of `origin/dev` and pushes it to main, so main ends up carrying
+# exactly the code dev was serving plus the version bump. One push, one CI run, and no window where
+# main advertises a `-dev.N` version.
+#
+# This exists because `git push origin dev:main` is one keystroke away from being wrong. It pushes
+# the *local* dev, which is behind `origin/dev` every single time CI has written its release commit
+# — which is always, because that commit is the last thing that happens in a release. Doing it that
+# way put a build whose keyboard did not start onto the stable channel, where nobody has to opt in.
+#
+# So this script never reads a local branch. Everything below is resolved from `origin/dev` after a
+# fetch, which makes the stale-local mistake unrepresentable rather than merely checked for.
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+fail() { printf 'error: %s\n' "$1" >&2; exit 1; }
+
+VERSION="${1:-}"
+if [ -z "$VERSION" ]; then
+    printf 'usage: tools/promote <version>    e.g. tools/promote 0.0.1\n' >&2
+    exit 2
+fi
+
+# Main is the stable channel. A suffix here would publish a pre-release-ranked version to the one
+# branch every user reads without opting in, where it would be outranked by its own base version.
+if printf '%s' "$VERSION" | grep -q -- '-'; then
+    fail "'$VERSION' has a pre-release suffix. main is the stable channel; promote a bare version."
+fi
+
+# A dirty tree would be carried into the checkout below.
+if [ -n "$(git status --porcelain)" ]; then
+    printf 'error: working tree is not clean. Commit or stash first.\n' >&2
+    git status --short >&2
+    exit 1
+fi
+
+git fetch --quiet origin main dev
+
+DEV_VERSION=$(git show origin/dev:gradle.properties | sed -nE 's/^version *= *(.+)$/\1/p')
+DEV_BUNDLE=$(git show origin/dev:patches-bundle.json | jq -r '.version // ""')
+MAIN_VERSION=$(git show origin/main:gradle.properties | sed -nE 's/^version *= *(.+)$/\1/p')
+
+# The check that matters most, and the one that would have caught the bad push.
+#
+# CI writes patches-bundle.json in its release commit, so a tip whose bundle disagrees with its
+# gradle.properties is a tip CI has not released yet: the bundle still points at the *previous*
+# build's asset. Promoting it publishes that older artifact under a new version — and if the reason
+# for the new version was that the older one was broken, the promotion ships the bug.
+if [ "$DEV_BUNDLE" != "$DEV_VERSION" ]; then
+    fail "origin/dev is on $DEV_VERSION but its bundle still serves $DEV_BUNDLE — CI has not
+       released this tip. Its download_url points at the previous build. Wait for the run to
+       finish, then try again."
+fi
+
+# You promote what you tested. Anything else means the code on dev was never exercised under the
+# version number about to become stable.
+case "$DEV_VERSION" in
+    "$VERSION"-*) ;;
+    *) fail "dev is on $DEV_VERSION, which is not a pre-release of $VERSION. Promote the base
+       version dev has been testing, or bump dev first." ;;
+esac
+
+# Fast-forward only. If main has anything dev does not, promoting would silently drop it, and the
+# two branches are meant to keep identical history.
+if ! git merge-base --is-ancestor origin/main origin/dev; then
+    printf 'error: origin/main is not an ancestor of origin/dev, so this is not a fast-forward.\n' >&2
+    printf 'main has commits dev does not:\n' >&2
+    git --no-pager log --oneline origin/dev..origin/main >&2
+    exit 1
+fi
+
+.github/scripts/check_version.sh "$VERSION" main
+
+REPO=$(git remote get-url origin | sed -E 's#.*github\.com[:/]##; s#\.git$##')
+
+printf '\n'
+printf '  %-12s %s -> %s\n' "main"     "$MAIN_VERSION" "$VERSION"
+printf '  %-12s %s (%s)\n'  "from"     "origin/dev" "$DEV_VERSION"
+printf '  %-12s %s\n'       "tag"      "v$VERSION"
+printf '  %-12s https://github.com/%s/releases/download/v%s/patches-%s.mpp\n' \
+    "download" "$REPO" "$VERSION" "$VERSION"
+printf '\n  main gains:\n'
+git --no-pager log --no-merges --format='    %s' origin/main..origin/dev | head -20
+printf '\n'
+
+read -r -p "Promote to stable? [y/N] " reply
+case "$reply" in
+    [yY]) ;;
+    *) printf 'Nothing changed.\n'; exit 0 ;;
+esac
+
+# Built on origin/dev, never on a local branch — see the header.
+git checkout --quiet -B main origin/dev
+sed -i.bak -E "s/^version *=.*/version = $VERSION/" gradle.properties && rm -f gradle.properties.bak
+git add gradle.properties
+git commit --quiet -m "chore: bump to $VERSION"
+git push origin main
+
+printf '\nPushed. CI is building v%s; watch it with:\n  gh run watch\n' "$VERSION"
+printf '\nOnce it finishes, put dev back in step with main so the two keep identical history:\n'
+printf '  git fetch origin && git push origin origin/main:dev\n'
+printf '\nThe next pre-release then starts at the version above %s — Morphe ranks every\n' "$VERSION"
+printf '%s-dev.N below the %s now shipping, so that base can never be offered again.\n' "$VERSION" "$VERSION"
