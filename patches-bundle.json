@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-08-16T04:31:02",
-  "description": "## 0.0.3-dev.2\n\n- fix: escape the dollars in the re-commit pattern\n- chore: bump to 0.0.3-dev.2\n- docs: update roadmap notes\n- fix: call the right re-commit method for undo on Gboard 18",
-  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v0.0.3-dev.2/patches-0.0.3-dev.2.mpp",
+  "created_at": "2026-08-16T05:18:18",
+  "description": "## 0.0.3-dev.3\n\n- chore: bump to 0.0.3-dev.3\n- docs: update roadmap notes\n- feat: make the settings screen look like Gboard's\n- docs: correct the local build requirements",
+  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v0.0.3-dev.3/patches-0.0.3-dev.3.mpp",
   "signature_download_url": "",
-  "version": "0.0.3-dev.2"
+  "version": "0.0.3-dev.3"
 }

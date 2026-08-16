@@ -1,3 +1,10 @@
+# [0.0.3-dev.3](https://github.com/JZ6/Flexboard/compare/v0.0.3-dev.2...v0.0.3-dev.3) (2026-08-16)
+
+* **Gboard:** bump to 0.0.3-dev.3
+* **Gboard:** update roadmap notes
+* **Gboard:** make the settings screen look like Gboard's
+* **Gboard:** correct the local build requirements
+
 # [0.0.3-dev.2](https://github.com/JZ6/Flexboard/compare/v0.0.3-dev.1...v0.0.3-dev.2) (2026-08-16)
 
 * **Gboard:** escape the dollars in the re-commit pattern
