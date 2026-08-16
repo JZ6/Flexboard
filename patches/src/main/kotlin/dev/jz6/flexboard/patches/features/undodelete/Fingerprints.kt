@@ -78,9 +78,18 @@ internal const val UNDO_SLOT_CLEAR = "$UNDO_SLOT->c()V"
  */
 internal const val RECOMMIT_SEARCH_WINDOW = 40
 
-/** `AbstractIme->…(L…;Z)V` — the shape of the re-commit, whatever it is called this build. */
-internal val RECOMMIT_PATTERN =
-    Regex("^${Regex.escape(ABSTRACT_IME)}->[A-Za-z0-9_$]+\\((L[A-Za-z0-9/$_;]+;)Z\\)V$")
+/**
+ * `AbstractIme->…(L…;Z)V` — the shape of the re-commit, whatever it is called this build.
+ *
+ * Every `$` is written `\$`. Dex descriptors contain them (`Lj\$/util/Optional;` after desugaring),
+ * and an unescaped one that happens to precede an identifier character is read by Kotlin as a
+ * string template rather than a literal — which is what broke the `0.0.3-dev.2` build.
+ */
+private const val DESCRIPTOR_CHARS = "A-Za-z0-9/_\$;"
+internal val RECOMMIT_PATTERN = Regex(
+    "^" + Regex.escape(ABSTRACT_IME) + "->[A-Za-z0-9_\$]+" +
+        "\\((L[$DESCRIPTOR_CHARS]+;)Z\\)V\$",
+)
 
 /** Desugared, so the `$` is part of the type name rather than an inner-class separator. */
 internal const val OPTIONAL = "Lj\$/util/Optional;"

@@ -135,7 +135,7 @@ private fun MutableMethod.resolveRecommit(): Pair<String, String> {
             val reference = (instructions[index] as? ReferenceInstruction)?.reference
             (reference as? MethodReference)?.toString()
         }
-        .mapNotNull(RECOMMIT_PATTERN::matchEntire)
+        .mapNotNull { descriptor -> RECOMMIT_PATTERN.matchEntire(descriptor) }
         .firstOrNull()
         ?: error(
             "No `$ABSTRACT_IME->…(L…;Z)V` call within $RECOMMIT_SEARCH_WINDOW instructions of " +
