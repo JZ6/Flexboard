@@ -2,7 +2,10 @@
 
 Ideas, in no particular order and with no promises. Kept verbatim as written.
 
-swipe right to undo delete
+
+update settings to match rest of gboard
+
+move settings to top of list
 
 
 flick up to undo autocorrect 
