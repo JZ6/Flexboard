@@ -1,3 +1,10 @@
+# [0.0.3-dev.2](https://github.com/JZ6/Flexboard/compare/v0.0.3-dev.1...v0.0.3-dev.2) (2026-08-16)
+
+* **Gboard:** escape the dollars in the re-commit pattern
+* **Gboard:** bump to 0.0.3-dev.2
+* **Gboard:** update roadmap notes
+* **Gboard:** call the right re-commit method for undo on Gboard 18
+
 # [0.0.3-dev.1](https://github.com/JZ6/Flexboard/compare/v0.0.2-dev.2...v0.0.3-dev.1) (2026-08-16)
 
 * **Gboard:** bump to 0.0.3-dev.1
