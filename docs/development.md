@@ -2,6 +2,10 @@
 
 Everything needed to build, test and release Flexboard.
 
+Alongside it: [`design.md`](design.md) is why Flexboard behaves the way it does — the reasoning
+behind the defaults and the choices the README only states — and [`roadmap.md`](roadmap.md) is what
+might come next.
+
 ## Reference
 
 Findings about Gboard itself. All of it is derived by hand from one APK and all of it expires

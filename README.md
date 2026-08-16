@@ -5,8 +5,8 @@ Swipe anywhere on Gboard to delete the previous word.
 Gboard's only word-delete is a swipe on the backspace key, which means moving your thumb to the
 corner and back for every correction. Flexboard puts that gesture wherever your thumb already is.
 
-It is a [Morphe](https://github.com/MorpheApp) patch bundle for Gboard
-`17.7.7.932364120-release-arm64-v8a`, and only that build.
+This is a [Morphe](https://github.com/MorpheApp) patch bundle for Gboard
+`17.7.7.932364120-release-arm64-v8a`
 
 ## Install
 
@@ -52,13 +52,16 @@ Both keyboards stay installed, so you can switch back whenever you like.
 
 <!-- PATCHES_END -->
 
-## How it works, and what it changes
+Each has its own section below, and each can be unticked in Morphe if you would rather it were never
+installed.
 
-Flexboard does not add a gesture. Gboard already has one — swiping on the backspace key deletes
-the previous word — and everything about it, including dragging back to restore, works across the
-whole keyboard once started. The only thing keeping it to the backspace key is a single check on
-which key your finger landed on. Flexboard removes that check for the delete gesture, and leaves
-the spacebar cursor-drag alone.
+## Swipe to delete
+
+Flexboard does not add a gesture. Gboard already has one — swiping on the backspace key deletes the
+previous word — and everything about it, including dragging back to restore, works across the whole
+keyboard once started. The only thing keeping it to the backspace key is a single check on which key
+your finger landed on. Flexboard removes that check for the delete gesture, and leaves the spacebar
+cursor-drag alone.
 
 So the feel, the thresholds and the restore behaviour are all Gboard's own.
 
@@ -77,7 +80,7 @@ own screen, not a copy.
 
 Removing Flexboard leaves glide typing off — tick it back on in Gboard's own settings.
 
-### Settings
+## Settings
 
 Gboard's settings gain a **Flexboard** entry that opens a screen with two switches and three
 sliders:
@@ -91,13 +94,8 @@ sliders:
 | **Swipe right to undo** | on | Whether a rightward swipe after a delete puts the words back. Off leaves it doing nothing, as in stock Gboard. Independent of the master switch — see below. |
 
 All five are read out of Gboard's own preference store, so there is no separate settings app and
-nothing to keep in sync.
-
-The two defaults that are not Gboard's own are **swipe length** and **max words**. Gboard's stock
-distance assumes a thumb travelling from the backspace key and back, which is the whole journey this
-patch exists to remove, so a shorter swipe suits a gesture that starts under your thumb. One word
-per swipe then makes each deletion deliberate rather than a run that has to be swiped back. Both are
-sliders precisely because that is a preference, not a fact — 100% and 10 restore the original feel.
+nothing to keep in sync. Setting the three sliders to 100%, 10 and 200 ms puts each of them back to
+Gboard's own value; why they do not start there is in [`docs/design.md`](docs/design.md).
 
 **Turning the switch off does not turn the delete swipe off** — it hands it back to Gboard. The
 swipe works on the backspace key again and nowhere else, at Gboard's own distance and its 200 ms
@@ -110,14 +108,10 @@ stop Flexboard rewriting it, so it will stay on once you do. And changes are not
 gesture picks up the new setting the next time the keyboard is opened, and the preference writes
 stop at the next time Gboard's process starts.
 
-### Swipe right to undo
+## Swipe right to undo
 
 Swiping right *during* a delete puts the words back — that is Gboard's own behaviour, and it stops
 the moment you lift your finger. Swiping right **after** you have lifted now undoes the delete too.
-
-This is Gboard's undo, not a reimplementation. Its delete swipe already records what it removed, and
-it already knows how to put it back; the only thing missing was a way to ask, and a rightward swipe
-was doing nothing at all beforehand.
 
 Two limits worth knowing, both inherited rather than chosen:
 
@@ -125,12 +119,10 @@ Two limits worth knowing, both inherited rather than chosen:
   almost any other input, so typing a character after the delete loses the undo.
 - **One level.** Undo once and the slot is empty; a second right-swipe does nothing.
 
-It has its own switch on Flexboard's settings screen, deliberately **not** greyed out by the master
-switch: Gboard fills the same undo slot when you swipe on the backspace key, so undo keeps working
-even with swipe-anywhere off. It is also a separate patch, so it can be unticked in Morphe entirely
-if you would rather the code were never installed.
+Its switch is deliberately **not** greyed out by the master switch: Gboard fills the same undo slot
+when you swipe on the backspace key, so undo keeps working even with swipe-anywhere off.
 
-### Flick keys for symbols
+## Flick keys for symbols
 
 Gboard can already enter a key's hinted symbol when you pull down on it — **Flick keys to enter
 symbols**, in its Preferences screen — and ships it off. Flexboard turns it on.
@@ -143,31 +135,27 @@ numbers**, so while that is off the flick row shows as on but greyed out — the
 just cannot toggle it from there. Enabling "Touch & hold keys for numbers" un-greys it. Flexboard
 deliberately does not change that setting for you, since nothing at runtime needs it.
 
-It is a separate patch, so it can be unticked in Morphe if you do not want it.
+## Install as Gboard clone
 
-## Roadmap
-swipe right to undo delete
+Renames the package so the patched build installs beside the official Gboard rather than replacing
+it. Both keyboards stay in the picker, which is why the install steps above end with enabling and
+choosing the new one.
 
+Untick it and the patched build replaces the Gboard you already have.
 
-flick up to undo autocorrect 
+## Bypass Gboard signature
 
+Gboard checks its own signing certificate against a list baked into the app. A patched build is
+re-signed, so that check fails and the features sitting behind it stop working.
 
-set default swipe length to 25%, and max words to 1
-
-Hot keys as new tool bar objects
-
-gesture down on a to select all
-
-add select all copy paste hotkeys
-
-increased tool bar size fit more buttons
-
+Nothing about this one is visible when it works — it exists so that re-signing does not silently
+switch parts of Gboard off.
 
 ## Development
 
 Building, testing and releasing: [`docs/development.md`](docs/development.md), which also indexes
-the reverse-engineering notes — the obfuscated names this depends on, how the glide typing setting
-was found, and the Gboard internals the rebuild is aiming at.
+the [design notes](docs/design.md), the [roadmap](docs/roadmap.md) and the reverse-engineering notes
+behind all of the above.
 
 ## Licence and attribution
 
