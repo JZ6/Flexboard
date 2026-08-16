@@ -16,6 +16,7 @@ import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.checkAssignable
 import dev.jz6.flexboard.patches.shared.fieldOwnerType
+import dev.jz6.flexboard.patches.shared.findInstanceField
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.usesField
 
@@ -151,9 +152,7 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     //
     // Resolved from AbstractIme's own field table rather than trusting a descriptor string, so a
     // Gboard that moves or retypes the field fails here instead of on a device.
-    val contextField = context.classDefByOrNull(ime.type)
-        ?.instanceFields
-        ?.firstOrNull { it.name == IME_CONTEXT_FIELD_NAME }
+    val contextField = context.findInstanceField(ime.type, IME_CONTEXT_FIELD_NAME)
         ?: error(
             "${ime.type} has no `$IME_CONTEXT_FIELD_NAME` field — the IME's Context has moved, " +
                 "and $PREFERENCE_STORE_GET would be handed something that is not a Context",

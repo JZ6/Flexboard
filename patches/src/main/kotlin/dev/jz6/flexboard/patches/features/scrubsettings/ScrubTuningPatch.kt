@@ -26,6 +26,7 @@ import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.checkAssignable
+import dev.jz6.flexboard.patches.shared.findInstanceField
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeParameterType
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
@@ -369,13 +370,18 @@ private fun MutableMethod.capWordCount(context: BytecodePatchContext) {
     val handler = TypedRegister(registerCount - DISPATCH_PARAMETER_WORDS, definingClass)
     val thisRegister = handler.register
 
-    val handlerContext = context.classDefByOrNull(HANDLER_CONTEXT_OWNER)
-        ?.instanceFields
-        ?.firstOrNull { it.name == HANDLER_CONTEXT_FIELD_NAME }
+    // Resolved by walking up, because the handler *inherits* this field rather than declaring it —
+    // it lives on AbstractMotionEventHandler, one hop above. Emitting the declaring class's own
+    // spelling keeps what is written provable against what was looked up.
+    val handlerContext = context.findInstanceField(HANDLER_CONTEXT_OWNER, HANDLER_CONTEXT_FIELD_NAME)
         ?: error(
-            "$HANDLER_CONTEXT_OWNER has no `$HANDLER_CONTEXT_FIELD_NAME` field — the handler's " +
-                "Context has moved, and $PREFERENCE_STORE_GET would be handed something else",
+            "Neither $HANDLER_CONTEXT_OWNER nor anything above it declares a " +
+                "`$HANDLER_CONTEXT_FIELD_NAME` field — the handler's Context has moved, and " +
+                "$PREFERENCE_STORE_GET would be handed something else",
         )
+    val resolvedHandlerContext =
+        "${handlerContext.definingClass}->${handlerContext.name}:${handlerContext.type}"
+
     context.checkAssignable(
         handler,
         handlerContext.definingClass,
@@ -384,7 +390,7 @@ private fun MutableMethod.capWordCount(context: BytecodePatchContext) {
     context.checkAssignable(
         handlerContext.type,
         ANDROID_CONTEXT,
-        "The value of $HANDLER_CONTEXT_FIELD, which $PREFERENCE_STORE_GET is handed",
+        "The value of $resolvedHandlerContext, which $PREFERENCE_STORE_GET is handed",
     )
 
     // Boxing the payload is what identifies the count register beyond doubt.
@@ -433,7 +439,7 @@ private fun MutableMethod.capWordCount(context: BytecodePatchContext) {
                 iget-object v$store, v$thisRegister, $CONFIG_FIELD
                 iget v$store, v$store, $CONFIG_START_KEY_FIELD
                 if-gez v$store, :$done
-                iget-object v$store, v$thisRegister, $HANDLER_CONTEXT_FIELD
+                iget-object v$store, v$thisRegister, $resolvedHandlerContext
                 invoke-static { v$store }, $PREFERENCE_STORE_GET
                 move-result-object v$store
                 const-string v$key, "$MAX_WORDS_KEY"

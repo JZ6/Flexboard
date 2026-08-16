@@ -1,6 +1,7 @@
 package dev.jz6.flexboard.patches.shared
 
 import app.morphe.patcher.patch.BytecodePatchContext
+import com.android.tools.smali.dexlib2.iface.Field
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
@@ -115,6 +116,29 @@ internal fun BytecodePatchContext.checkAssignable(
     target: String,
     what: String,
 ) = checkAssignable(register.type, target, "$what (v${register.register})")
+
+/**
+ * Instance field [name] on [type] or any class above it, resolved the way the runtime resolves a
+ * field reference — by walking up until something declares it.
+ *
+ * **`ClassDef.instanceFields` is not enough**, which is worth stating because assuming otherwise
+ * shipped as `0.0.2-dev.1`. It lists only what a class *declares*, and inherited fields are the
+ * normal case here: `ScrubMotionEventHandler` inherits its `Context` from
+ * `AbstractMotionEventHandler` one hop up, so looking only at the subclass finds nothing and fails
+ * a patch that was perfectly correct.
+ *
+ * Returns the declaration, so callers get the class that actually declares the field and can emit
+ * that spelling rather than a subclass's.
+ */
+internal fun BytecodePatchContext.findInstanceField(type: String, name: String): Field? {
+    var current: String? = type
+    while (current != null) {
+        val definition = classDefByOrNull(current) ?: return null
+        definition.instanceFields.firstOrNull { it.name == name }?.let { return it }
+        current = definition.superclass
+    }
+    return null
+}
 
 /**
  * The class an `iget`/`iput` reads its field from.
