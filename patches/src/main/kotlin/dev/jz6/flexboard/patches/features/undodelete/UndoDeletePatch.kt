@@ -2,6 +2,7 @@ package dev.jz6.flexboard.patches.features.undodelete
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
+import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
@@ -9,8 +10,12 @@ import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_GET_BOOLEAN
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
+import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.callsMethod
+import dev.jz6.flexboard.patches.shared.checkAssignable
+import dev.jz6.flexboard.patches.shared.fieldOwnerType
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.usesField
 
@@ -65,7 +70,7 @@ val swipeRightToUndoPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_GBOARD)
 
     execute {
-        LatinImeHandleEventFingerprint.method.undoOnRightwardScrub()
+        LatinImeHandleEventFingerprint.method.undoOnRightwardScrub(this)
     }
 }
 
@@ -101,25 +106,12 @@ private val SCRATCH_REGISTERS = listOf(2, 3)
  */
 internal const val UNDO_ENABLED_KEY = "flexboard_undo_enabled"
 
-private fun MutableMethod.undoOnRightwardScrub() {
+private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     val registerCount = implementation?.registerCount
         ?: error("$LATIN_IME->d has no implementation")
     check(registerCount == HANDLE_EVENT_REGISTER_COUNT) {
         "$LATIN_IME->d has $registerCount registers, expected $HANDLE_EVENT_REGISTER_COUNT — " +
             "refusing to guess which registers are free in a method this size"
-    }
-
-    // The preference read below needs a Context, and `this` is not one: LatinIme extends
-    // AbstractIme extends Object, with no Service or ContextWrapper in the chain. It has to go
-    // through the IME's Context field instead.
-    //
-    // Asserted rather than assumed, because getting it wrong is silent until it is catastrophic —
-    // passing a non-Context assembles cleanly, fails verification at run time, and takes the whole
-    // dispatcher with it, so the keyboard never appears. That shipped as 0.0.1-dev.1. Gboard reads
-    // this same field in this same method, so a build where it is absent has moved the Context.
-    check(instructions.any { it.usesField(IME_CONTEXT_FIELD) }) {
-        "$LATIN_IME->d never reads $IME_CONTEXT_FIELD — the IME's Context has moved, and the " +
-            "preference read this patch adds would be handed something that is not a Context"
     }
 
     // The finish handler is reached only through a packed-switch, whose keys never appear in the
@@ -144,7 +136,41 @@ private fun MutableMethod.undoOnRightwardScrub() {
 
     val flagRead = instructions[flagIndex] as TwoRegisterInstruction
     val flagRegister = flagRead.registerA
-    val thisRegister = flagRead.registerB
+
+    // The IME register, carrying the only type it is *proven* to hold. Reading `AbstractIme->N:Z`
+    // off it shows it is at least an `AbstractIme`; that it happens to be a `LatinIme` at run time
+    // is true but not established here, which is why the Context field is named on `AbstractIme`
+    // below rather than on the subclass.
+    val ime = TypedRegister(flagRead.registerB, flagRead.fieldOwnerType())
+    val thisRegister = ime.register
+
+    // Gboard keeps the IME's Context in a field, and reaching it is the whole reason this patch
+    // does not simply pass `this` to the preference store. `0.0.1-dev.1` did exactly that: it
+    // assembled, failed verification at run time, took the dispatcher with it, and the keyboard
+    // never appeared. The two checks below are what that release lacked.
+    //
+    // Resolved from AbstractIme's own field table rather than trusting a descriptor string, so a
+    // Gboard that moves or retypes the field fails here instead of on a device.
+    val contextField = context.classDefByOrNull(ime.type)
+        ?.instanceFields
+        ?.firstOrNull { it.name == IME_CONTEXT_FIELD_NAME }
+        ?: error(
+            "${ime.type} has no `$IME_CONTEXT_FIELD_NAME` field — the IME's Context has moved, " +
+                "and $PREFERENCE_STORE_GET would be handed something that is not a Context",
+        )
+
+    // Reading the field at all requires the register to be a subclass of the class declaring it.
+    context.checkAssignable(ime, contextField.definingClass, "The IME register in $LATIN_IME->d")
+    // And what the preference store is handed has to be an actual Context. This is the assertion
+    // whose absence shipped as 0.0.1-dev.1.
+    context.checkAssignable(
+        contextField.type,
+        ANDROID_CONTEXT,
+        "The value of ${contextField.definingClass}->$IME_CONTEXT_FIELD_NAME, " +
+            "which $PREFERENCE_STORE_GET is handed",
+    )
+    val imeContextField = "${contextField.definingClass}->" +
+        "$IME_CONTEXT_FIELD_NAME:${contextField.type}"
 
     val test = instructions[flagIndex + 1]
     check(test.opcodeName() == "IF_NEZ") {
@@ -184,7 +210,7 @@ private fun MutableMethod.undoOnRightwardScrub() {
         flagIndex + 1,
         """
             if-lez v$countRegister, :$NOT_RIGHTWARD_LABEL
-            iget-object v$slot, v$thisRegister, $IME_CONTEXT_FIELD
+            iget-object v$slot, $ime, $imeContextField
             invoke-static { v$slot }, $PREFERENCE_STORE_GET
             move-result-object v$slot
             const-string v$value, "$UNDO_ENABLED_KEY"

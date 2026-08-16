@@ -29,10 +29,15 @@ internal const val SUPPRESSED_FIELD = "$ABSTRACT_IME->N:Z"
  * required assembles cleanly, then fails verification at run time and takes `d` with it, which is
  * the whole keyboard. That shipped in `0.0.1-dev.1`.
  *
- * Gboard reads the field this way itself, inside the same method, so the descriptor below is the
- * stock instruction rather than a guess.
+ * Only the field's *name* is pinned here. Its declaring class and type are resolved out of the dex
+ * at patch time, because which class to name is not a free choice: the emitted `iget-object`
+ * requires the register to be a subclass of whatever class the descriptor names, and all the patch
+ * can prove about that register is that it is at least an [ABSTRACT_IME]. Gboard's own reads spell
+ * it `$LATIN_IME->B`, which is correct for Gboard — the verifier knows `this` there — but would be
+ * a claim this patch cannot make. `AbstractIme` declares the field, so naming the declaring class
+ * is both provable and stable.
  */
-internal const val IME_CONTEXT_FIELD = "$LATIN_IME->B:Landroid/content/Context;"
+internal const val IME_CONTEXT_FIELD_NAME = "B"
 
 /**
  * Gboard's undo slot: one deleted `CharSequence` and nothing more.

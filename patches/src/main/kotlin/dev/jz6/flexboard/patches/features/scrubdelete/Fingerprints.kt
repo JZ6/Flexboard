@@ -28,8 +28,10 @@ internal const val CONFIG_START_KEY_FIELD = "Lpbv;->a:I"
  * this way at offset 4 of `r()`. The engine's own Context register is overwritten with `Resources`
  * early in its constructor, so this is how later code gets one.
  */
+internal const val HANDLER_CONTEXT_OWNER = SCRUB_MOTION_EVENT_HANDLER
+internal const val HANDLER_CONTEXT_FIELD_NAME = "o"
 internal const val HANDLER_CONTEXT_FIELD =
-    "$SCRUB_MOTION_EVENT_HANDLER->o:Landroid/content/Context;"
+    "$HANDLER_CONTEXT_OWNER->$HANDLER_CONTEXT_FIELD_NAME:Landroid/content/Context;"
 
 /** Boxes the signed word count into the dispatched event, which is what identifies it. */
 internal const val INTEGER_VALUE_OF = "Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;"

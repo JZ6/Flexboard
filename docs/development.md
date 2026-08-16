@@ -41,6 +41,26 @@ device inside Gboard. A patch reaches the extension by emitting an `invoke-stati
 get that descriptor wrong and the failure surfaces at patch time, far from the cause, which is what
 [`register-encoding.md`](register-encoding.md) is about.
 
+### Registers carry a type, and it is asserted
+
+A register handed to an emitted `invoke` has to actually hold what the callee declares, and nothing
+in the toolchain checks that for you: smali assembles any register number, D8 does not type-check
+across an injection, and CI builds the bundle without ever applying it. `0.0.1-dev.1` passed the IME
+where a `Context` was required. It assembled, failed ART's verifier on the device, and took the
+whole event dispatcher — so the keyboard never appeared.
+
+Patches therefore pair a register with the type it is *proven* to hold, as a `TypedRegister`, and
+assert against the callee before emitting. `patches/src/main/kotlin/.../shared/Types.kt` has the
+helpers and the full reasoning. Two limits are worth knowing up front:
+
+- **It proves wrongness, never correctness.** Framework classes are not in the APK's dex, so a chain
+  that escapes into `android.*` is unknowable and passes silently. Only a chain that resolves
+  entirely to `Object` without reaching the target can fail — which is the case these patches keep
+  landing in, and the one `dev.1` was in.
+- **It fires when someone patches, not when CI builds.** Patches execute inside Morphe, so this
+  turns a bricked keyboard into a refused patch with a precise message. It is emphatically *not* a
+  release gate: a bundle carrying a broken patch still builds, tags and publishes clean.
+
 ## Upstream
 
 This repository was created from

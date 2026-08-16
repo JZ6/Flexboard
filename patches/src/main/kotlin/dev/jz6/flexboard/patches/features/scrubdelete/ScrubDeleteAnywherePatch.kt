@@ -2,6 +2,7 @@ package dev.jz6.flexboard.patches.features.scrubdelete
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
+import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
@@ -9,7 +10,10 @@ import com.android.tools.smali.dexlib2.iface.instruction.NarrowLiteralInstructio
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import dev.jz6.flexboard.patches.features.scrubsettings.scrubTuningPatch
+import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.TypedRegister
+import dev.jz6.flexboard.patches.shared.checkAssignable
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.usesField
@@ -78,7 +82,7 @@ val swipeToDeletePatch = bytecodePatch(
     dependsOn(scrubTuningPatch)
 
     execute {
-        ScrubDeleteConstructorFingerprint.method.chooseStartKeyFromPreference()
+        ScrubDeleteConstructorFingerprint.method.chooseStartKeyFromPreference(this)
         ScrubHandleMotionEventFingerprint.method.acceptWildcardStartKey()
     }
 }
@@ -157,7 +161,7 @@ private const val WILDCARD_LABEL = "flexboard_any_start_key"
  * uninitialised type from the same allocation site, which verifies fine. Only a *backward* branch,
  * or an exception handler, with an uninitialised reference live is rejected.
  */
-private fun MutableMethod.chooseStartKeyFromPreference() {
+private fun MutableMethod.chooseStartKeyFromPreference(context: BytecodePatchContext) {
     val registerCount = implementation?.registerCount
         ?: error("$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init> has no implementation")
     check(registerCount == DELETE_INIT_REGISTER_COUNT) {
@@ -189,8 +193,21 @@ private fun MutableMethod.chooseStartKeyFromPreference() {
         "The keycode constant is at $keyIndex, after the $CONFIG_CONSTRUCTOR call at $configIndex"
     }
 
-    // `this` occupies the first parameter register, so the Context is the one after it.
-    val contextRegister = registerCount - (parameterTypes.size + 1) + 1
+    // `this` occupies the first parameter register, so the Context is the one after it. Its type
+    // is the declared parameter type, which is as authoritative as it gets — and asserted anyway,
+    // because handing a non-Context to the preference store is what took the keyboard out in
+    // 0.0.1-dev.1.
+    val contextParameter = TypedRegister(
+        registerCount - (parameterTypes.size + 1) + 1,
+        parameterTypes.first().toString(),
+    )
+    context.checkAssignable(
+        contextParameter,
+        ANDROID_CONTEXT,
+        "The first parameter of $SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>, " +
+            "which $PREFERENCE_STORE_GET is handed",
+    )
+    val contextRegister = contextParameter.register
     val clobbersContext = (0 until keyIndex).any {
         (instructions[it] as? OneRegisterInstruction)?.registerA == contextRegister
     }

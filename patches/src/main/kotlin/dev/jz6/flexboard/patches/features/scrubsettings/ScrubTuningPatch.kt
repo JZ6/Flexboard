@@ -2,6 +2,7 @@ package dev.jz6.flexboard.patches.features.scrubsettings
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
+import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
@@ -11,6 +12,8 @@ import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_FIELD
 import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_START_KEY_FIELD
 import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_STEP_TABLE_FIELD
 import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_FIELD
+import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_FIELD_NAME
+import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_OWNER
 import dev.jz6.flexboard.patches.features.scrubdelete.INTEGER_VALUE_OF
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_GET_INT
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
@@ -19,7 +22,11 @@ import dev.jz6.flexboard.patches.features.scrubdelete.SCRUB_MOTION_EVENT_HANDLER
 import dev.jz6.flexboard.patches.features.scrubdelete.ScrubDeleteConstructorFingerprint
 import dev.jz6.flexboard.patches.features.scrubdelete.ScrubDispatchFingerprint
 import dev.jz6.flexboard.patches.features.scrubdelete.ScrubEngineConstructorFingerprint
+import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.TypedRegister
+import dev.jz6.flexboard.patches.shared.checkAssignable
+import dev.jz6.flexboard.patches.shared.invokeParameterType
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
@@ -60,9 +67,9 @@ internal val scrubTuningPatch = bytecodePatch(
     extendWith("extensions/extension.mpe")
 
     execute {
-        ScrubEngineConstructorFingerprint.method.substituteHoldDelay()
-        ScrubDeleteConstructorFingerprint.method.scaleStepTable()
-        ScrubDispatchFingerprint.method.capWordCount()
+        ScrubEngineConstructorFingerprint.method.substituteHoldDelay(this)
+        ScrubDeleteConstructorFingerprint.method.scaleStepTable(this)
+        ScrubDispatchFingerprint.method.capWordCount(this)
     }
 }
 
@@ -150,7 +157,7 @@ private const val STEPS_DONE_LABEL = "flexboard_steps_done"
  * gives every argument register directly, and neither a renumbered register nor a changed resource
  * id can silently mislead it.
  */
-private fun MutableMethod.substituteHoldDelay() {
+private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
     val registerCount = implementation?.registerCount
         ?: error("$THREE_ARGUMENT_ENGINE_CONSTRUCTOR has no implementation")
     check(registerCount == ENGINE_CONSTRUCTOR_REGISTER_COUNT) {
@@ -168,7 +175,15 @@ private fun MutableMethod.substituteHoldDelay() {
             "expected $ENGINE_CONSTRUCTOR_ARGUMENT_REGISTERS"
     }
 
-    val contextRegister = forward.invokeRegisterAt(1)
+    // The callee's own signature says what each argument slot must be, so the Context claim is
+    // read off the constructor being forwarded to rather than assumed from position.
+    val contextArgument = TypedRegister(forward.invokeRegisterAt(1), forward.invokeParameterType(1))
+    context.checkAssignable(
+        contextArgument,
+        ANDROID_CONTEXT,
+        "Argument 1 of $FOUR_ARGUMENT_ENGINE_CONSTRUCTOR, which $PREFERENCE_STORE_GET is handed",
+    )
+    val contextRegister = contextArgument.register
     val configRegister = forward.invokeRegisterAt(3)
     val delayRegister = forward.invokeRegisterAt(4)
 
@@ -228,7 +243,7 @@ private fun MutableMethod.substituteHoldDelay() {
  * trip the `Lpbv;->g:Z` bail-out. Where that flag is already set the table points at a *shared
  * static* fallback, so the scaling is skipped rather than corrupting global state.
  */
-private fun MutableMethod.scaleStepTable() {
+private fun MutableMethod.scaleStepTable(context: BytecodePatchContext) {
     val registerCount = implementation?.registerCount
         ?: error("$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init> has no implementation")
     check(registerCount == DELETE_CONSTRUCTOR_REGISTER_COUNT) {
@@ -246,7 +261,16 @@ private fun MutableMethod.scaleStepTable() {
             "expected $DELETE_CONSTRUCTOR_ARGUMENT_REGISTERS"
     }
 
-    val contextRegister = superCall.invokeRegisterAt(1)
+    val contextArgument = TypedRegister(
+        superCall.invokeRegisterAt(1),
+        superCall.invokeParameterType(1),
+    )
+    context.checkAssignable(
+        contextArgument,
+        ANDROID_CONTEXT,
+        "Argument 1 of the engine super call, which $PREFERENCE_STORE_GET is handed",
+    )
+    val contextRegister = contextArgument.register
     val configRegister = superCall.invokeRegisterAt(3)
 
     // Once the super call has returned, every register it used is the only thing still live — the
@@ -332,14 +356,32 @@ private fun MutableMethod.scaleStepTable() {
  * opcode bytes directly — `binop2addrb2` is `0xb2` and `binop92` is `0x92` — and the Dalvik spec
  * fixes those as `mul-int/2addr` and `mul-int`.
  */
-private fun MutableMethod.capWordCount() {
+private fun MutableMethod.capWordCount(context: BytecodePatchContext) {
     val registerCount = implementation?.registerCount
         ?: error("$SCRUB_MOTION_EVENT_HANDLER->r has no implementation")
     check(registerCount == DISPATCH_REGISTER_COUNT) {
         "$SCRUB_MOTION_EVENT_HANDLER->r has $registerCount registers, expected " +
             "$DISPATCH_REGISTER_COUNT — refusing to guess which registers are free"
     }
-    val thisRegister = registerCount - DISPATCH_PARAMETER_WORDS
+    // `this`, whose type is simply the method's own class. Unlike the two constructors above, the
+    // Context here is not an argument — it is read out of a field, so both halves need checking:
+    // that this register can legally read that field, and that what comes back is a Context.
+    val handler = TypedRegister(registerCount - DISPATCH_PARAMETER_WORDS, definingClass)
+    val thisRegister = handler.register
+
+    val handlerContext = context.classDefByOrNull(HANDLER_CONTEXT_OWNER)
+        ?.instanceFields
+        ?.firstOrNull { it.name == HANDLER_CONTEXT_FIELD_NAME }
+        ?: error(
+            "$HANDLER_CONTEXT_OWNER has no `$HANDLER_CONTEXT_FIELD_NAME` field — the handler's " +
+                "Context has moved, and $PREFERENCE_STORE_GET would be handed something else",
+        )
+    context.checkAssignable(handler, handlerContext.definingClass, "`this` in $SCRUB_MOTION_EVENT_HANDLER->r")
+    context.checkAssignable(
+        handlerContext.type,
+        ANDROID_CONTEXT,
+        "The value of $HANDLER_CONTEXT_FIELD, which $PREFERENCE_STORE_GET is handed",
+    )
 
     // Boxing the payload is what identifies the count register beyond doubt.
     val boxIndex = instructions.indexOfSoleCall(INTEGER_VALUE_OF, "$SCRUB_MOTION_EVENT_HANDLER->r")
