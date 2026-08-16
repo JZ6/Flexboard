@@ -1,5 +1,13 @@
 # Gboard's settings screens
 
+> **Written against Gboard 17.7.7.** The bundle now targets `18.0.3.954559732-release-arm64-v8a`,
+> and the disassembly listings below — obfuscated names *and* instruction offsets — are as they
+> stood on 17.7.7. Every mechanism Flexboard actually depends on was re-checked against 18 and
+> still holds, which is what the patches assert at patch time; the surrounding listings were not
+> re-derived, because rewriting them would mean asserting a line-by-line correspondence nobody
+> verified. Read them for the reasoning, and take current names from
+> [`gboard-bindings.md`](gboard-bindings.md) and offsets from the APK.
+
 How Flexboard adds rows to Gboard's settings screens, and how it greys out Gboard's own glide
 typing checkbox while the swipe gesture is enabled — preventing the conflict rather than reacting
 to it. This is now implemented; the sections below are in the order they were worked out, so the

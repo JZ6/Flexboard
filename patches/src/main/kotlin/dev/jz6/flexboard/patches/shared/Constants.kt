@@ -37,7 +37,7 @@ internal object Constants {
         ),
         targets = listOf(
             AppTarget(
-                version = "17.7.7.932364120-release-arm64-v8a",
+                version = "18.0.3.954559732-release-arm64-v8a",
                 isExperimental = false
             )
         )

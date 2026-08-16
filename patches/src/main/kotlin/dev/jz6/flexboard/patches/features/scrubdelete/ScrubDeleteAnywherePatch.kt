@@ -27,8 +27,8 @@ import dev.jz6.flexboard.patches.shared.usesField
  * The only thing scoping it to backspace is one comparison in `g(Landroid/view/MotionEvent;)V`:
  *
  * ```
- * iget   v5, v5, Loud;->c:I     # keycode of the key under the finger
- * iget   v6, v1, Lpbv;->a:I     # the configured start keycode, 67 for delete
+ * iget   v5, v5, Lpnu;->c:I     # keycode of the key under the finger
+ * iget   v6, v1, Lpvs;->a:I     # the configured start keycode, 67 for delete
  * if-ne  v5, v6, -> bail
  * ```
  *
@@ -103,12 +103,12 @@ private const val STOCK_START_KEYCODE = 67
  */
 private const val WILDCARD_START_KEYCODE = "-0x1"
 
-/** `Lpbv;`, the per-handler config. Its constructor is the boundary the scratch scan stops at. */
-private const val CONFIG_CONSTRUCTOR = "Lpbv;-><init>(IZIIIIII)V"
+/** `Lpvs;`, the per-handler config. Its constructor is the boundary the scratch scan stops at. */
+private const val CONFIG_CONSTRUCTOR = "Lpvs;-><init>(IZIIIIII)V"
 
 private const val DELETE_INIT_REGISTER_COUNT = 12
 
-private val DELETE_INIT_PARAMETERS = listOf("Landroid/content/Context;", "Lpbr;")
+private val DELETE_INIT_PARAMETERS = listOf("Landroid/content/Context;", "Lpvo;")
 
 /** A `35c` invoke packs its registers into nibbles, so nothing above v15 can be passed to one. */
 private const val NIBBLE_REGISTER_LIMIT = 16
@@ -128,7 +128,7 @@ private const val SCRUB_HANDLE_REGISTER_COUNT = 13
 private const val WILDCARD_LABEL = "flexboard_any_start_key"
 
 /**
- * Overrides the `const/16 vN, 67` feeding `Lpbv;-><init>`'s first argument with the wildcard, but
+ * Overrides the `const/16 vN, 67` feeding `Lpvs;-><init>`'s first argument with the wildcard, but
  * only when the preference says so. The literal is matched rather than the position, and exactly one
  * match is required — the constructor also loads four negative event codes and an attr reference,
  * none of which can be confused with a keycode.
@@ -147,7 +147,7 @@ private const val WILDCARD_LABEL = "flexboard_any_start_key"
  *
  * Three things have to hold, and each is asserted rather than assumed:
  *
- *  - **Every instruction between the constant and `Lpbv;-><init>` is itself a `const`.** That is
+ *  - **Every instruction between the constant and `Lpvs;-><init>` is itself a `const`.** That is
  *    what proves the registers they write are dead at the insertion point: they are written before
  *    anything reads them, so borrowing them for the preference call cannot lose a live value. If
  *    Gboard ever computes one of those arguments instead of loading it, this fails loudly.
@@ -156,7 +156,7 @@ private const val WILDCARD_LABEL = "flexboard_any_start_key"
  *  - **The scratch registers fit in a nibble**, because a `35c` invoke cannot address above v15.
  *
  * One thing is worth naming because it looks alarming and is not. `v0` holds an **uninitialised**
- * `Lpbv;` across the inserted block, since `new-instance` runs before the arguments are built. That
+ * `Lpvs;` across the inserted block, since `new-instance` runs before the arguments are built. That
  * is exactly the shape javac emits for `new Foo(cond ? a : b)`: a forward branch merges the same
  * uninitialised type from the same allocation site, which verifies fine. Only a *backward* branch,
  * or an exception handler, with an uninitialised reference live is rejected.

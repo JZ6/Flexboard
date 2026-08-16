@@ -18,10 +18,10 @@ internal const val SCRUB_DELETE_MOTION_EVENT_HANDLER =
     "Lcom/google/android/libraries/inputmethod/motioneventhandler/scrubmove/ScrubDeleteMotionEventHandler;"
 
 /** The per-handler config. Gboard reads it this way itself, at offset 23 of `g()`. */
-internal const val CONFIG_FIELD = "$SCRUB_MOTION_EVENT_HANDLER->g:Lpbv;"
+internal const val CONFIG_FIELD = "$SCRUB_MOTION_EVENT_HANDLER->g:Lpvs;"
 
 /** The keycode a drag must start on, and the sentinel the patches test for. */
-internal const val CONFIG_START_KEY_FIELD = "Lpbv;->a:I"
+internal const val CONFIG_START_KEY_FIELD = "Lpvs;->a:I"
 
 /**
  * The Context the base handler stores, set by `AbstractMotionEventHandler.<init>` and read exactly
@@ -38,25 +38,25 @@ internal const val INTEGER_VALUE_OF = "Ljava/lang/Integer;->valueOf(I)Ljava/lang
 
 /**
  * The distance table. `r()` counts how many of its entries `abs(delta)` has passed, and that count
- * is the number of words. **Not final**, unlike everything in `Lpbu;`, so its contents can be
+ * is the number of words. **Not final**, unlike everything in `Lpvr;`, so its contents can be
  * scaled in place.
  */
-internal const val CONFIG_STEP_TABLE_FIELD = "Lpbv;->h:[F"
+internal const val CONFIG_STEP_TABLE_FIELD = "Lpvs;->h:[F"
 
 /**
  * Set by the engine constructor when the distance table is not strictly increasing; `g()` bails at
  * offset 27 when it is true, and the table then points at the shared static `Lmbs;->c:[F`.
  */
-internal const val CONFIG_DISABLED_FIELD = "Lpbv;->g:Z"
+internal const val CONFIG_DISABLED_FIELD = "Lpvs;->g:Z"
 
 /**
  * Gboard's preference store, and its string-keyed getters. It exposes these alongside a
  * resource-id-keyed set (`b(II)I`, `at(I)Z`), and the string forms are what let a patch read a
  * preference whose resource id will not exist until aapt2 recompiles.
  */
-internal const val PREFERENCE_STORE = "Lpnp;"
+internal const val PREFERENCE_STORE = "Lqhy;"
 internal const val PREFERENCE_STORE_GET =
-    "$PREFERENCE_STORE->N(Landroid/content/Context;)$PREFERENCE_STORE"
+    "$PREFERENCE_STORE->I(Landroid/content/Context;)$PREFERENCE_STORE"
 internal const val PREFERENCE_GET_INT = "$PREFERENCE_STORE->b(Ljava/lang/String;I)I"
 internal const val PREFERENCE_GET_BOOLEAN = "$PREFERENCE_STORE->k(Ljava/lang/String;Z)Z"
 
@@ -73,13 +73,13 @@ object ScrubHandleMotionEventFingerprint : Fingerprint(
 
 /**
  * `ScrubDeleteMotionEventHandler` declares exactly one method. Its whole contribution is building
- * the `Lpbv;` config it hands to the shared engine, the first argument of which is the keycode the
+ * the `Lpvs;` config it hands to the shared engine, the first argument of which is the keycode the
  * drag must start on.
  */
 object ScrubDeleteConstructorFingerprint : Fingerprint(
     definingClass = SCRUB_DELETE_MOTION_EVENT_HANDLER,
     name = "<init>",
-    parameters = listOf("Landroid/content/Context;", "Lpbr;"),
+    parameters = listOf("Landroid/content/Context;", "Lpvo;"),
     returnType = "V",
 )
 
@@ -94,7 +94,7 @@ object ScrubDeleteConstructorFingerprint : Fingerprint(
 object ScrubEngineConstructorFingerprint : Fingerprint(
     definingClass = SCRUB_MOTION_EVENT_HANDLER,
     name = "<init>",
-    parameters = listOf("Landroid/content/Context;", "Lpbr;", "Lpbv;"),
+    parameters = listOf("Landroid/content/Context;", "Lpvo;", "Lpvs;"),
     returnType = "V",
 )
 

@@ -21,7 +21,7 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 internal fun Instruction.opcodeName(): String =
     opcode.name.uppercase().replace('-', '_').replace('/', '_')
 
-/** True when this instruction reads or writes exactly the given field, e.g. `Lpbv;->a:I`. */
+/** True when this instruction reads or writes exactly the given field, e.g. `Lpvs;->a:I`. */
 internal fun Instruction.usesField(descriptor: String): Boolean =
     ((this as? ReferenceInstruction)?.reference as? FieldReference)?.toString() == descriptor
 

@@ -32,9 +32,9 @@ import dev.jz6.flexboard.patches.shared.usesField
  * The first estimate for this feature assumed Flexboard would have to capture the deleted text
  * itself and reinsert it. It does not. Gboard already:
  *
- *  - **records the text.** `SCRUB_DELETE_FINISH` calls `Lnsz;->a(I)`, which performs the deletion
+ *  - **records the text.** `SCRUB_DELETE_FINISH` calls `Lomu;->a(I)`, which performs the deletion
  *    and *returns what it removed*, and the handler stores that in the undo slot
- *    (`LatinIme->y:Lqcy;`). The words a swipe deleted are sitting there when the finger lifts.
+ *    (`LatinIme->y:Lqyc;`). The words a swipe deleted are sitting there when the finger lifts.
  *  - **knows how to put it back.** The stock `UNDO_MULTI_DELETION` handler pulls the slot and
  *    re-commits through `AbstractIme->s`. Its own gate, `nga_enable_undo_delete`, is declared with
  *    a default of `true`, so there is nothing to turn on.
@@ -43,9 +43,9 @@ import dev.jz6.flexboard.patches.shared.usesField
  *
  * ## Why a positive count is the right trigger
  *
- * `Lnsz;->e(I)` opens with `count = Math.min(0, count)`, so a rightward scrub clamps to zero and
+ * `Lomu;->e(I)` opens with `count = Math.min(0, count)`, so a rightward scrub clamps to zero and
  * deletes nothing — the gesture is already an established no-op, and nothing is being taken away by
- * giving it a meaning. The clamp lives inside `Lnsz;`, not in the event, so the signed count still
+ * giving it a meaning. The clamp lives inside `Lomu;`, not in the event, so the signed count still
  * reaches the finish handler intact and `count > 0` *is* "the user swiped right".
  *
  * The obvious alternative — "the scrub finished having deleted nothing" — would also fire on a
@@ -80,9 +80,9 @@ val swipeRightToUndoPatch = bytecodePatch(
  * the *scratch* choice rests on knowing what the rest of the handler and the epilogue do with
  * v1–v3, which is a property of this build. Failing loudly beats guessing in a 36-register method.
  */
-private const val HANDLE_EVENT_REGISTER_COUNT = 36
+private const val HANDLE_EVENT_REGISTER_COUNT = 34
 
-/** How far back from the sole `Lnsz;->a(I)` call the handler's own prologue can be. */
+/** How far back from the sole `Lomu;->a(I)` call the handler's own prologue can be. */
 private const val ANCHOR_SEARCH_WINDOW = 12
 
 private const val NOT_RIGHTWARD_LABEL = "flexboard_not_rightward"
@@ -92,10 +92,18 @@ private const val UNDO_DONE_LABEL = "flexboard_undo_done"
  * Registers the emitted block borrows.
  *
  * Safe because every one of them is written before it is next read, on both paths out of here:
- * the stock finish path rewrites v1 immediately, v2 at the `Lnsz;->b:Z` read and v3 as the high
- * half of the `B(J, CharSequence)` argument; and the handled path runs the epilogue, which writes
- * v0/v1 (`move-result-wide`), v2 (`aa()`) and v3 before reading any of them. The epilogue *does*
- * read v7, v8 and v12, so none of those may be touched.
+ * the stock finish path rewrites v1 immediately (the `LatinIme->U:Lomu;` read), v2 at the
+ * `Lomu;->b:Z` read and v3 as the high half of the `z()J` result; and the handled path runs the
+ * epilogue, which writes v0/v1 (`move-result-wide`), v2 (`AbstractIme->X()`) and v3 (`sget-object`)
+ * before reading any of them. The two branches the finish path can still take — the empty-text exit
+ * and the no-`Lftq;` exit — both join the epilogue without reading v2 or v3 first.
+ *
+ * The epilogue *does* read v4 (the handled flag), v9 (`this`), v10 (the return value) and v12, so
+ * none of those may be touched.
+ *
+ * **Re-derived for Gboard 18, not carried over.** The dispatcher dropped from 36 to 34 registers,
+ * which reshuffles everything this argument rests on; v2 and v3 happen to remain free, but that is
+ * a result of re-reading the method rather than an assumption inherited from 17.7.7.
  */
 private val SCRATCH_REGISTERS = listOf(2, 3)
 
@@ -109,9 +117,9 @@ internal const val UNDO_ENABLED_KEY = "flexboard_undo_enabled"
 
 private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     val registerCount = implementation?.registerCount
-        ?: error("$LATIN_IME->d has no implementation")
+        ?: error("$LATIN_IME->q has no implementation")
     check(registerCount == HANDLE_EVENT_REGISTER_COUNT) {
-        "$LATIN_IME->d has $registerCount registers, expected $HANDLE_EVENT_REGISTER_COUNT — " +
+        "$LATIN_IME->q has $registerCount registers, expected $HANDLE_EVENT_REGISTER_COUNT — " +
             "refusing to guess which registers are free in a method this size"
     }
 
@@ -119,7 +127,7 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     // instruction stream, so it is anchored on the one call that is unique to it instead.
     val takeText = instructions.withIndex().filter { (_, it) -> it.callsMethod(SCRUB_STATE_TAKE_TEXT) }
     check(takeText.size == 1) {
-        "Expected exactly one call to $SCRUB_STATE_TAKE_TEXT in $LATIN_IME->d, found " +
+        "Expected exactly one call to $SCRUB_STATE_TAKE_TEXT in $LATIN_IME->q, found " +
             "${takeText.size} — SCRUB_DELETE_FINISH can no longer be told apart from its siblings"
     }
     val takeTextIndex = takeText.single().index
@@ -159,7 +167,7 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
         )
 
     // Reading the field at all requires the register to be a subclass of the class declaring it.
-    context.checkAssignable(ime, contextField.definingClass, "The IME register in $LATIN_IME->d")
+    context.checkAssignable(ime, contextField.definingClass, "The IME register in $LATIN_IME->q")
     // And what the preference store is handed has to be an actual Context. This is the assertion
     // whose absence shipped as 0.0.1-dev.1.
     context.checkAssignable(
@@ -192,7 +200,7 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     val (slot, value) = SCRATCH_REGISTERS
     val claimed = listOf(countRegister, thisRegister, flagRegister, slot, value)
     check(claimed.distinct().size == claimed.size) {
-        "Register collision in $LATIN_IME->d: count=v$countRegister this=v$thisRegister " +
+        "Register collision in $LATIN_IME->q: count=v$countRegister this=v$thisRegister " +
             "flag=v$flagRegister scratch=$SCRATCH_REGISTERS"
     }
 

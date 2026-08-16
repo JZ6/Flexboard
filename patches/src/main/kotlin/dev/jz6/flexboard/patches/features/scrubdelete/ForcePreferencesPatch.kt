@@ -16,7 +16,7 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
  *
  * ```xml
  * <motion_event_handler class=".motioneventhandler.scrubmove.ScrubDeleteMotionEventHandler"
- *                       preference_key="@0x7f140995" reverse_preference="false"/>
+ *                       preference_key="@0x7f140a1f" reverse_preference="false"/>
  * ```
  *
  * So with Gboard's "Delete swipe" turned off, the patch does nothing whatsoever and looks broken.
@@ -30,7 +30,7 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
  * preference is already true by the time handlers are attached.
  *
  * Writing the setting rather than intercepting the read is deliberate. An earlier version of this
- * project hooked `Lpnp;->at(I)Z` and it failed on device: every consumer caches the value and the
+ * project hooked `Lqhy;->at(I)Z` and it failed on device: every consumer caches the value and the
  * caches only refresh when the keyboard is shown, so glide typing kept coming back. See
  * `docs/glide-detection.md`.
  *
@@ -62,12 +62,12 @@ internal val forceScrubPreferencesPatch = bytecodePatch(
 }
 
 /**
- * `Lpnp;->aa` resolves the resource id to a preference key, dispatches on the boxed type and
+ * `Lqhy;->T` resolves the resource id to a preference key, dispatches on the boxed type and
  * commits with `Editor.apply()`.
  */
 object PreferenceStoreWriteFingerprint : Fingerprint(
-    definingClass = "Lpnp;",
-    name = "aa",
+    definingClass = "Lqhy;",
+    name = "T",
     parameters = listOf("I", "Ljava/lang/Object;"),
     returnType = "V",
 )
@@ -79,7 +79,7 @@ object PreferenceStoreWriteFingerprint : Fingerprint(
 object ApplyPreferenceValuesFingerprint : Fingerprint(
     definingClass = "Lcom/google/android/apps/inputmethod/latin/LatinApp;",
     name = "d",
-    parameters = listOf("Lpnp;"),
+    parameters = listOf("Lqhy;"),
     returnType = "V",
 )
 
@@ -88,8 +88,8 @@ object ApplyPreferenceValuesFingerprint : Fingerprint(
  * meant. `COMPATIBILITY_GBOARD` pinning the bundle to a single Gboard build is what makes them
  * safe to hardcode; both were resolved from the resource table with `tools/apk/arsc.py`.
  */
-private const val SCRUB_DELETE_PREFERENCE = "0x7f140995" // enable_scrub_delete
-private const val GLIDE_TYPING_PREFERENCE = "0x7f14097b" // enable_gesture_input
+private const val SCRUB_DELETE_PREFERENCE = "0x7f140a1f" // enable_scrub_delete
+private const val GLIDE_TYPING_PREFERENCE = "0x7f140a05" // enable_gesture_input
 
 private const val APPLY_PREFERENCES_REGISTER_COUNT = 13
 
@@ -97,13 +97,13 @@ private const val NOT_ENABLED_LABEL = "flexboard_not_enabled"
 
 private fun MutableMethod.forcePreferences(setterDescriptor: String) {
     val registerCount = implementation?.registerCount
-        ?: error("LatinApp->d(Lpnp;)V has no implementation")
+        ?: error("LatinApp->d(Lqhy;)V has no implementation")
     check(registerCount == APPLY_PREFERENCES_REGISTER_COUNT) {
-        "LatinApp->d(Lpnp;)V has $registerCount registers, " +
+        "LatinApp->d(Lqhy;)V has $registerCount registers, " +
             "expected $APPLY_PREFERENCES_REGISTER_COUNT — refusing to guess register mapping"
     }
-    check(parameterTypes.map(Any::toString) == listOf("Lpnp;")) {
-        "LatinApp->d takes $parameterTypes, expected a single Lpnp;"
+    check(parameterTypes.map(Any::toString) == listOf("Lqhy;")) {
+        "LatinApp->d takes $parameterTypes, expected a single Lqhy;"
     }
 
     // Captured before the insertion shifts indices; the label resolves by instruction identity.

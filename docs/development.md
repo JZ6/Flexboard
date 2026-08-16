@@ -20,7 +20,7 @@ when Gboard updates, so each document records how it was derived, not just what 
 | [`gboard-settings-ui.md`](gboard-settings-ui.md) | How rows are added to Gboard's settings screens, and how its own glide rows are greyed out |
 | [`../tools/apk/`](../tools/apk/README.md) | The DEX and binary-XML readers everything above was found with |
 
-The pinned APK is `com.google.android.inputmethod.latin_17.7.7.932364120-release-arm64-v8a`, which
+The pinned APK is `com.google.android.inputmethod.latin_18.0.3.954559732-release-arm64-v8a`, which
 is what every finding above was read from.
 
 ## Layout
@@ -170,7 +170,32 @@ regenerates it.
 
 ## Supporting a new Gboard
 
-`COMPATIBILITY_GBOARD` pins the bundle to one build, so a newer Gboard is refused rather than
-mispatched. Moving to a new version means re-deriving the obfuscated names in the bindings and the
-resource ids against that APK, then updating the pin. [`glide-detection.md`](glide-detection.md)
-documents the method and is the worked example to copy.
+`COMPATIBILITY_GBOARD` pins the bundle to one build, so a different Gboard is refused rather than
+mispatched. Moving to a new version means re-deriving the obfuscated names and the resource ids
+against that APK, then updating the pin.
+
+The 17.7.7 → 18.0.3 move is the worked example, and the mapping it produced is in
+[`gboard-bindings.md`](gboard-bindings.md). What it taught, in order of how much time it saves:
+
+1. **Diff the two builds, do not re-derive from scratch.** Almost everything survives a version
+   bump — same field letters, same method shapes, often identical instruction counts. Keep the old
+   dex extracted alongside the new one and match classes structurally: a class whose field letters,
+   types and method signatures all line up *is* the same class. Every rename in that table was
+   found this way, and each one was unique.
+2. **Run [`../tools/apk/preflight.py`](../tools/apk/README.md) early and often.** It re-checks every
+   patch assertion against the dex, which is the only thing standing between a compiled bundle and
+   a device. Point it at the *old* dex once too: if it does not fail there, it is not really
+   checking anything.
+3. **Never carry a field letter across a build.** Gboard 18 inserted a field into `AbstractIme`,
+   shifting everything from `C` down one — so the suppression flag moved `N:Z` → `O:Z` while `N:Z`
+   continued to exist as an unrelated boolean. That assembles, verifies, and silently tests the
+   wrong field; no type assertion can catch it. Pin such fields by behaviour instead (this one by
+   its read count in the dispatcher), and confirm the letter rather than assuming it.
+4. **Re-derive register arguments, do not shift them.** `r()` gained a constructor argument, which
+   moved the scratch registers *and* made two previously-dead ones live. A blind +1 would have
+   written a String into a reference parameter.
+5. **Resource ids always move.** Resolve them by value through `arsc.py`'s `find_value`, since the
+   names are collapsed.
+
+[`glide-detection.md`](glide-detection.md) documents the original derivation method for a binding
+that has no structural twin to match against.

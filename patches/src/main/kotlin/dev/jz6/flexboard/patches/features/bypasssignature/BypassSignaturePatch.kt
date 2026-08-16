@@ -15,7 +15,7 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 
 /**
- * `Lqvi;->a` hashes the calling package's signing certificate and compares it against three
+ * `Lrpv;->a` hashes the calling package's signing certificate and compares it against three
  * baked-in digests. A patched build is re-signed, so it fails, and the features gated on that
  * check stop working.
  *
@@ -40,22 +40,22 @@ val bypassGboardSignaturePatch = bytecodePatch(
 }
 
 object SignatureCheckFingerprint : Fingerprint(
-    definingClass = "Lqvi;",
+    definingClass = "Lrpv;",
     name = "a",
     accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
     parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;"),
     returnType = "Z",
 )
 
-private const val SIGNATURE_CHECK = "Lqvi;->a(Landroid/content/Context;Ljava/lang/String;)Z"
-private const val DIGEST_METHOD = "Lqvi;->c(Landroid/content/Context;Ljava/lang/String;)[B"
+private const val SIGNATURE_CHECK = "Lrpv;->a(Landroid/content/Context;Ljava/lang/String;)Z"
+private const val DIGEST_METHOD = "Lrpv;->c(Landroid/content/Context;Ljava/lang/String;)[B"
 private const val ARRAYS_EQUALS = "Ljava/util/Arrays;->equals([B[B)Z"
 
 private val EXPECTED_FIELDS = listOf(
-    "Lqvi;->e:[B",
-    "Lqvi;->d:[B",
-    "Lqvi;->c:[B",
-    "Lquk;->b:Z",
+    "Lrpv;->e:[B",
+    "Lrpv;->d:[B",
+    "Lrpv;->c:[B",
+    "Lrox;->b:Z",
 )
 
 /** The unknown-package exit, the match exit and the no-match exit, in bytecode order. */

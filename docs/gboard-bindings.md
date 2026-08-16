@@ -1,11 +1,62 @@
-# Gboard 17.7.7 bindings
+# Gboard bindings
 
 Every obfuscated name this project depends on, what it is, and how it was identified. These are
-facts about **one build** — `17.7.7.932364120-release-arm64-v8a` — and `COMPATIBILITY_GBOARD`
-pins the bundle to it precisely so a newer Gboard is refused rather than mispatched.
+facts about **one build**, and `COMPATIBILITY_GBOARD` pins the bundle to it precisely so a
+different Gboard is refused rather than mispatched.
 
 Kept as a document as well as in `GboardBindings.kt` because the derivation is the expensive part
 and does not survive in code.
+
+## The 17.7.7 → 18.0.3 move
+
+The bundle now targets `18.0.3.954559732-release-arm64-v8a`. **The tables below the mapping are
+still written in 17.7.7's names**, because that is the build their derivations were performed
+against and rewriting them wholesale would mean asserting mappings that were never checked. Only
+the names in this table were re-derived; anything else here needs re-deriving before it is trusted
+on 18.
+
+R8 renames on every build, so none of this carries over by assumption. Each row was matched
+structurally — identical field letters and types, identical method shapes, identical instruction
+bodies — not by guessing that the alphabet shifted.
+
+| What it is | 17.7.7 | 18.0.3 |
+|---|---|---|
+| Preference store | `Lpnp;` | `Lqhy;` |
+| Scrub config | `Lpbv;` | `Lpvs;` |
+| Scrub timings | `Lpbu;` | `Lpvr;` |
+| Keyboard delegate | `Lpbr;` | `Lpvo;` |
+| Event | `Lnbj;` | `Lnur;` |
+| Key/action data | `Loud;` | `Lpnu;` |
+| …its second ctor arg | `Louc;` | `Lpnt;` |
+| Scrub state / undo text source | `Lnsz;` | `Lomu;` |
+| Undo slot | `Lqcy;` | `Lqyc;` |
+| Committable text | `Lnpx;` | `Lojt;` |
+| Signature check | `Lqvi;` | `Lrpv;` |
+| …its fallback flag | `Lquk;` | `Lrox;` |
+
+| Member | 17.7.7 | 18.0.3 |
+|---|---|---|
+| Event dispatcher | `LatinIme->d(Lnbj;)Z` | `LatinIme->q(Lnur;)Z` |
+| Suppression flag | `AbstractIme->N:Z` | **`AbstractIme->O:Z`** |
+| Store singleton | `Lpnp;->N(Context)` | `Lqhy;->I(Context)` |
+| Preference writer | `Lpnp;->aa(I,Object)V` | `Lqhy;->T(I,Object)V` |
+| `contains` by id | `Lpnp;->ar(I)Z` | `Lqhy;->ak(I)Z` |
+| Word-count getter | `La;->W(Lnbj;)I` | `La;->X(Lnur;)I` |
+
+**`AbstractIme->N:Z` → `O:Z` is the dangerous one.** Gboard 18 inserted a field, shifting every
+letter from `C` down by one — and `N` still exists on 18 as an unrelated boolean. Carrying the
+letter over would have assembled, passed verification and silently tested the wrong field, which no
+type assertion can catch. It is pinned from a read count instead: the suppression flag is the only
+`AbstractIme` boolean read exactly four times in the dispatcher, in both builds.
+
+Unchanged across the move, and worth knowing because they carry most of the load:
+`ScrubMotionEventHandler` and its `g`/`r`/`<init>` names, `AbstractMotionEventHandler->o:Context`,
+`AbstractIme->B:Context`, `AbstractIme->s`, `LatinIme->y`, `Lpvs;->a`/`g`/`h`, and the store's
+string-keyed `b`/`k`. The two signing-certificate digests are also identical, so
+`COMPATIBILITY_GBOARD.signatures` needed no edit.
+
+Resource ids all moved: `enable_scrub_delete` `0x7f140995`→`0x7f140a1f`, `enable_gesture_input`
+`0x7f14097b`→`0x7f140a05`, `pref_enable_flick_symbols` `0x7f140977`→`0x7f140a01`.
 
 ## Touch and dispatch
 

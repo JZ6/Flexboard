@@ -14,12 +14,16 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
  * hinted in its corner.
  *
  * Gboard already implements this and ships it off. The setting is
- * `pref_enable_flick_symbols` (`0x7f140977`), and two places read it at runtime:
+ * `pref_enable_flick_symbols` (`0x7f140a01`), and two places read it at runtime:
  *
  * ```
- * LatinGestureMotionEventHandler->d():  Lpnp;->at(0x7f140977)Z  → this.l:Z
- * Lpbj;->fn(Lpnp;String):               key 0x7f140977          → this.n:Z
+ * LatinGestureMotionEventHandler->d():  Lcdl;->x(0x7f140a01, false)Z  → this.l:Z
+ * Lpvf;->fV(Lqhy;String):               key 0x7f140a01
  * ```
+ *
+ * On 17.7.7 the first of those went through `Lpnp;->at(I)Z`, a one-line forward to the store's
+ * superclass. Gboard 18 dropped the forwarder and calls the superclass directly; the preference
+ * read is the same one either way.
  *
  * Neither consults anything else, so writing that one preference is the whole feature.
  *
@@ -27,7 +31,7 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
  *
  * Unlike `forceScrubPreferencesPatch`, which rewrites its preferences on every start because the
  * swipe gesture cannot work otherwise, this one writes only when the key has never been set —
- * `Lpnp;->ar(I)Z` is `SharedPreferences.contains` keyed by resource id. So it behaves as a genuine
+ * `Lqhy;->ak(I)Z` is `SharedPreferences.contains` keyed by resource id. So it behaves as a genuine
  * default: on out of the box, and it stays off if the user turns it off.
  *
  * ## The greyed row
@@ -68,10 +72,10 @@ val flickSymbolsPatch = bytecodePatch(
  * to hardcode; it was resolved from the resource table with `tools/apk/arsc.py`, and its label
  * (`0x7f140c14`) reads "Flick keys to enter symbols".
  */
-private const val FLICK_SYMBOLS_PREFERENCE = "0x7f140977"
+private const val FLICK_SYMBOLS_PREFERENCE = "0x7f140a01"
 
 /** `SharedPreferences.contains`, keyed by resource id rather than by the resolved string. */
-private const val PREFERENCE_CONTAINS = "Lpnp;->ar(I)Z"
+private const val PREFERENCE_CONTAINS = "Lqhy;->ak(I)Z"
 
 private const val APPLY_PREFERENCES_REGISTER_COUNT = 13
 
@@ -92,13 +96,13 @@ private const val ALREADY_SET_LABEL = "flexboard_flick_symbols_already_set"
  */
 private fun MutableMethod.defaultFlickSymbolsOn(setterDescriptor: String) {
     val registerCount = implementation?.registerCount
-        ?: error("LatinApp->d(Lpnp;)V has no implementation")
+        ?: error("LatinApp->d(Lqhy;)V has no implementation")
     check(registerCount == APPLY_PREFERENCES_REGISTER_COUNT) {
-        "LatinApp->d(Lpnp;)V has $registerCount registers, " +
+        "LatinApp->d(Lqhy;)V has $registerCount registers, " +
             "expected $APPLY_PREFERENCES_REGISTER_COUNT — refusing to guess register mapping"
     }
-    check(parameterTypes.map(Any::toString) == listOf("Lpnp;")) {
-        "LatinApp->d takes $parameterTypes, expected a single Lpnp;"
+    check(parameterTypes.map(Any::toString) == listOf("Lqhy;")) {
+        "LatinApp->d takes $parameterTypes, expected a single Lqhy;"
     }
 
     val resume = instructions.first()

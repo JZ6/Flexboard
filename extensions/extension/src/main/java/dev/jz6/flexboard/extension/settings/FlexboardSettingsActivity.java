@@ -47,7 +47,7 @@ import java.util.List;
  * palette; this picks between two.
  *
  * <p><b>It writes to Gboard's own preference file, deliberately.</b> Gboard's store
- * (<code>Lpnp;</code>) is constructed with a null name, which resolves to
+ * (<code>Lqhy;</code>) is constructed with a null name, which resolves to
  * <code>PreferenceManager.getDefaultSharedPreferences</code> — that is
  * <code>&lt;packageName&gt;_preferences</code> in <code>MODE_PRIVATE</code>, on a
  * <b>device-protected</b> context. See {@link #preferenceContext()} — that last part is not a
@@ -487,8 +487,8 @@ public final class FlexboardSettingsActivity extends Activity {
      * The context whose SharedPreferences Gboard's store actually reads.
      *
      * <p><b>Not this Activity's.</b> Getting this wrong is why the sliders did nothing at all until
-     * `v0.1.0-dev.7`: the file name was right and the file was the wrong one. `Lpnp;-><init>` ends
-     * up in `Lpns;`, which does this before asking for the default preferences:
+     * `v0.1.0-dev.7`: the file name was right and the file was the wrong one. `Lqhy;-><init>` does
+     * this before asking for the default preferences:
      *
      * <pre>
      *   v5 = context.getApplicationContext()

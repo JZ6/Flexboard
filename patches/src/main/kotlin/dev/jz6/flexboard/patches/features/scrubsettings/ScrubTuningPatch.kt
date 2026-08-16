@@ -36,8 +36,8 @@ import dev.jz6.flexboard.patches.shared.opcodeName
 /**
  * Makes the scrub engine's feel adjustable from Gboard's own settings.
  *
- * Every value in `Lpbu;`, the engine's tuning struct, is **`public final`** — Gboard writes them
- * only inside `Lpbu;-><init>`. So none of them can be set with an `iput` from a patch; ART rejects
+ * Every value in `Lpvr;`, the engine's tuning struct, is **`public final`** — Gboard writes them
+ * only inside `Lpvr;-><init>`. So none of them can be set with an `iput` from a patch; ART rejects
  * a final-field write from outside the declaring class. The way in is to substitute the
  * **constructor arguments** instead, which is what this patch does.
  *
@@ -75,7 +75,7 @@ internal val scrubTuningPatch = bytecodePatch(
 }
 
 /**
- * Preference keys. Deliberately plain string literals rather than resource ids: `Lpnp;` exposes a
+ * Preference keys. Deliberately plain string literals rather than resource ids: `Lqhy;` exposes a
  * string-keyed getter alongside its resource-id one, and a *new* resource has no id until aapt2
  * recompiles, which is long after this patch runs. Literals sidestep the problem entirely.
  *
@@ -120,17 +120,17 @@ internal const val MAX_WORDS_NO_LIMIT = 10
 /** `regs=11, ins=4` — asserted so the scratch register below is provably the one that was read. */
 private const val ENGINE_CONSTRUCTOR_REGISTER_COUNT = 11
 
-/** `this`, Context, Lpbr;, Lpbv;, and the wide delay — six registers. */
+/** `this`, Context, Lpvo;, Lpvs;, and the wide delay — six registers. */
 private const val ENGINE_CONSTRUCTOR_ARGUMENT_REGISTERS = 6
 
 private const val DELETE_CONSTRUCTOR_REGISTER_COUNT = 12
 private const val DELETE_CONSTRUCTOR_ARGUMENT_REGISTERS = 4
 
 private const val FOUR_ARGUMENT_ENGINE_CONSTRUCTOR =
-    "$SCRUB_MOTION_EVENT_HANDLER-><init>(Landroid/content/Context;Lpbr;Lpbv;J)V"
+    "$SCRUB_MOTION_EVENT_HANDLER-><init>(Landroid/content/Context;Lpvo;Lpvs;J)V"
 
 private const val THREE_ARGUMENT_ENGINE_CONSTRUCTOR =
-    "$SCRUB_MOTION_EVENT_HANDLER-><init>(Landroid/content/Context;Lpbr;Lpbv;)V"
+    "$SCRUB_MOTION_EVENT_HANDLER-><init>(Landroid/content/Context;Lpvo;Lpvs;)V"
 
 /** `100.0f`, as the high-16 constant the smali assembler wants. */
 private const val ONE_HUNDRED_FLOAT = "0x42c80000"
@@ -148,10 +148,10 @@ private const val STEPS_DONE_LABEL = "flexboard_steps_done"
  *  7: invoke-virtual {v0, v1}, Resources;->getInteger(I)I
  * 11: int-to-long v5, v0
  * 12: move-object v1, v7 … v4, v10
- * 16: invoke-direct/range {v1 .. v6}, ScrubMotionEventHandler-><init>(…Lpbv;J)V
+ * 16: invoke-direct/range {v1 .. v6}, ScrubMotionEventHandler-><init>(…Lpvs;J)V
  * ```
  *
- * Replacing the forwarded value means `Lpbu;->b:J` is *built* with the user's delay, so the gate in
+ * Replacing the forwarded value means `Lpvr;->b:J` is *built* with the user's delay, so the gate in
  * `p()` still runs exactly as Gboard wrote it and simply compares against a different number.
  *
  * Anchored on the forwarded call rather than on the resource id or the conversion opcode: the call
@@ -218,9 +218,9 @@ private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
 /**
  * Scales the distance table in place.
  *
- * `r()` counts how many entries of `Lpbv;->h:[F` the travelled distance has passed, and that count
+ * `r()` counts how many entries of `Lpvs;->h:[F` the travelled distance has passed, and that count
  * is the number of words deleted — so the table *is* the swipe length, and scaling it by a
- * percentage is the whole knob. Unlike `Lpbu;`, the table field is not final, and array contents
+ * percentage is the whole knob. Unlike `Lpvr;`, the table field is not final, and array contents
  * are writable regardless, so this needs no constructor-argument substitution.
  *
  * Done in `ScrubDeleteMotionEventHandler.<init>` rather than the shared engine constructor because
@@ -231,7 +231,7 @@ private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
  *
  * Living in the delete constructor scopes it to delete, so it needs no sentinel test to avoid the
  * spacebar and inline-suggestion handlers. It tests one anyway, and is alone among the three in
- * having to: the other two run in the *shared* engine and so already gate on `Lpbv;->a:I` being
+ * having to: the other two run in the *shared* engine and so already gate on `Lpvs;->a:I` being
  * negative, which means turning Flexboard off silences them for free. Without its own copy of that
  * test this one would keep rescaling the distance of Gboard's own backspace swipe after the switch
  * was turned off — the one setting that would leak out of a disabled Flexboard.
@@ -241,7 +241,7 @@ private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
  * edge.
  *
  * A positive scale preserves the strictly-increasing invariant the engine checks, so this cannot
- * trip the `Lpbv;->g:Z` bail-out. Where that flag is already set the table points at a *shared
+ * trip the `Lpvs;->g:Z` bail-out. Where that flag is already set the table points at a *shared
  * static* fallback, so the scaling is skipped rather than corrupting global state.
  */
 private fun MutableMethod.scaleStepTable(context: BytecodePatchContext) {
@@ -332,23 +332,23 @@ private fun MutableMethod.scaleStepTable(context: BytecodePatchContext) {
  * extrapolation — and both are a multiply of a magnitude by the direction:
  *
  * ```
- * 103: mul-int/2addr v3, v6      # bucket index × direction        (opcode 0xb2)
- * 118: mul-int v3, v6, v0        # extrapolated magnitude × direction (opcode 0x92)
- * 120: if-nez v11, -> 132        # both converge here
- * 122: iget v0, v9, ->r:I        # the last count dispatched
- * 124: if-ne v0, v3, -> 132      # only re-dispatched when it changes
+ * 106: mul-int/2addr v3, v7      # bucket index × direction        (opcode 0xb2)
+ * 121: mul-int v3, v7, v0        # extrapolated magnitude × direction (opcode 0x92)
+ * 123: if-nez v12, -> 135        # both converge here
+ * 125: iget v0, v10, ->r:I       # the last count dispatched
+ * 127: if-ne v0, v3, -> 135      # only re-dispatched when it changes
  * ```
  *
  * Clamping the count to ±N gives "at most N words per swipe" for free: swiping further produces a
- * raw count that clamps back to the same value, the comparison at 124 finds no change, and nothing
+ * raw count that clamps back to the same value, the comparison at 127 finds no change, and nothing
  * more is dispatched. Swiping back still reduces the magnitude, so restore keeps working.
  *
- * **Both sites are patched rather than the convergence at 120**, because 120 is a branch target:
+ * **Both sites are patched rather than the convergence at 123**, because 123 is a branch target:
  * dexlib2 keeps labels attached to the original instruction, so code inserted before it would be
  * jumped straight over by the two `goto`s that reach it — catching only the extrapolation path and
  * silently leaving the common one uncapped.
  *
- * The clamp must also land *before* offset 124. Clamping any later would leave the change detection
+ * The clamp must also land *before* offset 127. Clamping any later would leave the change detection
  * comparing a clamped `this.r` against an unclamped count, so every further pixel of travel would
  * re-dispatch the same value and delete another word — the exact opposite of the intent.
  *
@@ -409,12 +409,18 @@ private fun MutableMethod.capWordCount(context: BytecodePatchContext) {
             "computed as magnitude × direction at exactly the bucket and extrapolation sites"
     }
 
-    // Named rather than picked lowest-first, because the low registers are not free: v1 is set to
-    // null early and passed as the `Louc;` argument of `Loud;-><init>` at offsets 158 and 179, so
-    // staging a string key there would put a String where a reference of another type is expected.
-    // These three are dead from both insertion points onward — v4 and v6 are the -1 constant and
-    // the direction, both consumed by the multiply being patched, and v8 is a spent comparison
+    // Named rather than picked lowest-first, because the low registers are not free. Gboard 18's
+    // `Lpnu;-><init>` takes a fourth, int argument, and the two registers feeding it are both live
+    // across this whole region: v4 holds the null `Lpnt;` and v1 the int, and they are read at
+    // offsets 161 and 182. Staging a string key or a count in either would put the wrong type into
+    // that constructor.
+    //
+    // These three are dead from both insertion points onward — v5 and v7 are the -1 constant and
+    // the direction, both consumed by the multiply being patched, and v9 is a spent comparison
     // result. The register-count assertion above is what makes that analysis binding.
+    //
+    // On 17.7.7 the same three roles sat in v4, v6 and v8; the fourth constructor argument is what
+    // shifted them. They were re-read out of the v18 method rather than shifted by hand.
     val (store, key, limit) = CLAMP_SCRATCH_REGISTERS
     check(setOf(store, key, limit).size == CLAMP_SCRATCH_REGISTERS.size) {
         "Scratch registers $CLAMP_SCRATCH_REGISTERS are not distinct"
@@ -466,12 +472,13 @@ private const val SCRATCH_REGISTERS_NEEDED = 5
 
 /**
  * store, key, limit — dead at both clamp sites in `r()`. Deliberately *not* the lowest free
- * registers: v1 carries the null `Louc;` that the dispatch path passes to `Loud;-><init>`.
+ * registers: v4 carries the null `Lpnt;` and v1 the trailing int that the dispatch path passes to
+ * `Lpnu;-><init>`.
  */
-private val CLAMP_SCRATCH_REGISTERS = listOf(4, 6, 8)
+private val CLAMP_SCRATCH_REGISTERS = listOf(5, 7, 9)
 
-/** `regs=12, ins=3` — `this`, the MotionEvent and the boolean. */
-private const val DISPATCH_REGISTER_COUNT = 12
+/** `regs=13, ins=3` — `this`, the MotionEvent and the boolean. */
+private const val DISPATCH_REGISTER_COUNT = 13
 private const val DISPATCH_PARAMETER_WORDS = 3
 
 /** `mul-int/2addr` (0xb2) at the bucket site, `mul-int` (0x92) at the extrapolation site. */

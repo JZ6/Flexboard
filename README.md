@@ -6,7 +6,7 @@ Gboard's only word-delete is a swipe on the backspace key, which means moving yo
 corner and back for every correction. Flexboard puts that gesture wherever your thumb already is.
 
 This is a [Morphe](https://github.com/MorpheApp) patch bundle for Gboard
-`17.7.7.932364120-release-arm64-v8a`
+`18.0.3.954559732-release-arm64-v8a`
 
 ## Install
 
@@ -37,7 +37,7 @@ Both keyboards stay installed, so you can switch back whenever you like.
 
 **🎯 Supported versions:**
 
-| 17.7.7.932364120-release-arm64-v8a |
+| 18.0.3.954559732-release-arm64-v8a |
 | :---: |
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |

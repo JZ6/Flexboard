@@ -43,7 +43,7 @@ import org.w3c.dom.Document
  * resolves in whatever package the rename patch produces and so cannot depend on which `finalize`
  * block ran first. On device it failed with *no application found to handle the action*.
  *
- * Gboard 17.7.7 declares `targetSdkVersion="37"`, and since Android 14 an app targeting 34+ may
+ * Gboard 18.0.3 declares `targetSdkVersion="37"`, and since Android 14 an app targeting 34+ may
  * only deliver an implicit intent to an **exported** component — including to its own components.
  * The intent filter written beside the Activity therefore matched nothing, `startActivity` found no
  * candidate, and the tap raised `ActivityNotFoundException`.

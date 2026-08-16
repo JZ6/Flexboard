@@ -1,5 +1,13 @@
 # Gboard's motion event handlers
 
+> **Written against Gboard 17.7.7.** The bundle now targets `18.0.3.954559732-release-arm64-v8a`,
+> and the disassembly listings below — obfuscated names *and* instruction offsets — are as they
+> stood on 17.7.7. Every mechanism Flexboard actually depends on was re-checked against 18 and
+> still holds, which is what the patches assert at patch time; the surrounding listings were not
+> re-derived, because rewriting them would mean asserting a line-by-line correspondence nobody
+> verified. Read them for the reasoning, and take current names from
+> [`gboard-bindings.md`](gboard-bindings.md) and offsets from the APK.
+
 Flexboard implements its gesture from scratch: pointer hooks on `Lpbl;`, a dispatch veto on
 `Lpbj;`, its own distance/drift/duration thresholds and its own settings rows. Gboard has its own
 mechanism for exactly this kind of gesture, and already ships a word-scrub delete built on it.

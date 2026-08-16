@@ -13,7 +13,8 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
  * ## Why this exists
  *
  * `0.0.1-dev.1` shipped a keyboard that would not start. One emitted instruction passed `this`
- * — a `LatinIme` — to `Lpnp;->N(Landroid/content/Context;)Lpnp;`. `LatinIme` extends
+ * — a `LatinIme` — to `Lpnp;->N(Landroid/content/Context;)Lpnp;` (the preference store, as Gboard
+ * 17.7.7 spelled it). `LatinIme` extends
  * `AbstractIme` extends `Object`, so it is not a `Context`. Smali assembles it, D8 does not
  * type-check across an injection, and nothing downstream looks at the patched APK, so the first
  * thing that noticed was a device with no keyboard.

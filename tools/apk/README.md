@@ -12,6 +12,7 @@ Everything the `docs/` findings rest on was produced with these three files.
 | `dis.py` | Full-format Dalvik disassembler on top of `dexlib`, with registers and branch targets |
 | `axml.py` | Binary XML (AXML) reader — walks elements and attributes of compiled `res/**.xml` |
 | `arsc.py` | Resource table reader — resource id to name and value, and the reverse lookup from a packed path back to its id |
+| `preflight.py` | Runs every patch-time assertion against a dex, so a moved binding fails here instead of on a phone |
 
 ## Setup
 
@@ -26,6 +27,22 @@ for n in z.namelist():
 ```
 
 Then run from this directory, or add it to `sys.path`.
+
+## Check the patches against a build
+
+```
+python3 preflight.py /tmp/gb
+```
+
+Re-implements each patch's `check(...)`/`error(...)` against the real dex and exits non-zero if any
+fails. Worth running before every release and *first* after a Gboard bump: nothing else in the
+pipeline ever applies the bundle to an APK, so this is the only step between "the Kotlin compiles"
+and a device.
+
+It is a proof of *breakage*, not of correctness — it cannot tell you a patch works, only that every
+binding it names is still there and still shaped the way the patch assumes. On a Gboard bump, edit
+`BINDINGS` and `EXPECTED` at the top; if a *check* needs rewriting rather than a constant, that is
+the signal a patch does too.
 
 ## Disassemble a method
 
