@@ -11,8 +11,6 @@ move settings to top of list
 flick up to undo autocorrect 
 
 
-set default swipe length to 25%, and max words to 1
-
 Hot keys as new tool bar objects
 
 gesture down on a to select all
