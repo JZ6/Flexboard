@@ -1,3 +1,10 @@
+# [0.0.2-dev.1](https://github.com/JZ6/Flexboard/compare/v0.0.1...v0.0.2-dev.1) (2026-08-16)
+
+* **Gboard:** bump to 0.0.2-dev.1
+* **Gboard:** wrap the new lines to the width the rest of the file uses
+* **Gboard:** check a register really holds what the instruction using it needs
+* **Gboard:** add tools/promote, so a stable release cannot ship a stale build
+
 # [0.0.1](https://github.com/JZ6/Flexboard/compare/v0.0.1-dev.2...v0.0.1) (2026-08-16)
 
 * **Gboard:** bump to 0.0.1
