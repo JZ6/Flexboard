@@ -7,7 +7,9 @@ import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
+import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_GET_BOOLEAN
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
 import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
@@ -17,6 +19,7 @@ import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.checkAssignable
 import dev.jz6.flexboard.patches.shared.fieldOwnerType
 import dev.jz6.flexboard.patches.shared.findInstanceField
+import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.usesField
 
@@ -36,8 +39,9 @@ import dev.jz6.flexboard.patches.shared.usesField
  *    and *returns what it removed*, and the handler stores that in the undo slot
  *    (`LatinIme->y:Lqyc;`). The words a swipe deleted are sitting there when the finger lifts.
  *  - **knows how to put it back.** The stock `UNDO_MULTI_DELETION` handler pulls the slot and
- *    re-commits through `AbstractIme->s`. Its own gate, `nga_enable_undo_delete`, is declared with
- *    a default of `true`, so there is nothing to turn on.
+ *    re-commits through an `AbstractIme` hook — `s` on 17.7.7, `t` on 18, which is why this patch
+ *    reads the method out of that handler rather than naming it. Its own gate,
+ *    `nga_enable_undo_delete`, is declared with a default of `true`, so there is nothing to turn on.
  *
  * The only missing piece was a way to ask for it. That is all this patch adds.
  *
@@ -55,7 +59,7 @@ import dev.jz6.flexboard.patches.shared.usesField
  * ## Reusing the suppression branch instead of naming a target
  *
  * The handler's second instruction is `if-nez vFlag, :handled`, where `vFlag` is
- * `AbstractIme->N:Z` and `:handled` is the stock "treat as handled, do nothing" exit. Rather than
+ * `AbstractIme->O:Z` and `:handled` is the stock "treat as handled, do nothing" exit. Rather than
  * branch there — which would mean resolving a `packed-switch`-reached label — this sets `vFlag` and
  * lets the stock test do the jumping. Control flow converges on Gboard's own path with no external
  * label at all, and the epilogue's `Trace.endSection()` still runs, which an early `return` would
@@ -78,7 +82,7 @@ val swipeRightToUndoPatch = bytecodePatch(
 /**
  * Asserted rather than adapted to. Every register below is read off the anchor instructions, but
  * the *scratch* choice rests on knowing what the rest of the handler and the epilogue do with
- * v1–v3, which is a property of this build. Failing loudly beats guessing in a 36-register method.
+ * v1–v3, which is a property of this build. Failing loudly beats guessing in a 34-register method.
  */
 private const val HANDLE_EVENT_REGISTER_COUNT = 34
 
@@ -115,6 +119,34 @@ private val SCRATCH_REGISTERS = listOf(2, 3)
  */
 internal const val UNDO_ENABLED_KEY = "flexboard_undo_enabled"
 
+/**
+ * The stock undo's re-commit call and the type it casts to, taken from the one place that can tell
+ * them apart from their same-shaped siblings: the handler that actually performs Gboard's undo.
+ *
+ * Returns `(descriptor, committableTextType)`.
+ */
+private fun MutableMethod.resolveRecommit(): Pair<String, String> {
+    val getIndex = instructions.indexOfSoleCall(UNDO_SLOT_GET, "$LATIN_IME->q")
+
+    val end = minOf(instructions.size, getIndex + 1 + RECOMMIT_SEARCH_WINDOW)
+    val match = (getIndex + 1 until end)
+        .asSequence()
+        .mapNotNull { index ->
+            val reference = (instructions[index] as? ReferenceInstruction)?.reference
+            (reference as? MethodReference)?.toString()
+        }
+        .mapNotNull(RECOMMIT_PATTERN::matchEntire)
+        .firstOrNull()
+        ?: error(
+            "No `$ABSTRACT_IME->…(L…;Z)V` call within $RECOMMIT_SEARCH_WINDOW instructions of " +
+                "$UNDO_SLOT_GET in $LATIN_IME->q — Gboard's own undo no longer re-commits the way " +
+                "this patch mirrors, so emitting a call here would be guessing at which method " +
+                "puts the text back",
+        )
+
+    return match.value to match.groupValues[1]
+}
+
 private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     val registerCount = implementation?.registerCount
         ?: error("$LATIN_IME->q has no implementation")
@@ -122,6 +154,11 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
         "$LATIN_IME->q has $registerCount registers, expected $HANDLE_EVENT_REGISTER_COUNT — " +
             "refusing to guess which registers are free in a method this size"
     }
+
+    // Read out of Gboard's own undo handler rather than pinned. See RECOMMIT_PATTERN: on 18 the
+    // re-commit is called `t` and a different method took over `s`, so a written-down letter is
+    // exactly the thing that fails silently here.
+    val (recommit, committableText) = resolveRecommit()
 
     // The finish handler is reached only through a packed-switch, whose keys never appear in the
     // instruction stream, so it is anchored on the one call that is unique to it instead.
@@ -237,9 +274,9 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
             if-eqz v$flagRegister, :$UNDO_DONE_LABEL
             invoke-virtual { v$value }, $OPTIONAL_GET
             move-result-object v$value
-            check-cast v$value, $COMMITTABLE_TEXT
+            check-cast v$value, $committableText
             const/4 v$flagRegister, 0x1
-            invoke-virtual { v$thisRegister, v$value, v$flagRegister }, $RECOMMIT
+            invoke-virtual { v$thisRegister, v$value, v$flagRegister }, $recommit
             invoke-virtual { v$slot }, $UNDO_SLOT_CLEAR
             :$UNDO_DONE_LABEL
             const/4 v$flagRegister, 0x1

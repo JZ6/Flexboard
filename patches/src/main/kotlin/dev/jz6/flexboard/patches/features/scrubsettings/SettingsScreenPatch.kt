@@ -88,6 +88,17 @@ internal val scrubSettingsScreenPatch = resourcePatch(
 private const val PREFERENCE_SCREEN_TAG = "PreferenceScreen"
 private const val PREFERENCE_CATEGORY_TAG = "androidx.preference.PreferenceCategory"
 private const val FOOTER_PREFERENCE_TAG = "com.android.settingslib.widget.FooterPreference"
+/**
+ * The row whose icon Flexboard borrows.
+ *
+ * A patch-added drawable has no id until aapt2 recompiles, so the icon has to come from one of
+ * Gboard's own. What is copied is a **theme-attribute reference**, not a drawable id, so it
+ * resolves through the active Gboard theme and follows light/dark with the rest of the screen.
+ *
+ * The tag is the anchor because this row, unlike the fragment-backed ones around it, carries no
+ * `android:fragment` to match on. If Gboard ever drops it, [addFlexboardEntry] falls back to no
+ * icon rather than to the wrong one.
+ */
 private const val RATE_US_PREFERENCE_TAG =
     "com.google.android.libraries.inputmethod.rateus.RateUsPreference"
 private const val PREFERENCE_TAG = "Preference"
@@ -150,6 +161,8 @@ private fun Document.addFlexboardEntry(packageName: String) {
         // Nothing to store: the row is a launcher, and the Activity owns the values.
         setAndroidAttribute("persistent", "false")
         // Borrowed so the row does not render iconless beside Gboard's own, which all carry one.
+        // The value copied is a theme-attribute reference, so it resolves to whatever the active
+        // Gboard theme uses and follows light/dark with the rest of the screen.
         root.descendants()
             .firstOrNull { it.tagName == RATE_US_PREFERENCE_TAG }
             ?.androidAttribute("icon")
@@ -163,12 +176,20 @@ private fun Document.addFlexboardEntry(packageName: String) {
         },
     )
 
-    // Placement matters: appending to the root would land the row *after* the footer, which reads
-    // as a stray control rather than a settings entry.
-    val category = root.childElements(PREFERENCE_CATEGORY_TAG).lastOrNull()
+    // First row of the first category, so it opens at the top of the screen rather than buried
+    // down beside About. Inside a category rather than above one, because a row that is a direct
+    // child of the screen renders without the inset and grouping every other row has.
+    //
+    // `insertBefore(entry, firstChild)` is deliberate over building an index: `firstChild` may be a
+    // whitespace text node, and inserting ahead of it still lands at position zero — while a null
+    // firstChild (an empty category) makes this an append, which is the right answer there too.
+    //
+    // Appending to the root is what the fallbacks avoid: it would land the row *after* the footer,
+    // reading as a stray control rather than a settings entry.
+    val category = root.childElements(PREFERENCE_CATEGORY_TAG).firstOrNull()
     val footer = root.childElements(FOOTER_PREFERENCE_TAG).firstOrNull()
     when {
-        category != null -> category.appendChild(entry)
+        category != null -> category.insertBefore(entry, category.firstChild)
         footer != null -> root.insertBefore(entry, footer)
         else -> root.appendChild(entry)
     }

@@ -57,6 +57,10 @@ ABSTRACT_IME = 'Lcom/google/android/libraries/inputmethod/ime/AbstractIme;'
 LATIN_APP = 'Lcom/google/android/apps/inputmethod/latin/LatinApp;'
 CONTEXT = 'Landroid/content/Context;'
 
+# `AbstractIme->…(L…;Z)V` — the shape of the undo re-commit, whatever it is called this build.
+RECOMMIT_RE = re.compile(
+    r'^Lcom/google/android/libraries/inputmethod/ime/AbstractIme;->\w+\((L[\w/$;]+;)Z\)V$')
+
 # Gboard 18.0.3.954559732-release-arm64-v8a.
 BINDINGS = {
     'store': 'Lqhy;',
@@ -80,6 +84,8 @@ EXPECTED = {
     'ime_context_field': 'B',
     'handler_context_field': 'o',
     'undo_slot_field': 'y',
+    'recommit': 'Lcom/google/android/libraries/inputmethod/ime/AbstractIme;->t(Lojt;Z)V',
+    'recommit_window': 40,
     'scrub_g_registers': 13,
     'scrub_r_registers': 13,
     'delete_ctor_registers': 12,
@@ -242,10 +248,38 @@ def run(dl):
           str(ime_ctx))
 
     slot = B['undo_slot']
-    for sig in (f'{slot}->d()Z', f'{slot}->a()Lj$/util/Optional;', f'{slot}->c()V',
-                f'{ABSTRACT_IME}->s({B["committable"]}Z)V'):
+    for sig in (f'{slot}->d()Z', f'{slot}->a()Lj$/util/Optional;', f'{slot}->c()V'):
         c, _ = body(dl, sig)
         check(f'undo: {sig}', c is not None)
+
+    # The re-commit, resolved the way the patch resolves it: from the call Gboard's own undo makes.
+    #
+    # Checking only that a named method *exists* is what let `0.0.3-dev.1` ship broken. On 18 the
+    # re-commit is `AbstractIme->t`, while `s` — the 17.7.7 name — still exists with a
+    # signature-compatible shape and an empty base declaration. Both resolve, both verify, and the
+    # wrong one silently does nothing. Only the stock handler distinguishes them.
+    c, ins = body(dl, dispatch)
+    if ins:
+        gets = [i for i, (pc, n, a) in enumerate(ins) if f'{slot}->a()Lj$/util/Optional;' in a]
+        if check('undo: undo-slot get is unique in the dispatcher', len(gets) == 1,
+                 f'found {len(gets)}'):
+            window = ins[gets[0] + 1:gets[0] + 1 + E['recommit_window']]
+            found = [a.split(', ')[-1] for pc, n, a in window
+                     if n.startswith('invoke') and RECOMMIT_RE.match(a.split(', ')[-1])]
+            if check('undo: stock undo re-commits via an AbstractIme hook', bool(found),
+                     'no AbstractIme->…(L…;Z)V call follows the slot read'):
+                resolved = found[0]
+                check('undo: the re-commit is the expected one',
+                      resolved == E['recommit'], f'stock calls {resolved}')
+                committable = RECOMMIT_RE.match(resolved).group(1)
+                check('undo: committable-text type matches the cast',
+                      committable == B['committable'],
+                      f'stock casts to {committable}, bindings say {B["committable"]}')
+                # An empty base declaration means the subclass override is what runs; that is
+                # exactly why the two hooks are indistinguishable without this call site.
+                owner_free = resolved.replace(ABSTRACT_IME, LATIN_IME)
+                c2, _ = body(dl, owner_free)
+                check('undo: LatinIme overrides it', c2 is not None, owner_free)
 
     d, sup, cd = find_class(dl, LATIN_IME)
     held = [fd for fd, static in class_fields(d, cd)

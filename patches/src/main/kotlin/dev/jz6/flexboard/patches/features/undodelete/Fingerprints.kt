@@ -59,13 +59,28 @@ internal const val UNDO_SLOT_GET = "$UNDO_SLOT->a()Lj\$/util/Optional;"
 internal const val UNDO_SLOT_CLEAR = "$UNDO_SLOT->c()V"
 
 /**
- * What the slot hands back. `Lqyc;->a()` builds one through `Lnpu;` and wraps it in an `Optional`,
- * so the cast below is the one the stock `UNDO_MULTI_DELETION` handler makes too.
+ * How the stock undo re-commits the text, resolved out of Gboard rather than pinned.
+ *
+ * **Pinning the letter is what broke `0.0.3-dev.1`.** On 17.7.7 this was `AbstractIme->s(Lnpx;Z)V`;
+ * on 18 the same 178-instruction method is called `t`, and `s` is a *different*, much smaller
+ * method that inherited the letter with a signature-compatible shape. So the patch kept emitting a
+ * call that resolved, verified and ran — to the wrong method. Undo silently did nothing while
+ * everything else worked.
+ *
+ * Nothing static catches that: the method exists, the argument types check, and the base class
+ * declarations of both are empty stubs (`return-void`) that `LatinIme` overrides. The only thing
+ * that distinguishes them is *which one Gboard's own undo calls*, so that is what this reads.
+ *
+ * [UNDO_SLOT_GET] is called exactly once in the dispatcher — in the stock `UNDO_MULTI_DELETION`
+ * handler — and a few instructions later that handler casts the `Optional`'s contents and hands
+ * them to the re-commit. Matching the invoke that follows gives both the method *and* the
+ * committable-text type, neither of which then needs a letter written down here.
  */
-internal const val COMMITTABLE_TEXT = "Lojt;"
+internal const val RECOMMIT_SEARCH_WINDOW = 40
 
-/** The type name already carries its own `;`, so the parameter list interpolates it bare. */
-internal const val RECOMMIT = "$ABSTRACT_IME->s(${COMMITTABLE_TEXT}Z)V"
+/** `AbstractIme->…(L…;Z)V` — the shape of the re-commit, whatever it is called this build. */
+internal val RECOMMIT_PATTERN =
+    Regex("^${Regex.escape(ABSTRACT_IME)}->[A-Za-z0-9_$]+\\((L[A-Za-z0-9/$_;]+;)Z\\)V$")
 
 /** Desugared, so the `$` is part of the type name rather than an inner-class separator. */
 internal const val OPTIONAL = "Lj\$/util/Optional;"
