@@ -7,6 +7,8 @@ import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
+import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_GET_BOOLEAN
+import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.opcodeName
@@ -91,6 +93,14 @@ private const val UNDO_DONE_LABEL = "flexboard_undo_done"
  */
 private val SCRATCH_REGISTERS = listOf(2, 3)
 
+/**
+ * The switch on Flexboard's settings screen. Absent means on, so an existing install keeps the
+ * behaviour it had before the setting existed. Duplicated as a literal in
+ * `FlexboardSettingsActivity.java`, for the same reason the scrub keys are: a patch-added resource
+ * has no id until aapt2 recompiles, so bytecode cannot address one.
+ */
+internal const val UNDO_ENABLED_KEY = "flexboard_undo_enabled"
+
 private fun MutableMethod.undoOnRightwardScrub() {
     val registerCount = implementation?.registerCount
         ?: error("$LATIN_IME->d has no implementation")
@@ -148,10 +158,27 @@ private fun MutableMethod.undoOnRightwardScrub() {
             "flag=v$flagRegister scratch=$SCRATCH_REGISTERS"
     }
 
+    // The count test comes before the preference read so the common case — every non-rightward
+    // scrub finish — costs one comparison rather than a preference lookup.
+    //
+    // The `true` fallback has to be staged somewhere, and the two scratch registers are both already
+    // carrying the store and the key by that point. It goes in the flag register, which is then
+    // *restored by re-reading the same field the prologue read* — the identical instruction from
+    // three slots earlier, so the value afterwards is provably what it was. That matters because the
+    // exit below jumps to the stock `if-nez`, which tests exactly that register: leaving a borrowed
+    // 1 there would tell Gboard the event was already handled and swallow every delete finish.
     addInstructionsWithLabels(
         flagIndex + 1,
         """
             if-lez v$countRegister, :$NOT_RIGHTWARD_LABEL
+            invoke-static { v$thisRegister }, $PREFERENCE_STORE_GET
+            move-result-object v$slot
+            const-string v$value, "$UNDO_ENABLED_KEY"
+            const/4 v$flagRegister, 0x1
+            invoke-virtual { v$slot, v$value, v$flagRegister }, $PREFERENCE_GET_BOOLEAN
+            move-result v$slot
+            iget-boolean v$flagRegister, v$thisRegister, $SUPPRESSED_FIELD
+            if-eqz v$slot, :$NOT_RIGHTWARD_LABEL
             iget-object v$slot, v$thisRegister, $UNDO_SLOT_FIELD
             invoke-virtual { v$slot }, $UNDO_SLOT_AVAILABLE
             move-result v$value

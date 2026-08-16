@@ -30,6 +30,7 @@ is what every finding above was read from.
 | `.github/scripts/generate_patches_readme.py` | Injects the patches table into the README at release time |
 | `patches-bundle.json` | Source metadata Morphe reads straight from the branch. **Generated** |
 | `patches-list.json` | Published inventory. **Generated** |
+| `CHANGELOG.md` | In-app changelog Morphe fetches from the branch root. **Generated** |
 
 Patches run at patch time and can only manipulate bytecode and resources. The extension runs on the
 device inside Gboard. A patch reaches the extension by emitting an `invoke-static` to a descriptor —

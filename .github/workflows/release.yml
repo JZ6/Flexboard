@@ -84,6 +84,12 @@ jobs:
         if: steps.decide.outputs.release == 'true'
         run: .github/scripts/check_version.sh "${{ steps.decide.outputs.version }}" "$GITHUB_REF_NAME"
 
+      # A source-level invariant, so it runs on every push rather than only on releases: the
+      # preference keys and defaults are deliberately duplicated across the patches and the
+      # extension DEX, and nothing about changing one alone fails to compile.
+      - name: Check the patch and the extension agree
+        run: .github/scripts/check_shared_constants.py
+
       # Runs on every push. When this is a release it also produces the artifact; when it is not,
       # it is the compile check. One code path either way.
       - name: Build
@@ -142,6 +148,7 @@ jobs:
         if: steps.decide.outputs.release == 'true'
         env:
           MPP: ${{ steps.decide.outputs.mpp }}
+          EXPECTED_PACKAGE: com.google.android.inputmethod.latin
         run: |
           set -euo pipefail
           if ! unzip -l "$MPP" | grep -qE '[[:space:]]classes\.dex$'; then
@@ -151,6 +158,32 @@ jobs:
           fi
           echo "classes.dex present:"
           unzip -l "$MPP" | grep -E '[[:space:]]classes\.dex$'
+
+          # Everything below fails the same way classes.dex did: the bundle loads, reports the right
+          # name and version, and simply does nothing useful. All three are one command each.
+          if ! unzip -l "$MPP" | grep -qE '[[:space:]]extensions/extension\.mpe$'; then
+            echo "::error::$MPP has no extensions/extension.mpe. The settings screen and every" \
+                 "call a patch makes into the extension would fail at patch time."
+            exit 1
+          fi
+
+          COUNT=$(jq '.patches | length' patches-list.json)
+          if [ "$COUNT" -lt 1 ]; then
+            echo "::error::patches-list.json declares $COUNT patches. The bundle would install and" \
+                 "offer nothing."
+            exit 1
+          fi
+
+          if ! jq -e --arg p "$EXPECTED_PACKAGE" \
+              '[.patches[].compatiblePackages[]?.packageName] | index($p)' \
+              patches-list.json > /dev/null; then
+            echo "::error::No patch declares compatibility with $EXPECTED_PACKAGE, so Morphe would" \
+                 "never offer it as a target. Declared:"
+            jq -r '[.patches[].compatiblePackages[]?.packageName] | unique[]' patches-list.json
+            exit 1
+          fi
+
+          echo "$COUNT patches, extension bundled, $EXPECTED_PACKAGE declared."
 
       # This file *is* the release as far as Morphe is concerned; the GitHub release is only where
       # the .mpp lives. created_at must carry no timezone — the manager parses it as a kotlinx
@@ -186,6 +219,57 @@ jobs:
 
           cat patches-bundle.json
 
+      # Morphe fetches CHANGELOG.md from the branch root — it derives the URL from the source
+      # endpoint by swapping the filename — and parses it for in-app changelog entries. The heading
+      # format is not free-form: ChangelogParser wants conventional-changelog's
+      # `# [VERSION](url) (YYYY-MM-DD)` or a bare `# VERSION (YYYY-MM-DD)`, and silently skips any
+      # heading it does not recognise. The template's @MorpheApp/changelog plugin wrote this; the
+      # hand-written pipeline has to do it too.
+      - name: Prepend the changelog entry
+        if: steps.decide.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.decide.outputs.version }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Bullets must be SCOPED — `* **Gboard:** text`. hasChangesFor() only ever looks at
+          # scopedBullets, so an unscoped changelog parses fine and then reports no changes for any
+          # app. That is worse than having no changelog at all: with none, the manager fails open and
+          # still shows the "re-patch this app" badge. The scope has to equal the app name the
+          # manager resolves, which is the display name the bundle itself declares — so it is read
+          # back out of patches-list.json rather than written twice.
+          SCOPE=$(jq -r '[.patches[].compatiblePackages[]?.name] | map(select(. != null)) | unique | first // "Patches"' patches-list.json)
+
+          PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$PREVIOUS" ]; then
+            HEADING="# [$VERSION](https://github.com/$GITHUB_REPOSITORY/compare/$PREVIOUS...$TAG) ($(date -u +%Y-%m-%d))"
+            RANGE="$PREVIOUS..HEAD"
+          else
+            # No previous tag to compare against, so the bare-token heading form, which the parser
+            # accepts precisely for a first release.
+            HEADING="# $VERSION ($(date -u +%Y-%m-%d))"
+            RANGE=""
+          fi
+
+          # The conventional-commit type is dropped from the body: conventional-changelog groups by
+          # type under its own headings rather than repeating it inline, and the parser strips
+          # everything up to the scope marker anyway.
+          if [ -n "$RANGE" ]; then
+            SUBJECTS=$(git log --no-merges --format='%s' "$RANGE")
+          else
+            SUBJECTS=$(git log --no-merges --format='%s' -20)
+          fi
+          BULLETS=$(printf '%s\n' "$SUBJECTS" \
+            | sed -E 's/^(feat|fix|chore|docs|perf|refactor|style|test|build|ci|bump)(\([^)]*\))?!?: //' \
+            | sed -E "s|^|* **$SCOPE:** |")
+          [ -n "$SUBJECTS" ] || BULLETS="* **$SCOPE:** No changes recorded."
+
+          touch CHANGELOG.md
+          { printf '%s\n\n%s\n\n' "$HEADING" "$BULLETS"; cat CHANGELOG.md; } > CHANGELOG.md.tmp
+          mv CHANGELOG.md.tmp CHANGELOG.md
+          head -10 CHANGELOG.md
+
       # Commit and tag together, then push together, so the tag can never be left behind.
       - name: Commit and tag
         if: steps.decide.outputs.release == 'true'
@@ -195,7 +279,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add patches-bundle.json patches-list.json README.md
+          git add patches-bundle.json patches-list.json README.md CHANGELOG.md
           git commit -m "chore: release $TAG [skip ci]"
           git tag -a "$TAG" -m "$TAG"
           git push origin "HEAD:$GITHUB_REF_NAME" "refs/tags/$TAG"

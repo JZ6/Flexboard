@@ -79,17 +79,25 @@ Removing Flexboard leaves glide typing off — tick it back on in Gboard's own s
 
 ### Settings
 
-Gboard's settings gain a **Flexboard** entry that opens a screen with a switch and three sliders:
+Gboard's settings gain a **Flexboard** entry that opens a screen with two switches and three
+sliders:
 
 | Setting | Default | What it does |
 |---|---|---|
 | **Swipe anywhere** | on | The master switch. Off puts Gboard back as it shipped — see below. Also appears in Gboard's own **Glide typing** screen, as the same setting rather than a copy. |
-| **Swipe length** | 100% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe. |
-| **Max words per swipe** | 10 | The most words one swipe can delete. Set it to **1** to delete a single word however far you swipe; 10 means no limit. Swiping back still restores. |
+| **Swipe length** | 36% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe. |
+| **Max words per swipe** | 1 | The most words one swipe can delete. At 1 a swipe deletes a single word however far it travels; 10 means no limit. Swiping back still restores. |
 | **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
+| **Swipe right to undo** | on | Whether a rightward swipe after a delete puts the words back. Off leaves it doing nothing, as in stock Gboard. Independent of the master switch — see below. |
 
-All four are read out of Gboard's own preference store, so there is no separate settings app and
-nothing to keep in sync. The defaults reproduce the behaviour Flexboard shipped before they existed.
+All five are read out of Gboard's own preference store, so there is no separate settings app and
+nothing to keep in sync.
+
+The two defaults that are not Gboard's own are **swipe length** and **max words**. Gboard's stock
+distance assumes a thumb travelling from the backspace key and back, which is the whole journey this
+patch exists to remove, so a shorter swipe suits a gesture that starts under your thumb. One word
+per swipe then makes each deletion deliberate rather than a run that has to be swiped back. Both are
+sliders precisely because that is a preference, not a fact — 100% and 10 restore the original feel.
 
 **Turning the switch off does not turn the delete swipe off** — it hands it back to Gboard. The
 swipe works on the backspace key again and nowhere else, at Gboard's own distance and its 200 ms
@@ -117,7 +125,10 @@ Two limits worth knowing, both inherited rather than chosen:
   almost any other input, so typing a character after the delete loses the undo.
 - **One level.** Undo once and the slot is empty; a second right-swipe does nothing.
 
-It is a separate patch, so it can be unticked in Morphe if you do not want it.
+It has its own switch on Flexboard's settings screen, deliberately **not** greyed out by the master
+switch: Gboard fills the same undo slot when you swipe on the backspace key, so undo keeps working
+even with swipe-anywhere off. It is also a separate patch, so it can be unticked in Morphe entirely
+if you would rather the code were never installed.
 
 ### Flick keys for symbols
 

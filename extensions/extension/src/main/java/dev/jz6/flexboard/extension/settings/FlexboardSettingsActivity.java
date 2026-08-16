@@ -70,14 +70,24 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final String KEY_MAX_WORDS = "flexboard_max_words";
     /** Must match HOLD_DELAY_KEY in ScrubTuningPatch.kt. */
     private static final String KEY_HOLD_DELAY = "flexboard_scrub_hold_ms";
+    /** Must match UNDO_ENABLED_KEY in UndoDeletePatch.kt. */
+    private static final String KEY_UNDO = "flexboard_undo_enabled";
 
     private static final int STEP_SCALE_MIN = 25;
     private static final int STEP_SCALE_MAX = 300;
-    private static final int STEP_SCALE_DEFAULT = 100;
+    /** Must match STEP_SCALE_DEFAULT in ScrubTuningPatch.kt. */
+    private static final int STEP_SCALE_DEFAULT = 36;
 
     private static final int MAX_WORDS_MIN = 1;
-    /** Doubles as "no limit" — the clamp is skipped at or above it. */
-    private static final int MAX_WORDS_DEFAULT = 10;
+    /**
+     * The slider's top position, and "no limit" — the clamp is skipped at or above it. Must match
+     * MAX_WORDS_NO_LIMIT in ScrubTuningPatch.kt. Kept separate from the default: they were one
+     * constant until the default moved to 1, and sharing them would put the sentinel at 1 and so
+     * disable the cap at every setting.
+     */
+    private static final int MAX_WORDS_MAX = 10;
+    /** Must match MAX_WORDS_DEFAULT in ScrubTuningPatch.kt. */
+    private static final int MAX_WORDS_DEFAULT = 1;
 
     private static final int HOLD_DELAY_MIN = 0;
     private static final int HOLD_DELAY_MAX = 300;
@@ -86,6 +96,13 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final String TITLE = "Flexboard";
     private static final String SUBTITLE = "Swipe anywhere to delete the previous word.";
     private static final String SECTION = "Swipe to delete";
+    private static final String SECTION_UNDO = "Swipe to undo";
+
+    private static final String UNDO_TITLE = "Swipe right to undo";
+    private static final String UNDO_SUMMARY =
+            "Swiping right after a delete puts the words back, using Gboard's own undo. Only as the "
+                    + "very next thing you do, and only once. Off leaves a rightward swipe doing "
+                    + "nothing, as it does in stock Gboard.";
 
     private static final String ENABLED_TITLE = "Swipe anywhere";
     private static final String ENABLED_SUMMARY =
@@ -152,8 +169,8 @@ public final class FlexboardSettingsActivity extends Activity {
         column.setPadding(dp(EDGE_DP), dp(EDGE_DP), dp(EDGE_DP), dp(EDGE_DP * 2));
 
         addHeading(column);
-        addSectionHeader(column);
-        addEnabledSwitch(column);
+        addSectionHeader(column, SECTION);
+        addSwitch(column, KEY_ENABLED, ENABLED_TITLE, ENABLED_SUMMARY, true, this::setTunablesEnabled);
 
         addSlider(
                 column,
@@ -173,9 +190,9 @@ public final class FlexboardSettingsActivity extends Activity {
                 "The most words one swipe can delete. Set it to 1 to delete a single word however "
                         + "far you swipe. Swiping back still restores.",
                 MAX_WORDS_MIN,
+                MAX_WORDS_MAX,
                 MAX_WORDS_DEFAULT,
-                MAX_WORDS_DEFAULT,
-                value -> value >= MAX_WORDS_DEFAULT ? "No limit" : Integer.toString(value));
+                value -> value >= MAX_WORDS_MAX ? "No limit" : Integer.toString(value));
 
         addSlider(
                 column,
@@ -188,6 +205,12 @@ public final class FlexboardSettingsActivity extends Activity {
                 HOLD_DELAY_MAX,
                 HOLD_DELAY_DEFAULT,
                 value -> value == 0 ? "Off" : value + " ms");
+
+        // Its own section, below the sliders and outside `tunables`: undo is not part of the
+        // swipe-anywhere gesture and keeps working when the master switch is off, because Gboard's
+        // own backspace-key delete fills the same undo slot.
+        addSectionHeader(column, SECTION_UNDO);
+        addSwitch(column, KEY_UNDO, UNDO_TITLE, UNDO_SUMMARY, true, null);
 
         TextView footnote = new TextView(this);
         footnote.setText(TAKES_EFFECT);
@@ -294,9 +317,9 @@ public final class FlexboardSettingsActivity extends Activity {
         parent.addView(subtitle, marginTop(dp(TIGHT_DP)));
     }
 
-    private void addSectionHeader(LinearLayout parent) {
+    private void addSectionHeader(LinearLayout parent, String label) {
         TextView section = new TextView(this);
-        section.setText(SECTION);
+        section.setText(label);
         section.setTextColor(colorAccent);
         section.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         section.setAllCaps(true);
@@ -304,19 +327,33 @@ public final class FlexboardSettingsActivity extends Activity {
         parent.addView(section, marginTop(dp(EDGE_DP + LOOSE_DP)));
     }
 
+    /** Run when a switch changes, for the one that also drives something on screen. */
+    private interface OnToggle {
+        void changed(boolean isChecked);
+    }
+
     /**
-     * The master switch. Everything below it is Flexboard's; turning it off hands the gesture back
-     * to Gboard unchanged.
+     * One switch row: title with the toggle on the right, summary beneath.
      *
-     * <p>The switch is deliberately not in {@link #tunables} — it is the thing doing the disabling.
+     * <p>No row added here goes into {@link #tunables}. The master switch is the thing doing the
+     * disabling, and the undo toggle is independent of it — undo works on Gboard's own backspace-key
+     * delete too, so it stays live when the master switch is off.
+     *
+     * @param extra additional work on change, or {@code null}. Only the master switch needs it.
      */
-    private void addEnabledSwitch(LinearLayout parent) {
+    private void addSwitch(
+            LinearLayout parent,
+            final String key,
+            String title,
+            String summary,
+            final boolean fallback,
+            final OnToggle extra) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView titleView = new TextView(this);
-        titleView.setText(ENABLED_TITLE);
+        titleView.setText(title);
         titleView.setTextColor(colorTitle);
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         row.addView(
@@ -324,7 +361,7 @@ public final class FlexboardSettingsActivity extends Activity {
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         Switch toggle = new Switch(this);
-        toggle.setChecked(preferences.getBoolean(KEY_ENABLED, true));
+        toggle.setChecked(preferences.getBoolean(key, fallback));
         // Tinted for the same reason the sliders are: the widget follows the theme, the palette
         // follows the system night setting, and untinted they disagree in light mode.
         ColorStateList checkedAccent =
@@ -335,15 +372,17 @@ public final class FlexboardSettingsActivity extends Activity {
         toggle.setTrackTintList(checkedAccent);
         toggle.setOnCheckedChangeListener(
                 (button, isChecked) -> {
-                    preferences.edit().putBoolean(KEY_ENABLED, isChecked).apply();
-                    setTunablesEnabled(isChecked);
+                    preferences.edit().putBoolean(key, isChecked).apply();
+                    if (extra != null) {
+                        extra.changed(isChecked);
+                    }
                 });
         row.addView(toggle);
 
         parent.addView(row, marginTop(dp(ROW_TOP_DP)));
 
         TextView summaryView = new TextView(this);
-        summaryView.setText(ENABLED_SUMMARY);
+        summaryView.setText(summary);
         summaryView.setTextColor(colorSummary);
         summaryView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         parent.addView(summaryView, marginTop(dp(TIGHT_DP)));

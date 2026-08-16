@@ -84,9 +84,20 @@ but it gets no `-pr1`: the next pre-release is `1.0.1-dev.1`, because `1.0.0-dev
 
 ## What Morphe actually reads
 
-Only `patches-bundle.json`. Not the tag, not the GitHub release, not `patches-list.json`, not the
-`prerelease` checkbox — those exist for people. The GitHub release is merely where the `.mpp` file
-happens to live; the JSON is what announces it.
+`patches-bundle.json`, and `CHANGELOG.md`. Not the tag, not the GitHub release, not
+`patches-list.json`, not the `prerelease` checkbox — those exist for people. The GitHub release is
+merely where the `.mpp` file happens to live; the JSON is what announces it.
+
+`CHANGELOG.md` is optional but not inert. The manager derives its URL from the source endpoint by
+swapping the filename, parses it for in-app changelog entries, and uses it to *refine* the
+"re-patch this app" badge. Two traps follow from that. Its headings must match what
+conventional-changelog emits — `# [VERSION](url) (YYYY-MM-DD)`, or a bare `# VERSION (YYYY-MM-DD)`
+for a first release — and anything else is silently skipped. And its bullets must be **scoped**,
+`* **Gboard:** text`, because the badge check only ever looks at scoped bullets: an unscoped
+changelog parses cleanly and then reports no changes for any app, which *suppresses* a badge that
+would have shown had there been no changelog at all. The scope has to equal the app display name the
+bundle declares, so the workflow reads it back out of `patches-list.json` rather than writing it
+twice.
 
 ```json
 {

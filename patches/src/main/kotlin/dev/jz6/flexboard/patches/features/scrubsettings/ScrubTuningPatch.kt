@@ -80,17 +80,34 @@ internal const val STEP_SCALE_KEY = "flexboard_scrub_step_scale"
 internal const val HOLD_DELAY_KEY = "flexboard_scrub_hold_ms"
 internal const val MAX_WORDS_KEY = "flexboard_max_words"
 
-/** Percent, so the default means "exactly what Gboard ships" without knowing the pixel value. */
-internal const val STEP_SCALE_DEFAULT = 100
+/**
+ * Percent of Gboard's own swipe distance. A shorter swipe per word is the point of the gesture —
+ * Gboard's stock distance assumes a thumb travelling from the backspace key, which is exactly the
+ * journey this patch removes.
+ */
+internal const val STEP_SCALE_DEFAULT = 36
+
+/**
+ * The percentage at which scaling is a no-op, so the table is left alone rather than multiplied by
+ * 1.0. **Not the default**: these were one constant until the default moved off 100, at which point
+ * sharing them would have made the new default mean "do nothing" — the one value asked for being the
+ * one value with no effect.
+ */
+internal const val STEP_SCALE_IDENTITY = 100
 
 /** Milliseconds. Zero reproduces the flick behaviour that shipped before this was adjustable. */
 internal const val HOLD_DELAY_DEFAULT = 0
 
+/** One word per swipe, however far it travels. Swiping back still restores. */
+internal const val MAX_WORDS_DEFAULT = 1
+
 /**
- * Doubles as the slider's top position and as "no limit": at or above it the clamp is skipped
- * entirely, so the default leaves the engine's progressive delete exactly as it was.
+ * The slider's top position, and "no limit": at or above it the clamp is skipped entirely, leaving
+ * the engine's progressive delete exactly as Gboard wrote it. **Not the default**, for the same
+ * reason as [STEP_SCALE_IDENTITY] — sharing them would put the sentinel at 1 and disable the cap at
+ * every setting.
  */
-internal const val MAX_WORDS_DEFAULT = 10
+internal const val MAX_WORDS_NO_LIMIT = 10
 
 /** `regs=11, ins=4` — asserted so the scratch register below is provably the one that was read. */
 private const val ENGINE_CONSTRUCTOR_REGISTER_COUNT = 11
@@ -258,7 +275,7 @@ private fun MutableMethod.scaleStepTable() {
             const/16 v$length, $STEP_SCALE_DEFAULT
             invoke-virtual { v$store, v$table, v$length }, $PREFERENCE_GET_INT
             move-result v$store
-            const/16 v$table, $STEP_SCALE_DEFAULT
+            const/16 v$table, $STEP_SCALE_IDENTITY
             if-eq v$store, v$table, :$STEPS_DONE_LABEL
             if-lez v$store, :$STEPS_DONE_LABEL
             iget-boolean v$table, v$configRegister, $CONFIG_DISABLED_FIELD
@@ -377,7 +394,7 @@ private fun MutableMethod.capWordCount() {
                 const/16 v$limit, $MAX_WORDS_DEFAULT
                 invoke-virtual { v$store, v$key, v$limit }, $PREFERENCE_GET_INT
                 move-result v$store
-                const/16 v$key, $MAX_WORDS_DEFAULT
+                const/16 v$key, $MAX_WORDS_NO_LIMIT
                 if-ge v$store, v$key, :$done
                 if-lez v$store, :$done
                 if-le v$countRegister, v$store, :$low
