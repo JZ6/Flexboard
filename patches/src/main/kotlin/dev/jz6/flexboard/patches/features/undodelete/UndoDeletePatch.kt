@@ -109,6 +109,19 @@ private fun MutableMethod.undoOnRightwardScrub() {
             "refusing to guess which registers are free in a method this size"
     }
 
+    // The preference read below needs a Context, and `this` is not one: LatinIme extends
+    // AbstractIme extends Object, with no Service or ContextWrapper in the chain. It has to go
+    // through the IME's Context field instead.
+    //
+    // Asserted rather than assumed, because getting it wrong is silent until it is catastrophic —
+    // passing a non-Context assembles cleanly, fails verification at run time, and takes the whole
+    // dispatcher with it, so the keyboard never appears. That shipped as 0.0.1-dev.1. Gboard reads
+    // this same field in this same method, so a build where it is absent has moved the Context.
+    check(instructions.any { it.usesField(IME_CONTEXT_FIELD) }) {
+        "$LATIN_IME->d never reads $IME_CONTEXT_FIELD — the IME's Context has moved, and the " +
+            "preference read this patch adds would be handed something that is not a Context"
+    }
+
     // The finish handler is reached only through a packed-switch, whose keys never appear in the
     // instruction stream, so it is anchored on the one call that is unique to it instead.
     val takeText = instructions.withIndex().filter { (_, it) -> it.callsMethod(SCRUB_STATE_TAKE_TEXT) }
@@ -171,7 +184,8 @@ private fun MutableMethod.undoOnRightwardScrub() {
         flagIndex + 1,
         """
             if-lez v$countRegister, :$NOT_RIGHTWARD_LABEL
-            invoke-static { v$thisRegister }, $PREFERENCE_STORE_GET
+            iget-object v$slot, v$thisRegister, $IME_CONTEXT_FIELD
+            invoke-static { v$slot }, $PREFERENCE_STORE_GET
             move-result-object v$slot
             const-string v$value, "$UNDO_ENABLED_KEY"
             const/4 v$flagRegister, 0x1

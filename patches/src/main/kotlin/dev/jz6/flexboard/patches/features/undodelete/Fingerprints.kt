@@ -22,6 +22,19 @@ internal const val ABSTRACT_IME = "Lcom/google/android/libraries/inputmethod/ime
 internal const val SUPPRESSED_FIELD = "$ABSTRACT_IME->N:Z"
 
 /**
+ * The IME's `Context`, and the only way to reach one from inside the dispatcher.
+ *
+ * **`this` is not a `Context`.** `LatinIme` extends `AbstractIme`, which extends `Object` — no
+ * `Service` and no `ContextWrapper` anywhere in the chain. Passing `this` where a `Context` is
+ * required assembles cleanly, then fails verification at run time and takes `d` with it, which is
+ * the whole keyboard. That shipped in `0.0.1-dev.1`.
+ *
+ * Gboard reads the field this way itself, inside the same method, so the descriptor below is the
+ * stock instruction rather than a guess.
+ */
+internal const val IME_CONTEXT_FIELD = "$LATIN_IME->B:Landroid/content/Context;"
+
+/**
  * Gboard's undo slot: one deleted `CharSequence` and nothing more.
  *
  * The scrub delete already writes it. `SCRUB_DELETE_FINISH` calls `Lnsz;->a(I)`, which performs the
