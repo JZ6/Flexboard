@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
+import android.content.res.TypedArray;
 import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.os.Build;
@@ -30,21 +31,28 @@ import java.util.List;
  * <p>This class is merged into Gboard's APK rather than shipped as its own app, so it cannot rely
  * on any resources of its own resolving at runtime. Every view is built in code, every string is a
  * constant, and only framework widgets are used — no AndroidX, no layout inflation, nothing that
- * assumes anything about the host. The row structure, the section header and the palette are
- * carried over from the screen v0.3 shipped, which is the shape this is meant to look like.
+ * assumes anything about the host.
  *
- * <p><b>It draws its own chrome, deliberately.</b> The first version used
- * {@code Theme.DeviceDefault.Settings} and let the theme supply the bar and the colours, and the
- * top row came out clipped. Gboard targets SDK 37, so on Android 15 and up the window is
- * edge-to-edge and content starts underneath the status bar unless something insets it. Working out
- * how much of that a themed action bar had already absorbed is not something this can test against
- * every device, so the theme is now {@code NoActionBar} and this class is the only thing that
- * consumes insets: it pads the scroll container by whatever the system bars report and lets the
- * background run full-bleed behind them.
+ * <p><b>It is meant to look like a Gboard settings screen.</b> It cannot be one: androidx's
+ * preference rows are unavailable to a class that ships no resources, so the rows here are
+ * hand-built to approximately androidx's metrics — 16dp insets, 16sp titles, 14sp summaries,
+ * sentence-case category headers.
  *
- * <p>Colours follow {@link Configuration#uiMode} rather than theme attributes, for the same reason
- * — a merged class cannot know what the host's attributes resolve to. v0.3 hardcoded a dark
- * palette; this picks between two.
+ * <p>What it does not approximate is the palette. {@code SettingsScreenPatch} copies Gboard's own
+ * settings theme onto this Activity's manifest entry, so the colours are read from theme attributes
+ * and come out identical to the screens either side of it, Material You included. Only if an
+ * attribute fails to resolve does it fall back to a fixed pair of palettes chosen by
+ * {@link Configuration#uiMode}, which is what every build before this one used and why the screen
+ * looked foreign on a themed device.
+ *
+ * <p><b>Chrome depends on what that theme provides.</b> An earlier attempt at
+ * {@code Theme.DeviceDefault.Settings} clipped its top row: Gboard targets SDK 37, so on Android 15
+ * and up the window is edge-to-edge and content starts underneath the status bar unless something
+ * insets it — and if an action bar has already absorbed that inset, applying it again is just as
+ * wrong. So both cases are handled rather than assumed: the title comes from the action bar when
+ * there is one and from {@link #addHeading} when there is not, and the top inset is applied only in
+ * the latter case. See {@link #hasActionBar()} for why a theme with a bar does not guarantee this
+ * Activity gets one.
  *
  * <p><b>It writes to Gboard's own preference file, deliberately.</b> Gboard's store
  * (<code>Lqhy;</code>) is constructed with a null name, which resolves to
@@ -112,7 +120,18 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final String TAKES_EFFECT =
             "Changes apply the next time the keyboard is opened.";
 
+    /**
+     * Fallbacks only.
+     *
+     * <p>The palette used to be picked from these by {@link Configuration#uiMode}, which is why the
+     * screen looked foreign next to Gboard's own: Gboard follows its theme, and on Android 12+ that
+     * includes Material You, so a fixed pair of palettes is the wrong shade on any themed device
+     * rather than merely a different one. The colours now come from the theme the manifest entry
+     * carries — Gboard's own settings theme — and these are what is used for any attribute that
+     * does not resolve.
+     */
     private static final int COLOR_DARK_BACKGROUND = 0xFF202124;
+
     private static final int COLOR_DARK_TITLE = 0xFFE8EAED;
     private static final int COLOR_DARK_SUMMARY = 0xFF9AA0A6;
     private static final int COLOR_DARK_ACCENT = 0xFF8AB4F8;
@@ -122,10 +141,33 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final int COLOR_LIGHT_SUMMARY = 0xFF5F6368;
     private static final int COLOR_LIGHT_ACCENT = 0xFF0B57D0;
 
-    private static final int EDGE_DP = 20;
-    private static final int ROW_TOP_DP = 22;
-    private static final int TIGHT_DP = 3;
+    /** Above this, the background is light enough to need dark status-bar icons. */
+    private static final double LIGHT_BACKGROUND_LUMINANCE = 0.5d;
+
+    /**
+     * Metrics taken from androidx's preference rows, which is what every other screen in Gboard's
+     * settings is built from.
+     *
+     * <p>They are approximated rather than inherited: an extension merges DEX and not resources, so
+     * nothing here can reference {@code preference_material} or any dimension from it. 16dp is the
+     * horizontal inset an androidx preference row uses, and the vertical rhythm is chosen to sit at
+     * about the same density.
+     */
+    private static final int EDGE_DP = 16;
+
+    private static final int ROW_TOP_DP = 16;
+    private static final int TIGHT_DP = 2;
     private static final int LOOSE_DP = 8;
+
+    /** Preference rows: 16sp titles, 14sp summaries, and category headers at the summary size. */
+    private static final int TITLE_SP = 16;
+
+    private static final int SUMMARY_SP = 14;
+    private static final int SECTION_SP = 14;
+    private static final int VALUE_SP = 14;
+
+    /** Only used when the theme gives no action bar to put the title in. */
+    private static final int HEADING_SP = 28;
 
     private static final float DISABLED_ALPHA = 0.4f;
 
@@ -156,11 +198,27 @@ public final class FlexboardSettingsActivity extends Activity {
         boolean night =
                 (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                         == Configuration.UI_MODE_NIGHT_YES;
-        colorBackground = night ? COLOR_DARK_BACKGROUND : COLOR_LIGHT_BACKGROUND;
-        colorTitle = night ? COLOR_DARK_TITLE : COLOR_LIGHT_TITLE;
-        colorSummary = night ? COLOR_DARK_SUMMARY : COLOR_LIGHT_SUMMARY;
-        colorAccent = night ? COLOR_DARK_ACCENT : COLOR_LIGHT_ACCENT;
-        if (!night) {
+        colorBackground =
+                themeColor(
+                        android.R.attr.colorBackground,
+                        night ? COLOR_DARK_BACKGROUND : COLOR_LIGHT_BACKGROUND);
+        colorTitle =
+                themeColor(
+                        android.R.attr.textColorPrimary,
+                        night ? COLOR_DARK_TITLE : COLOR_LIGHT_TITLE);
+        colorSummary =
+                themeColor(
+                        android.R.attr.textColorSecondary,
+                        night ? COLOR_DARK_SUMMARY : COLOR_LIGHT_SUMMARY);
+        colorAccent =
+                themeColor(
+                        android.R.attr.colorAccent, night ? COLOR_DARK_ACCENT : COLOR_LIGHT_ACCENT);
+
+        // Driven by the colour actually resolved rather than by uiMode, because the two can
+        // disagree: the theme is Gboard's, and nothing guarantees it follows the system night
+        // setting. Asking the background how light it is cannot be wrong in the way asking the
+        // configuration can.
+        if (isLight(colorBackground)) {
             requestDarkSystemBarIcons();
         }
 
@@ -168,7 +226,6 @@ public final class FlexboardSettingsActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(EDGE_DP), dp(EDGE_DP), dp(EDGE_DP), dp(EDGE_DP * 2));
 
-        addHeading(column);
         addSectionHeader(column, SECTION);
         addSwitch(column, KEY_ENABLED, ENABLED_TITLE, ENABLED_SUMMARY, true, this::setTunablesEnabled);
 
@@ -215,7 +272,7 @@ public final class FlexboardSettingsActivity extends Activity {
         TextView footnote = new TextView(this);
         footnote.setText(TAKES_EFFECT);
         footnote.setTextColor(colorSummary);
-        footnote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        footnote.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
         column.addView(footnote, marginTop(dp(EDGE_DP)));
 
         setTunablesEnabled(preferences.getBoolean(KEY_ENABLED, true));
@@ -230,25 +287,70 @@ public final class FlexboardSettingsActivity extends Activity {
                 column,
                 new ScrollView.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        padBySystemBars(scroll);
 
         setContentView(scroll);
+
+        // Only now. `getActionBar()` is null until the decor view exists, which `setContentView`
+        // is what creates — asking any earlier reports "no action bar" on a theme that has one,
+        // and the screen would draw its own heading underneath a real title bar.
+        //
+        // The title is rendered exactly once either way: by the bar when there is one, by
+        // `addHeading` inserted at the top of the column when there is not.
+        if (hasActionBar()) {
+            getActionBar().setDisplayHomeAsUpEnabled(true);
+        } else {
+            addHeading(column, 0);
+        }
+
+        // After the action bar is known, because whether the top inset has already been consumed
+        // depends on it.
+        padBySystemBars(scroll);
+    }
+
+    /**
+     * Whether the theme gave this Activity an action bar.
+     *
+     * <p><b>Not something to assume either way.</b> The manifest entry now carries Gboard's own
+     * settings theme rather than {@code NoActionBar}, so there may be one — but this is a plain
+     * {@link Activity}, and a theme deriving from AppCompat or Material provides its action bar
+     * through {@code AppCompatActivity} rather than the framework. So Gboard's screen can have a bar
+     * while this one, under the identical theme, has none. Asking is cheap; guessing shows up as
+     * either a missing title or two of them.
+     */
+    private boolean hasActionBar() {
+        return getActionBar() != null;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(android.view.MenuItem item) {
+        if (item.getItemId() == android.R.id.home) {
+            finish();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 
     /**
      * Insets the view by the system bars.
      *
-     * <p>This is the whole fix for the clipped first row. Nothing else in the window consumes
-     * insets, so whatever arrives here is the full amount and can be applied as-is.
+     * <p>This is the whole fix for the clipped first row. Gboard targets SDK 37, so on Android 15+
+     * the window is edge-to-edge and content starts under the status bar unless something insets it.
+     *
+     * <p><b>The top is skipped when there is an action bar</b>, because the bar has already consumed
+     * it — applying it again pushes the first row down by the height of the status bar a second
+     * time. Which of the two is inset is exactly the arithmetic that made the original
+     * {@code Theme.DeviceDefault.Settings} attempt clip its first row.
      */
     private void padBySystemBars(final View view) {
+        final boolean topAlreadyConsumed = hasActionBar();
         view.setOnApplyWindowInsetsListener(
                 (target, windowInsets) -> {
                     int[] bars =
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                                     ? systemBarsApi30(windowInsets)
                                     : systemBarsLegacy(windowInsets);
-                    target.setPadding(bars[0], bars[1], bars[2], bars[3]);
+                    target.setPadding(
+                            bars[0], topAlreadyConsumed ? 0 : bars[1], bars[2], bars[3]);
                     return windowInsets;
                 });
         view.requestApplyInsets();
@@ -301,29 +403,41 @@ public final class FlexboardSettingsActivity extends Activity {
         }
     }
 
-    /** Stands in for the action bar the theme no longer provides. */
-    private void addHeading(LinearLayout parent) {
-        TextView heading = new TextView(this);
-        heading.setText(TITLE);
-        heading.setTextColor(colorTitle);
-        heading.setTextSize(TypedValue.COMPLEX_UNIT_SP, 28);
-        heading.setTypeface(Typeface.DEFAULT_BOLD);
-        parent.addView(heading);
-
+    /**
+     * Stands in for the action bar, for themes that do not provide one.
+     *
+     * <p>Only called when {@link #hasActionBar()} is false — see the note there for why both cases
+     * have to be handled rather than one assumed.
+     */
+    private void addHeading(LinearLayout parent, int index) {
         TextView subtitle = new TextView(this);
         subtitle.setText(SUBTITLE);
         subtitle.setTextColor(colorSummary);
-        subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        parent.addView(subtitle, marginTop(dp(TIGHT_DP)));
+        subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
+        parent.addView(subtitle, index, marginTop(dp(TIGHT_DP)));
+
+        TextView heading = new TextView(this);
+        heading.setText(TITLE);
+        heading.setTextColor(colorTitle);
+        heading.setTextSize(TypedValue.COMPLEX_UNIT_SP, HEADING_SP);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        // Inserted ahead of the subtitle, so the pair reads title-then-subtitle. Both go in at
+        // `index` because this runs after the column is already populated.
+        parent.addView(heading, index);
     }
 
+    /**
+     * A category header, matching how androidx renders one.
+     *
+     * <p>Sentence case and regular weight, not the ALL-CAPS bold this used to draw. Of everything on
+     * the screen this was the most recognisable tell: no other header in Gboard's settings is
+     * capitalised that way, so it read as belonging to a different app at a glance.
+     */
     private void addSectionHeader(LinearLayout parent, String label) {
         TextView section = new TextView(this);
         section.setText(label);
         section.setTextColor(colorAccent);
-        section.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        section.setAllCaps(true);
-        section.setTypeface(Typeface.DEFAULT_BOLD);
+        section.setTextSize(TypedValue.COMPLEX_UNIT_SP, SECTION_SP);
         parent.addView(section, marginTop(dp(EDGE_DP + LOOSE_DP)));
     }
 
@@ -355,7 +469,7 @@ public final class FlexboardSettingsActivity extends Activity {
         TextView titleView = new TextView(this);
         titleView.setText(title);
         titleView.setTextColor(colorTitle);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, TITLE_SP);
         row.addView(
                 titleView,
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -384,7 +498,7 @@ public final class FlexboardSettingsActivity extends Activity {
         TextView summaryView = new TextView(this);
         summaryView.setText(summary);
         summaryView.setTextColor(colorSummary);
-        summaryView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        summaryView.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
         parent.addView(summaryView, marginTop(dp(TIGHT_DP)));
     }
 
@@ -420,7 +534,7 @@ public final class FlexboardSettingsActivity extends Activity {
         TextView titleView = new TextView(this);
         titleView.setText(title);
         titleView.setTextColor(colorTitle);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, TITLE_SP);
         titleRow.addView(
                 titleView,
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -430,7 +544,7 @@ public final class FlexboardSettingsActivity extends Activity {
         final TextView valueView = new TextView(this);
         valueView.setText(label.of(current));
         valueView.setTextColor(colorAccent);
-        valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, VALUE_SP);
         valueView.setTypeface(Typeface.DEFAULT_BOLD);
         titleRow.addView(valueView);
 
@@ -439,7 +553,7 @@ public final class FlexboardSettingsActivity extends Activity {
         TextView summaryView = new TextView(this);
         summaryView.setText(summary);
         summaryView.setTextColor(colorSummary);
-        summaryView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        summaryView.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
         parent.addView(summaryView, marginTop(dp(TIGHT_DP)));
 
         SeekBar bar = new SeekBar(this);
@@ -515,6 +629,48 @@ public final class FlexboardSettingsActivity extends Activity {
         }
         Context deviceProtected = context.createDeviceProtectedStorageContext();
         return deviceProtected != null ? deviceProtected : context;
+    }
+
+    /**
+     * A colour from the activity's theme, or {@code fallback} if the attribute does not resolve.
+     *
+     * <p>Only <b>framework</b> attributes are read. Gboard's settings theme is whatever its manifest
+     * points at and may derive from AppCompat or Material rather than a platform theme, so nothing
+     * here can assume a library attribute exists — but {@code android.R.attr} is present whatever
+     * the parent is.
+     *
+     * <p>Both forms are handled because the text colours are {@link ColorStateList}s while the
+     * background and accent are plain colours, and a theme is free to supply either.
+     */
+    private int themeColor(int attribute, int fallback) {
+        TypedArray values = getTheme().obtainStyledAttributes(new int[] {attribute});
+        try {
+            ColorStateList stateList = values.getColorStateList(0);
+            if (stateList != null) {
+                return stateList.getDefaultColor();
+            }
+            return values.getColor(0, fallback);
+        } catch (RuntimeException resolutionFailed) {
+            // A theme can point an attribute at something that is not a colour at all. Falling
+            // back beats taking the screen down over a palette.
+            return fallback;
+        } finally {
+            values.recycle();
+        }
+    }
+
+    /**
+     * Whether {@code color} is light enough to need dark icons drawn over it.
+     *
+     * <p>Rec. 601 luma, which is what {@code Color.luminance} would give but without requiring the
+     * API level that added it.
+     */
+    private static boolean isLight(int color) {
+        int red = (color >> 16) & 0xFF;
+        int green = (color >> 8) & 0xFF;
+        int blue = color & 0xFF;
+        double luma = (0.299d * red + 0.587d * green + 0.114d * blue) / 255d;
+        return luma > LIGHT_BACKGROUND_LUMINANCE;
     }
 
     private int dp(int value) {

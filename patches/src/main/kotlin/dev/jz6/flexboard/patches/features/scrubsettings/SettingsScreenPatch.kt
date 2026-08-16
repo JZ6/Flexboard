@@ -112,13 +112,22 @@ private const val ENTRY_SUMMARY = "Swipe length, word limit and hold delay"
 private const val ENTRY_ACTION = "android.intent.action.MAIN"
 
 /**
- * The Activity draws its own heading, palette and window insets, so the theme is asked for as
- * little as possible.
+ * Gboard's own settings screen, whose theme this one borrows so the two look alike.
+ *
+ * The class name is a plain unobfuscated string in the manifest — Android instantiates activities
+ * by name, so R8 cannot rename it.
+ */
+private const val GBOARD_SETTINGS_ACTIVITY =
+    "com.google.android.apps.inputmethod.latin.preference.SettingsActivity"
+
+/**
+ * Used only when Gboard's own settings activity cannot be found.
  *
  * `Theme.DeviceDefault.Settings` came first and clipped the top row: Gboard targets SDK 37, so on
  * Android 15+ the window is edge-to-edge, and how much of the status bar inset a themed action bar
  * had already taken is not something a merged class can determine on every device. With no action
- * bar the Activity is the only inset consumer and the arithmetic is its own.
+ * bar the Activity is the only inset consumer and the arithmetic is its own — which is why
+ * `FlexboardSettingsActivity` still handles the no-action-bar case rather than assuming one.
  */
 private const val SETTINGS_THEME = "@android:style/Theme.DeviceDefault.NoActionBar"
 
@@ -133,6 +142,15 @@ private fun Document.registerSettingsActivity() {
         return
     }
 
+    // Whatever Gboard themes its own settings with, so this screen inherits the same colours,
+    // typography and widget styling — including Material You, which a hardcoded palette cannot
+    // follow. Copied rather than named: the value is a resource id (`@0x7f15044e` on 18.0.3) and
+    // every resource id in this project moved between 17.7.7 and 18. A stale one would still be a
+    // valid id, so it would quietly theme the screen as something unrelated instead of failing.
+    val gboardTheme = application.childElements("activity")
+        .firstOrNull { it.androidAttribute("name") == GBOARD_SETTINGS_ACTIVITY }
+        ?.androidAttribute("theme")
+
     application.appendChild(
         createElement("activity").apply {
             setAndroidAttribute("name", SETTINGS_ACTIVITY_CLASS)
@@ -140,7 +158,7 @@ private fun Document.registerSettingsActivity() {
             // the app needs to start it and no intent filter has to exist for it to resolve.
             setAndroidAttribute("exported", "false")
             setAndroidAttribute("label", ENTRY_TITLE)
-            setAndroidAttribute("theme", SETTINGS_THEME)
+            setAndroidAttribute("theme", gboardTheme ?: SETTINGS_THEME)
         },
     )
 }
