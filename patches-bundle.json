@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-08-16T01:16:15",
-  "description": "## 0.0.1-dev.1\n\n- chore: bump to 0.0.1-dev.1\n- docs: keep upstream's files upstream, and write down which are which\n- fix: push the release commit and its tag atomically\n- feat: shorten the default swipe to one word, and make undo switchable",
-  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v0.0.1-dev.1/patches-0.0.1-dev.1.mpp",
+  "created_at": "2026-08-16T02:07:19",
+  "description": "## 0.0.1-dev.2\n\n- chore: bump to 0.0.1-dev.2\n- fix the keyboard failing to start at all\n- split the README into what users need, and move the rest to docs",
+  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v0.0.1-dev.2/patches-0.0.1-dev.2.mpp",
   "signature_download_url": "",
-  "version": "0.0.1-dev.1"
+  "version": "0.0.1-dev.2"
 }
