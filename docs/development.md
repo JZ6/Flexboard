@@ -112,13 +112,55 @@ the `README.md` block between the `PATCHES_START` and `PATCHES_END` markers.
 
 ## Building
 
-Needs JDK 21, the Android SDK, and credentials for the Morphe package registry:
+Credentials for the Morphe package registry are needed for anything at all — the
+`app.morphe.patches` plugin resolves from GitHub Packages, so without them Gradle cannot even
+configure the build:
 
 ```bash
 printf 'gpr.user=<github-username>\ngpr.key=<PAT with read:packages>\n' >> ~/.gradle/gradle.properties
-
-./gradlew buildAndroid
 ```
+
+The PAT must be a **classic** token; GitHub Packages' Maven registry rejects fine-grained ones.
+`read:packages` is the only scope it needs.
+
+### Type-checking the patches — JDK 21, and nothing else
+
+```bash
+JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew :patches:compileKotlin
+```
+
+**This needs no Android SDK**, despite `:extensions` being in the build, and it is the check worth
+running constantly: about half a second once warm.
+
+Run it before every push. Two releases have been burned on things it catches in one line — a
+`$_` inside a regex read as a string template, and a callable reference whose variance was being
+taken on trust. Neither was visible to any other check in this project, and both cost a full
+release cycle to discover.
+
+### Building the bundle — needs the Android SDK
+
+```bash
+JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew buildAndroid
+```
+
+The bundle lands at `patches/build/libs/patches-*.mpp`, and can be applied with
+[Morphe Desktop](https://github.com/MorpheApp/morphe-desktop) like any other patch bundle. The
+extension is an Android library, so this half does need an SDK — but note that the SDK buys
+*packaging*, not verification: it still never applies the bundle to an APK. If you cannot install
+one, `:patches:compileKotlin` plus [`../tools/apk/preflight.py`](../tools/apk/README.md) covers
+everything CI would have told you, and CI builds the bundle anyway.
+
+### What each check can and cannot see
+
+| | catches | blind to |
+|---|---|---|
+| `:patches:compileKotlin` | syntax, types, unresolved references | anything about Gboard |
+| `tools/apk/preflight.py` | bindings that moved or changed shape | Kotlin that does not compile; behaviour |
+| Morphe + a device | everything else | nothing — but it is the slowest loop |
+
+They are three different axes, and no two of them substitute for each other. `0.0.1-dev.1`
+compiled and had correct bindings and still bricked the keyboard; `0.0.3-dev.1` compiled, had
+correct bindings, applied cleanly, and silently called the wrong method.
 
 The bundle lands at `patches/build/libs/patches-*.mpp`, and can be applied with
 [Morphe Desktop](https://github.com/MorpheApp/morphe-desktop) like any other patch bundle.
