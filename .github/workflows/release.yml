@@ -282,7 +282,10 @@ jobs:
           git add patches-bundle.json patches-list.json README.md CHANGELOG.md
           git commit -m "chore: release $TAG [skip ci]"
           git tag -a "$TAG" -m "$TAG"
-          git push origin "HEAD:$GITHUB_REF_NAME" "refs/tags/$TAG"
+          # --atomic, because two refspecs in one command are still two updates: without it the
+          # branch can land while the tag is rejected, which is exactly the "tag left behind by a
+          # rewrite" state the release model claims cannot happen. Either both move or neither does.
+          git push --atomic origin "HEAD:$GITHUB_REF_NAME" "refs/tags/$TAG"
 
       - name: Publish the release
         if: steps.decide.outputs.release == 'true'
