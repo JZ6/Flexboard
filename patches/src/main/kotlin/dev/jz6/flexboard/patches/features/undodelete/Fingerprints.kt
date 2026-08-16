@@ -33,8 +33,8 @@ internal const val SUPPRESSED_FIELD = "$ABSTRACT_IME->N:Z"
  * at patch time, because which class to name is not a free choice: the emitted `iget-object`
  * requires the register to be a subclass of whatever class the descriptor names, and all the patch
  * can prove about that register is that it is at least an [ABSTRACT_IME]. Gboard's own reads spell
- * it `$LATIN_IME->B`, which is correct for Gboard — the verifier knows `this` there — but would be
- * a claim this patch cannot make. `AbstractIme` declares the field, so naming the declaring class
+ * it `$LATIN_IME->B`, which is correct for Gboard — the verifier knows `this` there — but is a
+ * claim this patch cannot make. `AbstractIme` declares the field, so naming the declaring class
  * is both provable and stable.
  */
 internal const val IME_CONTEXT_FIELD_NAME = "B"

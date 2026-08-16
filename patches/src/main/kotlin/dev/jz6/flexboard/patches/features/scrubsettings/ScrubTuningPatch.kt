@@ -26,8 +26,8 @@ import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.checkAssignable
-import dev.jz6.flexboard.patches.shared.invokeParameterType
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
+import dev.jz6.flexboard.patches.shared.invokeParameterType
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
@@ -376,7 +376,11 @@ private fun MutableMethod.capWordCount(context: BytecodePatchContext) {
             "$HANDLER_CONTEXT_OWNER has no `$HANDLER_CONTEXT_FIELD_NAME` field — the handler's " +
                 "Context has moved, and $PREFERENCE_STORE_GET would be handed something else",
         )
-    context.checkAssignable(handler, handlerContext.definingClass, "`this` in $SCRUB_MOTION_EVENT_HANDLER->r")
+    context.checkAssignable(
+        handler,
+        handlerContext.definingClass,
+        "`this` in $SCRUB_MOTION_EVENT_HANDLER->r",
+    )
     context.checkAssignable(
         handlerContext.type,
         ANDROID_CONTEXT,

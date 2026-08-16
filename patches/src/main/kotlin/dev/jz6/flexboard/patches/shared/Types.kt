@@ -11,11 +11,11 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
  *
  * ## Why this exists
  *
- * `0.0.1-dev.1` shipped a keyboard that would not start. One emitted instruction passed `this` — a
- * `LatinIme` — to `Lpnp;->N(Landroid/content/Context;)Lpnp;`. `LatinIme` extends `AbstractIme`
- * extends `Object`, so it is not a `Context`. Smali assembles that happily, D8 does not type-check
- * across an injection, and nothing downstream looks at the patched APK, so the first thing that
- * noticed was a device with no keyboard.
+ * `0.0.1-dev.1` shipped a keyboard that would not start. One emitted instruction passed `this`
+ * — a `LatinIme` — to `Lpnp;->N(Landroid/content/Context;)Lpnp;`. `LatinIme` extends
+ * `AbstractIme` extends `Object`, so it is not a `Context`. Smali assembles it, D8 does not
+ * type-check across an injection, and nothing downstream looks at the patched APK, so the first
+ * thing that noticed was a device with no keyboard.
  *
  * Every input needed to catch it was already in the patch's hands. The register was not a guess: it
  * was read off `iget-boolean vFlag, vThis, AbstractIme->N:Z`, so its type is pinned by the field
@@ -29,8 +29,8 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
  *  - target appears in the chain — assignable, pass.
  *  - chain reaches `Object` entirely inside the dex — the chain is *complete* and the target is
  *    absent, so it is provably wrong. **Fail.**
- *  - chain reaches a class with no `ClassDef`, e.g. `Landroid/app/Service;` — unknowable from here.
- *    Pass, silently.
+ *  - chain reaches a class with no `ClassDef`, e.g. `Landroid/app/Service;` — unknowable from
+ *    here. Pass, silently.
  *
  * So this is a cheap proof of *wrongness*, never of correctness. It is worth having anyway: the
  * middle case is where patches of this kind actually go wrong, and it is the case `dev.1` was in.
@@ -87,9 +87,9 @@ internal fun BytecodePatchContext.superclassChain(type: String): List<String>? {
 /**
  * Fails the patch when [type] provably cannot be a [target].
  *
- * [target] must be a **class**, not an interface — see the note on this file. [what] names the thing
- * being checked and is quoted straight into the failure, so make it read as a diagnosis: a patch
- * author reading it should not have to open the APK to understand what went wrong.
+ * [target] must be a **class**, not an interface — see the note on this file. [what] names the
+ * thing being checked and is quoted straight into the failure, so make it read as a diagnosis: a
+ * patch author reading it should not have to open the APK to understand what went wrong.
  */
 internal fun BytecodePatchContext.checkAssignable(type: String, target: String, what: String) {
     if (type == target) return
@@ -99,8 +99,8 @@ internal fun BytecodePatchContext.checkAssignable(type: String, target: String, 
     if (target in chain) return
     error(
         "$what is $type, which is not a $target. Its full chain is " +
-            "${chain.joinToString(" -> ")}, resolved entirely inside the APK, so no subclass of it " +
-            "can be one either.",
+            "${chain.joinToString(" -> ")}, resolved entirely inside the APK, so no subclass " +
+            "of it can be one either.",
     )
 }
 
@@ -119,8 +119,8 @@ internal fun BytecodePatchContext.checkAssignable(
 /**
  * The class an `iget`/`iput` reads its field from.
  *
- * A *lower bound* on the object register's type — the register holds this or a subclass — which is
- * all that disproving assignability needs.
+ * A *lower bound* on the object register's type — the register holds this or a subclass — which
+ * is all that disproving assignability needs.
  */
 internal fun Instruction.fieldOwnerType(): String =
     ((this as? ReferenceInstruction)?.reference as? FieldReference)?.definingClass
@@ -128,10 +128,12 @@ internal fun Instruction.fieldOwnerType(): String =
 
 /**
  * The declared type of the argument at [offset] in an invoke's register list, matching
- * [invokeRegisterAt]'s numbering: `this` at 0 for a non-static invoke, then the declared parameters.
+ * [invokeRegisterAt]'s numbering: `this` at 0 for a non-static invoke, then the declared
+ * parameters.
  *
  * A wide parameter occupies two slots, so offsets do not index [MethodReference.parameterTypes]
- * directly. Landing on the high half of one is a mistake worth failing on rather than rounding down.
+ * directly. Landing on the high half of one is a mistake worth failing on rather than rounding
+ * down.
  */
 internal fun Instruction.invokeParameterType(offset: Int): String {
     val reference = (this as? ReferenceInstruction)?.reference as? MethodReference
