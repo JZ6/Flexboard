@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-08-16T02:59:53",
-  "description": "## 0.0.2-dev.1\n\n- chore: bump to 0.0.2-dev.1\n- wrap the new lines to the width the rest of the file uses\n- check a register really holds what the instruction using it needs\n- add tools/promote, so a stable release cannot ship a stale build",
-  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v0.0.2-dev.1/patches-0.0.2-dev.1.mpp",
+  "created_at": "2026-08-16T03:05:02",
+  "description": "## 0.0.2-dev.2\n\n- chore: bump to 0.0.2-dev.2\n- resolve inherited fields by walking up, as the runtime does",
+  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v0.0.2-dev.2/patches-0.0.2-dev.2.mpp",
   "signature_download_url": "",
-  "version": "0.0.2-dev.1"
+  "version": "0.0.2-dev.2"
 }

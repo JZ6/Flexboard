@@ -1,3 +1,8 @@
+# [0.0.2-dev.2](https://github.com/JZ6/Flexboard/compare/v0.0.2-dev.1...v0.0.2-dev.2) (2026-08-16)
+
+* **Gboard:** bump to 0.0.2-dev.2
+* **Gboard:** resolve inherited fields by walking up, as the runtime does
+
 # [0.0.2-dev.1](https://github.com/JZ6/Flexboard/compare/v0.0.1...v0.0.2-dev.1) (2026-08-16)
 
 * **Gboard:** bump to 0.0.2-dev.1
