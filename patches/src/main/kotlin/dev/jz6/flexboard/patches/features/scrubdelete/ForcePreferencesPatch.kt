@@ -51,6 +51,8 @@ internal val forceScrubPreferencesPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_GBOARD)
 
     execute {
+        checkPreferenceStorePins()
+
         // Resolving the setter is the assertion that it still exists. An emitted invoke to a
         // missing method assembles happily and only fails on the device, with no diagnostic.
         val setter = PreferenceStoreWriteFingerprint.method

@@ -25,6 +25,17 @@ internal fun Instruction.opcodeName(): String =
 internal fun Instruction.usesField(descriptor: String): Boolean =
     ((this as? ReferenceInstruction)?.reference as? FieldReference)?.toString() == descriptor
 
+/**
+ * The full descriptor of the field this instruction accesses.
+ *
+ * The counterpart to [usesField], for the cases where the field's name is an *output*: where the
+ * instruction was located by its shape and what it touches is the thing being discovered. Pinning
+ * a name and matching on it cannot survive a build that moves the letter onto a different member.
+ */
+internal fun Instruction.fieldDescriptor(): String =
+    ((this as? ReferenceInstruction)?.reference as? FieldReference)?.toString()
+        ?: error("Not a field access: `${opcode.name}`")
+
 /** True when this instruction invokes exactly the given method descriptor. */
 internal fun Instruction.callsMethod(descriptor: String): Boolean =
     ((this as? ReferenceInstruction)?.reference as? MethodReference)?.toString() == descriptor

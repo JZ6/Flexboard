@@ -82,6 +82,10 @@ val swipeToDeletePatch = bytecodePatch(
     dependsOn(scrubTuningPatch)
 
     execute {
+        // Signature-unique on the store, so existence is all that needs asserting — a rename
+        // makes them vanish rather than letting the letter survive on the wrong member.
+        checkPreferenceStorePins()
+
         ScrubDeleteConstructorFingerprint.method.chooseStartKeyFromPreference(this)
         ScrubHandleMotionEventFingerprint.method.acceptWildcardStartKey()
     }

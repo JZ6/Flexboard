@@ -86,6 +86,11 @@ EXPECTED = {
     'undo_slot_field': 'y',
     'recommit': 'Lcom/google/android/libraries/inputmethod/ime/AbstractIme;->t(Lojt;Z)V',
     'recommit_window': 40,
+    'slot_field': 'Lcom/google/android/apps/inputmethod/libs/latin5/LatinIme;->y:Lqyc;',
+    'slot_available': 'Lqyc;->d()Z',
+    'slot_clear': 'Lqyc;->c()V',
+    'get_int': 'Lqhy;->b(Ljava/lang/String;I)I',
+    'contains': 'Lqhy;->ak(I)Z',
     'scrub_g_registers': 13,
     'scrub_r_registers': 13,
     'delete_ctor_registers': 12,
@@ -247,39 +252,94 @@ def run(dl):
     check('undo: its value is a Context', bool(ime_ctx) and ime_ctx.endswith(':' + CONTEXT),
           str(ime_ctx))
 
-    slot = B['undo_slot']
-    for sig in (f'{slot}->d()Z', f'{slot}->a()Lj$/util/Optional;', f'{slot}->c()V'):
-        c, _ = body(dl, sig)
-        check(f'undo: {sig}', c is not None)
-
-    # The re-commit, resolved the way the patch resolves it: from the call Gboard's own undo makes.
+    # The undo cluster, resolved the way the patch resolves it: from the handler that performs
+    # Gboard's own undo, anchored on the re-commit's *shape* rather than any name.
     #
-    # Checking only that a named method *exists* is what let `0.0.3-dev.1` ship broken. On 18 the
-    # re-commit is `AbstractIme->t`, while `s` — the 17.7.7 name — still exists with a
-    # signature-compatible shape and an empty base declaration. Both resolve, both verify, and the
-    # wrong one silently does nothing. Only the stock handler distinguishes them.
+    # Checking that a named method merely *exists* is what let `0.0.3-dev.1` ship broken. Four of
+    # these share a signature with siblings on the same class — `AbstractIme->s`/`t`, the slot's
+    # three `()Z` methods, its nine `()V` methods — so existence proves nothing. Only the call site
+    # distinguishes them, and this mirrors that resolution so a drift shows up here first.
+    slot = B['undo_slot']
     c, ins = body(dl, dispatch)
     if ins:
-        gets = [i for i, (pc, n, a) in enumerate(ins) if f'{slot}->a()Lj$/util/Optional;' in a]
-        if check('undo: undo-slot get is unique in the dispatcher', len(gets) == 1,
-                 f'found {len(gets)}'):
-            window = ins[gets[0] + 1:gets[0] + 1 + E['recommit_window']]
-            found = [a.split(', ')[-1] for pc, n, a in window
-                     if n.startswith('invoke') and RECOMMIT_RE.match(a.split(', ')[-1])]
-            if check('undo: stock undo re-commits via an AbstractIme hook', bool(found),
-                     'no AbstractIme->…(L…;Z)V call follows the slot read'):
-                resolved = found[0]
-                check('undo: the re-commit is the expected one',
-                      resolved == E['recommit'], f'stock calls {resolved}')
-                committable = RECOMMIT_RE.match(resolved).group(1)
-                check('undo: committable-text type matches the cast',
-                      committable == B['committable'],
-                      f'stock casts to {committable}, bindings say {B["committable"]}')
-                # An empty base declaration means the subclass override is what runs; that is
-                # exactly why the two hooks are indistinguishable without this call site.
-                owner_free = resolved.replace(ABSTRACT_IME, LATIN_IME)
-                c2, _ = body(dl, owner_free)
-                check('undo: LatinIme overrides it', c2 is not None, owner_free)
+        anchors = [i for i, (pc, n, a) in enumerate(ins)
+                   if n.startswith('invoke') and RECOMMIT_RE.match(a.split(', ')[-1])]
+        if check('undo: the re-commit anchor is unique in the dispatcher', len(anchors) == 1,
+                 f'found {len(anchors)} AbstractIme->…(L…;Z)V calls'):
+            ai = anchors[0]
+            resolved = ins[ai][2].split(', ')[-1]
+            check('undo: resolved re-commit matches the expected one',
+                  resolved == E['recommit'], f'stock calls {resolved}')
+            check('undo: committable-text type matches the cast',
+                  RECOMMIT_RE.match(resolved).group(1) == B['committable'],
+                  f'stock casts to {RECOMMIT_RE.match(resolved).group(1)}')
+            # An empty base declaration means the subclass override is what runs; that is exactly
+            # why the two hooks are indistinguishable without this call site.
+            c2, _ = body(dl, resolved.replace(ABSTRACT_IME, LATIN_IME))
+            check('undo: LatinIme overrides the re-commit', c2 is not None)
+
+            # The slot is the receiver of the call *returning* an Optional. Matching on the type
+            # appearing anywhere would catch Optional's own isPresent/get instead.
+            start = max(0, ai - E['recommit_window'])
+            gets = [i for i in range(start, ai)
+                    if ins[i][1].startswith('invoke')
+                    and ins[i][2].split(', ')[-1].endswith(')Lj$/util/Optional;')]
+            if check('undo: an Optional getter precedes the re-commit', bool(gets)):
+                gi = gets[-1]
+                got = ins[gi][2].split(', ')[-1]
+                slot_reg = regs(ins[gi][2])[0]
+                check('undo: the Optional getter is on the expected slot',
+                      got.startswith(slot), f'resolved slot is {got.split("->")[0]}')
+
+                def on_slot(i, ret):
+                    d_ = ins[i][2].split(', ')[-1]
+                    return (ins[i][1].startswith('invoke') and d_.startswith(slot)
+                            and d_.endswith(f'(){ret}') and regs(ins[i][2])[:1] == [slot_reg])
+
+                avail = [ins[i][2].split(', ')[-1]
+                         for i in range(gi - 1, start - 1, -1) if on_slot(i, 'Z')]
+                clear = [ins[i][2].split(', ')[-1]
+                         for i in range(ai + 1, min(len(ins), ai + 1 + E['recommit_window']))
+                         if on_slot(i, 'V')]
+                check('undo: resolved availability check',
+                      bool(avail) and avail[0] == E['slot_available'],
+                      f'resolved {avail[:1]}, expected {E["slot_available"]}')
+                check('undo: resolved slot clear', bool(clear) and clear[0] == E['slot_clear'],
+                      f'resolved {clear[:1]}, expected {E["slot_clear"]}')
+
+                fields = [ins[i][2].split(', ')[-1]
+                          for i in range(gi - 1, start - 1, -1)
+                          if ins[i][1] == 'iget-object' and regs(ins[i][2])[:1] == [slot_reg]]
+                check('undo: resolved slot field', bool(fields) and fields[0] == E['slot_field'],
+                      f'resolved {fields[:1]}, expected {E["slot_field"]}')
+
+    # Store members whose signature is NOT unique, so the patches derive them by behaviour. These
+    # mirror that derivation; a mismatch means the letter has moved onto the sibling.
+    def sole_with_signature(owner, signature, calling=None, not_calling=None):
+        d_, sup_, cd_ = find_class(dl, owner)
+        out = []
+        for m in (d_.class_methods(cd_) if cd_ else []):
+            desc, af_, co_ = m
+            if not desc.endswith(signature):
+                continue
+            c_ = d_.code(co_)
+            calls = ''
+            if c_:
+                calls = ' '.join(str(r) for _, _, _, r in d_.walk(c_) if r)
+            if calling and calling not in calls:
+                continue
+            if not_calling and not_calling in calls:
+                continue
+            out.append(desc)
+        return out
+
+    got = sole_with_signature(store, '(Ljava/lang/String;I)I',
+                              not_calling='Ljava/lang/Integer;->parseInt')
+    check('store: getInt resolves uniquely by behaviour', len(got) == 1 and got[0] == E['get_int'],
+          f'resolved {got}, expected {E["get_int"]}')
+    got = sole_with_signature(store, '(I)Z', calling='Landroid/content/SharedPreferences;->contains')
+    check('store: contains resolves uniquely by behaviour',
+          len(got) == 1 and got[0] == E['contains'], f'resolved {got}, expected {E["contains"]}')
 
     d, sup, cd = find_class(dl, LATIN_IME)
     held = [fd for fd, static in class_fields(d, cd)

@@ -1,6 +1,10 @@
 package dev.jz6.flexboard.patches.features.scrubdelete
 
 import app.morphe.patcher.Fingerprint
+import app.morphe.patcher.patch.BytecodePatchContext
+import dev.jz6.flexboard.patches.shared.checkMethodExists
+import dev.jz6.flexboard.patches.shared.soleMethodCalling
+import dev.jz6.flexboard.patches.shared.soleMethodNotCalling
 
 /**
  * The scrub classes are not obfuscated, so every fingerprint here can name its class outright —
@@ -55,10 +59,62 @@ internal const val CONFIG_DISABLED_FIELD = "Lpvs;->g:Z"
  * preference whose resource id will not exist until aapt2 recompiles.
  */
 internal const val PREFERENCE_STORE = "Lqhy;"
+
+/**
+ * These two are **signature-unique** on the store: no other method takes a `Context` and returns
+ * the store, and no other takes `(String, Z)` and returns `Z`. So a rename cannot hide behind a
+ * sibling, and [checkPreferenceStorePins] asserting they still exist is enough — the letter cannot
+ * survive on the wrong member the way `AbstractIme->s` did.
+ */
 internal const val PREFERENCE_STORE_GET =
     "$PREFERENCE_STORE->I(Landroid/content/Context;)$PREFERENCE_STORE"
-internal const val PREFERENCE_GET_INT = "$PREFERENCE_STORE->b(Ljava/lang/String;I)I"
 internal const val PREFERENCE_GET_BOOLEAN = "$PREFERENCE_STORE->k(Ljava/lang/String;Z)Z"
+
+/** `Integer.parseInt`, which the *string*-valued sibling of the int getter calls and it does not. */
+private const val INTEGER_PARSE_INT = "Ljava/lang/Integer;->parseInt"
+
+/** What the id-keyed `contains` is really doing, and what its same-shaped sibling does not do. */
+private const val SHARED_PREFERENCES_CONTAINS = "Landroid/content/SharedPreferences;->contains"
+
+/**
+ * The string-keyed `getInt`, resolved rather than named.
+ *
+ * **Its signature is not unique.** Two methods on the store take `(String, I)` and return `I`: this
+ * one, which goes through the typed getter, and a sibling that reads the preference as a *string*
+ * and calls `Integer.parseInt` on it. Emitting the wrong one would compile, verify and run — it
+ * would simply parse a value that was never stored as text — so the letter is derived from that
+ * difference instead of written down.
+ */
+internal fun BytecodePatchContext.resolvePreferenceGetInt(): String =
+    soleMethodNotCalling(
+        PREFERENCE_STORE,
+        "(Ljava/lang/String;I)I",
+        INTEGER_PARSE_INT,
+        "the string-keyed getInt",
+    )
+
+/**
+ * The id-keyed `contains`, resolved rather than named.
+ *
+ * **Its signature is not unique either.** Two methods take `(I)` and return `Z`; this is the one
+ * that actually asks `SharedPreferences.contains`, while the other resolves the id to a key and
+ * delegates to a boolean *getter*. Confusing them would turn "has the user ever set this?" into
+ * "is it currently true?", which for a write-once default is the difference between setting it once
+ * and setting it on every start.
+ */
+internal fun BytecodePatchContext.resolvePreferenceContains(): String =
+    soleMethodCalling(
+        PREFERENCE_STORE,
+        "(I)Z",
+        SHARED_PREFERENCES_CONTAINS,
+        "the id-keyed contains",
+    )
+
+/** Asserts the store descriptors that are safe to pin are still present. */
+internal fun BytecodePatchContext.checkPreferenceStorePins() {
+    checkMethodExists(PREFERENCE_STORE_GET, "The preference store's singleton getter")
+    checkMethodExists(PREFERENCE_GET_BOOLEAN, "The store's string-keyed getBoolean")
+}
 
 /**
  * The shared engine's entry point. Holds the single comparison that decides whether a scrub may

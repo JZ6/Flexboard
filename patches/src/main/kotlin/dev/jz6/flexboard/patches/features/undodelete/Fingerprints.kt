@@ -14,18 +14,18 @@ internal const val LATIN_IME = "Lcom/google/android/apps/inputmethod/libs/latin5
 /** The IME base class, which owns both the suppression flag and the re-commit used to undo. */
 internal const val ABSTRACT_IME = "Lcom/google/android/libraries/inputmethod/ime/AbstractIme;"
 
-/**
- * Set while the IME is suppressing input. The stock `SCRUB_DELETE_FINISH` handler reads it and, when
- * true, treats the event as handled and does nothing — which is the branch this patch reuses to
- * return without having to name the target instruction.
+/*
+ * The suppression flag — set while the IME is suppressing input — is deliberately **not** a constant
+ * here. The stock `SCRUB_DELETE_FINISH` handler reads it and, when true, treats the event as handled
+ * and does nothing, which is the branch this patch reuses to return without naming a target
+ * instruction. `undoOnRightwardScrub` finds that read by the shape around it —
+ * `move-result` / `iget-boolean` / `if-nez` — and takes the field descriptor from whatever is there.
  *
- * **This was `N:Z` on 17.7.7.** Gboard 18 inserted a field into `AbstractIme`, shifting every letter
- * from `C` down by one, so the flag is now `O` — and `N` still exists as an unrelated boolean. A
- * letter carried over unchecked would therefore have assembled, verified and silently tested the
- * wrong field. It is pinned here from a read count instead: the suppression flag is the only
- * `AbstractIme` boolean read exactly four times in the dispatcher, in both builds.
+ * Writing the letter down is what this avoids. It was `AbstractIme->N:Z` on 17.7.7; Gboard 18
+ * inserted a field and shifted every letter from `C` down one, so it is `O` on 18 — while `N` went
+ * on existing as an unrelated boolean. A carried-over letter would have assembled, verified, and
+ * silently tested the wrong field.
  */
-internal const val SUPPRESSED_FIELD = "$ABSTRACT_IME->O:Z"
 
 /**
  * The IME's `Context`, and the only way to reach one from inside the dispatcher.
@@ -51,12 +51,14 @@ internal const val IME_CONTEXT_FIELD_NAME = "B"
  * The scrub delete already writes it. `SCRUB_DELETE_FINISH` calls `Lomu;->a(I)`, which performs the
  * deletion and returns the removed text, and the handler stores that text here. So the text a swipe
  * removed is sitting in this slot by the time the finger lifts, with no help from Flexboard.
+ *
+ * **Nothing about it is pinned here**, and the absence is the point. On 18.0.3 the slot is `Lqyc;`,
+ * the field is `LatinIme->y`, and the three methods are `d()Z`, `a()Lj$/util/Optional;` and `c()V`
+ * — but `d` shares `()Z` with two siblings and `c` shares `()V` with eight, so writing those letters
+ * down buys a name that can move onto the wrong member without anything noticing. `resolveStockUndo`
+ * reads all of them out of the handler that performs Gboard's own undo instead. These values are
+ * recorded in this comment only so the next person has something to compare against.
  */
-internal const val UNDO_SLOT = "Lqyc;"
-internal const val UNDO_SLOT_FIELD = "$LATIN_IME->y:$UNDO_SLOT"
-internal const val UNDO_SLOT_AVAILABLE = "$UNDO_SLOT->d()Z"
-internal const val UNDO_SLOT_GET = "$UNDO_SLOT->a()Lj\$/util/Optional;"
-internal const val UNDO_SLOT_CLEAR = "$UNDO_SLOT->c()V"
 
 /**
  * How the stock undo re-commits the text, resolved out of Gboard rather than pinned.

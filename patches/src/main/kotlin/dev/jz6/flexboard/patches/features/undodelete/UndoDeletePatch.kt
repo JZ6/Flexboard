@@ -11,17 +11,19 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_GET_BOOLEAN
+import dev.jz6.flexboard.patches.features.scrubdelete.checkPreferenceStorePins
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
 import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.checkAssignable
+import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldOwnerType
 import dev.jz6.flexboard.patches.shared.findInstanceField
-import dev.jz6.flexboard.patches.shared.indexOfSoleCall
+import dev.jz6.flexboard.patches.shared.invokeRegisterAt
+import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
-import dev.jz6.flexboard.patches.shared.usesField
 
 /**
  * Swipe right, after the delete gesture has ended, to put back the words it removed.
@@ -75,6 +77,8 @@ val swipeRightToUndoPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_GBOARD)
 
     execute {
+        checkPreferenceStorePins()
+
         LatinImeHandleEventFingerprint.method.undoOnRightwardScrub(this)
     }
 }
@@ -119,33 +123,123 @@ private val SCRATCH_REGISTERS = listOf(2, 3)
  */
 internal const val UNDO_ENABLED_KEY = "flexboard_undo_enabled"
 
+/** Everything the emitted undo needs, read out of the handler that performs Gboard's own undo. */
+private data class StockUndo(
+    val slotField: String,
+    val available: String,
+    val get: String,
+    val committableText: String,
+    val recommit: String,
+    val clear: String,
+)
+
 /**
- * The stock undo's re-commit call and the type it casts to, taken from the one place that can tell
- * them apart from their same-shaped siblings: the handler that actually performs Gboard's undo.
+ * Reads the stock `UNDO_MULTI_DELETION` handler and returns the members it uses.
  *
- * Returns `(descriptor, committableTextType)`.
+ * ## Why every one of these is derived rather than named
+ *
+ * Four of the six share their signature with siblings on the same class, so neither the name nor
+ * the shape identifies them — only what Gboard's own undo does with them:
+ *
+ * | member | siblings with the same signature |
+ * |---|---|
+ * | re-commit | `s` and `t` on `AbstractIme`, both `(L…;Z)V`, both empty stubs on the base |
+ * | available | `d`, `m`, `n` on the slot, all `()Z` |
+ * | clear | nine `()V` methods on the slot |
+ * | slot field | resolved with the slot type, so it cannot name a stale one |
+ *
+ * `0.0.3-dev.1` shipped the first of those wrong: it called `s`, which existed, verified and ran,
+ * and silently did nothing. The other three were the same accident waiting to happen.
+ *
+ * ## The anchor
+ *
+ * The re-commit is matched by *shape* — `AbstractIme->…(L…;Z)V` — which occurs exactly once in the
+ * whole 1,544-instruction dispatcher, so it needs no name to find. Everything else is then located
+ * relative to it by register: the receiver of the `Optional` getter is the slot, and the field that
+ * loaded that register is where the slot lives.
  */
-private fun MutableMethod.resolveRecommit(): Pair<String, String> {
-    val getIndex = instructions.indexOfSoleCall(UNDO_SLOT_GET, "$LATIN_IME->q")
+private fun MutableMethod.resolveStockUndo(): StockUndo {
+    val anchors = instructions.withIndex().filter { (_, instruction) ->
+        val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
+        reference != null && RECOMMIT_PATTERN.matches(reference.toString())
+    }
+    check(anchors.size == 1) {
+        "Expected exactly one `$ABSTRACT_IME->…(L…;Z)V` call in $LATIN_IME->q — the stock undo's " +
+            "re-commit — but found ${anchors.size}. Gboard's own undo no longer re-commits the way " +
+            "this patch mirrors, so emitting a call here would be guessing at which method puts " +
+            "the text back."
+    }
+    val (recommitIndex, recommitInstruction) = anchors.single()
+    val recommit = (recommitInstruction as ReferenceInstruction).reference.toString()
+    val committableText = RECOMMIT_PATTERN.matchEntire(recommit)!!.groupValues[1]
 
-    val end = minOf(instructions.size, getIndex + 1 + RECOMMIT_SEARCH_WINDOW)
-    val match = (getIndex + 1 until end)
-        .asSequence()
-        .mapNotNull { index ->
-            val reference = (instructions[index] as? ReferenceInstruction)?.reference
-            (reference as? MethodReference)?.toString()
+    val from = maxOf(0, recommitIndex - RECOMMIT_SEARCH_WINDOW)
+
+    // The Optional getter, whose receiver is the slot. Its return type is unique on the slot class,
+    // so unlike its neighbours this one really can be found by shape alone.
+    val getIndex = (recommitIndex - 1 downTo from).firstOrNull {
+        val reference = (instructions[it] as? ReferenceInstruction)?.reference as? MethodReference
+        reference?.returnType == OPTIONAL
+    } ?: error(
+        "No call returning $OPTIONAL within $RECOMMIT_SEARCH_WINDOW instructions before the " +
+            "re-commit in $LATIN_IME->q — the stock undo no longer reads the slot through an " +
+            "Optional, so the slot cannot be identified from here",
+    )
+    val get = (instructions[getIndex] as ReferenceInstruction).reference.toString()
+    val slotRegister = instructions[getIndex].invokeRegisterAt(0)
+    val slotType = get.substringBefore("->")
+
+    // Called on the same register before the getter: "is there anything to put back".
+    val available = (getIndex - 1 downTo from).firstNonNullOf(
+        "No `$slotType->…()Z` called on v$slotRegister before the Optional getter",
+    ) { callOnRegister(it, slotRegister, returning = "Z") }
+
+    // And after the re-commit: "the slot is spent".
+    val clearEnd = minOf(instructions.size, recommitIndex + 1 + RECOMMIT_SEARCH_WINDOW)
+    val clear = (recommitIndex + 1 until clearEnd).firstNonNullOf(
+        "No `$slotType->…()V` called on v$slotRegister after the re-commit",
+    ) { callOnRegister(it, slotRegister, returning = "V") }
+
+    // Whatever loaded the slot register is where the slot is kept.
+    val slotField = (getIndex - 1 downTo from).firstNotNullOfOrNull {
+        val instruction = instructions[it]
+        val writesSlot = (instruction as? TwoRegisterInstruction)?.registerA == slotRegister
+        if (instruction.opcodeName() == "IGET_OBJECT" && writesSlot) {
+            instruction.fieldDescriptor()
+        } else {
+            null
         }
-        .mapNotNull { descriptor -> RECOMMIT_PATTERN.matchEntire(descriptor) }
-        .firstOrNull()
-        ?: error(
-            "No `$ABSTRACT_IME->…(L…;Z)V` call within $RECOMMIT_SEARCH_WINDOW instructions of " +
-                "$UNDO_SLOT_GET in $LATIN_IME->q — Gboard's own undo no longer re-commits the way " +
-                "this patch mirrors, so emitting a call here would be guessing at which method " +
-                "puts the text back",
-        )
+    } ?: error(
+        "Nothing loads v$slotRegister with an `iget-object` before the Optional getter in " +
+            "$LATIN_IME->q, so the field holding the undo slot cannot be identified",
+    )
+    check(slotField.endsWith(":$slotType")) {
+        "The field loading the slot register is $slotField, which is not a $slotType"
+    }
 
-    return match.value to match.groupValues[1]
+    return StockUndo(slotField, available, get, committableText, recommit, clear)
 }
+
+/** The descriptor of an `invoke-virtual` on [register] with the given return type, or null. */
+private fun MutableMethod.callOnRegister(index: Int, register: Int, returning: String): String? {
+    val instruction = instructions[index]
+    val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
+        ?: return null
+    if (reference.returnType != returning || reference.parameterTypes.isNotEmpty()) return null
+    return if (instruction.invokeRegisterCount() == 1 &&
+        instruction.invokeRegisterAt(0) == register
+    ) {
+        reference.toString()
+    } else {
+        null
+    }
+}
+
+/** [firstNotNullOfOrNull] that fails with a diagnosis rather than returning null. */
+private inline fun IntProgression.firstNonNullOf(
+    onMissing: String,
+    transform: (Int) -> String?,
+): String = firstNotNullOfOrNull(transform) ?: error("$onMissing in $LATIN_IME->q")
 
 private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     val registerCount = implementation?.registerCount
@@ -155,10 +249,9 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
             "refusing to guess which registers are free in a method this size"
     }
 
-    // Read out of Gboard's own undo handler rather than pinned. See RECOMMIT_PATTERN: on 18 the
-    // re-commit is called `t` and a different method took over `s`, so a written-down letter is
-    // exactly the thing that fails silently here.
-    val (recommit, committableText) = resolveRecommit()
+    // Read out of Gboard's own undo handler rather than pinned. Four of these share a signature
+    // with siblings on the same class, so a written-down letter is exactly what fails silently.
+    val stock = resolveStockUndo()
 
     // The finish handler is reached only through a packed-switch, whose keys never appear in the
     // instruction stream, so it is anchored on the one call that is unique to it instead.
@@ -169,19 +262,40 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     }
     val takeTextIndex = takeText.single().index
 
-    // Walk back to the handler's prologue: `iget-boolean vFlag, vThis, AbstractIme->N:Z`.
-    val flagIndex = (takeTextIndex - 1 downTo maxOf(0, takeTextIndex - ANCHOR_SEARCH_WINDOW))
-        .firstOrNull {
-            instructions[it].opcodeName() == "IGET_BOOLEAN" &&
-                instructions[it].usesField(SUPPRESSED_FIELD)
-        }
-        ?: error(
-            "No read of $SUPPRESSED_FIELD within $ANCHOR_SEARCH_WINDOW instructions before " +
-                "$SCRUB_STATE_TAKE_TEXT — the SCRUB_DELETE_FINISH prologue has changed",
-        )
+    // The handler's prologue, found by its shape rather than by the field's name:
+    //
+    //     move-result   vCount            <- the signed word count
+    //     iget-boolean  vFlag, vThis, ?   <- the suppression flag, whatever it is called
+    //     if-nez        vFlag, :handled
+    //
+    // **The name is an output here, not an input.** It was `AbstractIme->N:Z` on 17.7.7 and is `O`
+    // on 18, because Gboard 18 inserted a field and shifted every letter from `C` down one — while
+    // `N` went on existing as an unrelated boolean. Matching on the descriptor would have found
+    // nothing and failed loudly, which is survivable; the danger is the other direction, where a
+    // letter still resolves and reads the wrong field. Three instructions in a row is a far more
+    // stable identifier than any letter, so the field is read off whatever sits in that position.
+    val flagCandidates =
+        (takeTextIndex - 1 downTo maxOf(1, takeTextIndex - ANCHOR_SEARCH_WINDOW))
+            .filter {
+                instructions[it].opcodeName() == "IGET_BOOLEAN" &&
+                    instructions[it - 1].opcodeName() == "MOVE_RESULT" &&
+                    instructions[it + 1].opcodeName() == "IF_NEZ"
+            }
+    check(flagCandidates.size == 1) {
+        "Expected exactly one `move-result` / `iget-boolean` / `if-nez` run within " +
+            "$ANCHOR_SEARCH_WINDOW instructions before $SCRUB_STATE_TAKE_TEXT, found " +
+            "${flagCandidates.size} — the SCRUB_DELETE_FINISH prologue has changed shape, and the " +
+            "suppression flag can no longer be told apart from its neighbours by position"
+    }
+    val flagIndex = flagCandidates.single()
 
     val flagRead = instructions[flagIndex] as TwoRegisterInstruction
     val flagRegister = flagRead.registerA
+
+    // Emitted below to restore the flag, so it must be the field that was actually read here.
+    // Deliberately not compared against a constant: pinning it again as an assertion would fail a
+    // patch whose derivation had worked perfectly, which is the opposite of the point.
+    val suppressedField = flagRead.fieldDescriptor()
 
     // The IME register, carrying the only type it is *proven* to hold. Reading `AbstractIme->N:Z`
     // off it shows it is at least an `AbstractIme`; that it happens to be a `LatinIme` at run time
@@ -218,7 +332,7 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
 
     val test = instructions[flagIndex + 1]
     check(test.opcodeName() == "IF_NEZ") {
-        "Expected `if-nez` immediately after the read of $SUPPRESSED_FIELD, found " +
+        "Expected `if-nez` immediately after the read of $suppressedField, found " +
             "`${test.opcode.name}` — the handled-exit branch this patch relies on is gone"
     }
     val testedRegister = (test as OneRegisterInstruction).registerA
@@ -229,7 +343,7 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     // The count is whatever `La;->W(event)` left immediately before the flag read.
     val countMove = instructions[flagIndex - 1]
     check(countMove.opcodeName() == "MOVE_RESULT") {
-        "Expected `move-result` before the read of $SUPPRESSED_FIELD, found " +
+        "Expected `move-result` before the read of $suppressedField, found " +
             "`${countMove.opcode.name}` — cannot locate the signed word count"
     }
     val countRegister = (countMove as OneRegisterInstruction).registerA
@@ -261,23 +375,23 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
             const/4 v$flagRegister, 0x1
             invoke-virtual { v$slot, v$value, v$flagRegister }, $PREFERENCE_GET_BOOLEAN
             move-result v$slot
-            iget-boolean v$flagRegister, v$thisRegister, $SUPPRESSED_FIELD
+            iget-boolean v$flagRegister, v$thisRegister, $suppressedField
             if-eqz v$slot, :$NOT_RIGHTWARD_LABEL
-            iget-object v$slot, v$thisRegister, $UNDO_SLOT_FIELD
-            invoke-virtual { v$slot }, $UNDO_SLOT_AVAILABLE
+            iget-object v$slot, v$thisRegister, ${stock.slotField}
+            invoke-virtual { v$slot }, ${stock.available}
             move-result v$value
             if-eqz v$value, :$UNDO_DONE_LABEL
-            invoke-virtual { v$slot }, $UNDO_SLOT_GET
+            invoke-virtual { v$slot }, ${stock.get}
             move-result-object v$value
             invoke-virtual { v$value }, $OPTIONAL_IS_PRESENT
             move-result v$flagRegister
             if-eqz v$flagRegister, :$UNDO_DONE_LABEL
             invoke-virtual { v$value }, $OPTIONAL_GET
             move-result-object v$value
-            check-cast v$value, $committableText
+            check-cast v$value, ${stock.committableText}
             const/4 v$flagRegister, 0x1
-            invoke-virtual { v$thisRegister, v$value, v$flagRegister }, $recommit
-            invoke-virtual { v$slot }, $UNDO_SLOT_CLEAR
+            invoke-virtual { v$thisRegister, v$value, v$flagRegister }, ${stock.recommit}
+            invoke-virtual { v$slot }, ${stock.clear}
             :$UNDO_DONE_LABEL
             const/4 v$flagRegister, 0x1
         """,

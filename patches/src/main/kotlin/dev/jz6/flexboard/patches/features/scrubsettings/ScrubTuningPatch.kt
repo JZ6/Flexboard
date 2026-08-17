@@ -15,7 +15,8 @@ import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_FIELD
 import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_FIELD_NAME
 import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_OWNER
 import dev.jz6.flexboard.patches.features.scrubdelete.INTEGER_VALUE_OF
-import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_GET_INT
+import dev.jz6.flexboard.patches.features.scrubdelete.checkPreferenceStorePins
+import dev.jz6.flexboard.patches.features.scrubdelete.resolvePreferenceGetInt
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
 import dev.jz6.flexboard.patches.features.scrubdelete.SCRUB_DELETE_MOTION_EVENT_HANDLER
 import dev.jz6.flexboard.patches.features.scrubdelete.SCRUB_MOTION_EVENT_HANDLER
@@ -68,6 +69,8 @@ internal val scrubTuningPatch = bytecodePatch(
     extendWith("extensions/extension.mpe")
 
     execute {
+        checkPreferenceStorePins()
+
         ScrubEngineConstructorFingerprint.method.substituteHoldDelay(this)
         ScrubDeleteConstructorFingerprint.method.scaleStepTable(this)
         ScrubDispatchFingerprint.method.capWordCount(this)
@@ -159,6 +162,10 @@ private const val STEPS_DONE_LABEL = "flexboard_steps_done"
  * id can silently mislead it.
  */
 private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
+    // Resolved, not named: the store has a second (String, I)I method that reads the value as
+    // text and parses it. Emitting that one would compile, verify and quietly parse a
+    // preference that was never written as a string.
+    val getInt = context.resolvePreferenceGetInt()
     val registerCount = implementation?.registerCount
         ?: error("$THREE_ARGUMENT_ENGINE_CONSTRUCTOR has no implementation")
     check(registerCount == ENGINE_CONSTRUCTOR_REGISTER_COUNT) {
@@ -207,7 +214,7 @@ private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
             move-result-object v$scratchRegister
             const-string v$delayRegister, "$HOLD_DELAY_KEY"
             const/16 v$delayHigh, $HOLD_DELAY_DEFAULT
-            invoke-virtual { v$scratchRegister, v$delayRegister, v$delayHigh }, $PREFERENCE_GET_INT
+            invoke-virtual { v$scratchRegister, v$delayRegister, v$delayHigh }, $getInt
             move-result v$scratchRegister
             int-to-long v$delayRegister, v$scratchRegister
         """,
@@ -245,6 +252,10 @@ private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
  * static* fallback, so the scaling is skipped rather than corrupting global state.
  */
 private fun MutableMethod.scaleStepTable(context: BytecodePatchContext) {
+    // Resolved, not named: the store has a second (String, I)I method that reads the value as
+    // text and parses it. Emitting that one would compile, verify and quietly parse a
+    // preference that was never written as a string.
+    val getInt = context.resolvePreferenceGetInt()
     val registerCount = implementation?.registerCount
         ?: error("$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init> has no implementation")
     check(registerCount == DELETE_CONSTRUCTOR_REGISTER_COUNT) {
@@ -298,7 +309,7 @@ private fun MutableMethod.scaleStepTable(context: BytecodePatchContext) {
             move-result-object v$store
             const-string v$table, "$STEP_SCALE_KEY"
             const/16 v$length, $STEP_SCALE_DEFAULT
-            invoke-virtual { v$store, v$table, v$length }, $PREFERENCE_GET_INT
+            invoke-virtual { v$store, v$table, v$length }, $getInt
             move-result v$store
             const/16 v$table, $STEP_SCALE_IDENTITY
             if-eq v$store, v$table, :$STEPS_DONE_LABEL
@@ -358,6 +369,10 @@ private fun MutableMethod.scaleStepTable(context: BytecodePatchContext) {
  * fixes those as `mul-int/2addr` and `mul-int`.
  */
 private fun MutableMethod.capWordCount(context: BytecodePatchContext) {
+    // Resolved, not named: the store has a second (String, I)I method that reads the value as
+    // text and parses it. Emitting that one would compile, verify and quietly parse a
+    // preference that was never written as a string.
+    val getInt = context.resolvePreferenceGetInt()
     val registerCount = implementation?.registerCount
         ?: error("$SCRUB_MOTION_EVENT_HANDLER->r has no implementation")
     check(registerCount == DISPATCH_REGISTER_COUNT) {
@@ -450,7 +465,7 @@ private fun MutableMethod.capWordCount(context: BytecodePatchContext) {
                 move-result-object v$store
                 const-string v$key, "$MAX_WORDS_KEY"
                 const/16 v$limit, $MAX_WORDS_DEFAULT
-                invoke-virtual { v$store, v$key, v$limit }, $PREFERENCE_GET_INT
+                invoke-virtual { v$store, v$key, v$limit }, $getInt
                 move-result v$store
                 const/16 v$key, $MAX_WORDS_NO_LIMIT
                 if-ge v$store, v$key, :$done

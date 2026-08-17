@@ -43,17 +43,42 @@ bodies — not by guessing that the alphabet shifted.
 | `contains` by id | `Lpnp;->ar(I)Z` | `Lqhy;->ak(I)Z` |
 | Word-count getter | `La;->W(Lnbj;)I` | `La;->X(Lnur;)I` |
 
-**`AbstractIme->N:Z` → `O:Z` is the dangerous one.** Gboard 18 inserted a field, shifting every
-letter from `C` down by one — and `N` still exists on 18 as an unrelated boolean. Carrying the
-letter over would have assembled, passed verification and silently tested the wrong field, which no
-type assertion can catch. It is pinned from a read count instead: the suppression flag is the only
-`AbstractIme` boolean read exactly four times in the dispatcher, in both builds.
-
 Unchanged across the move, and worth knowing because they carry most of the load:
 `ScrubMotionEventHandler` and its `g`/`r`/`<init>` names, `AbstractMotionEventHandler->o:Context`,
-`AbstractIme->B:Context`, `AbstractIme->s`, `LatinIme->y`, `Lpvs;->a`/`g`/`h`, and the store's
-string-keyed `b`/`k`. The two signing-certificate digests are also identical, so
-`COMPATIBILITY_GBOARD.signatures` needed no edit.
+`AbstractIme->B:Context`, `LatinIme->y`, `Lpvs;->a`/`g`/`h`, and the store's string-keyed `b`/`k`.
+The two signing-certificate digests are also identical, so `COMPATIBILITY_GBOARD.signatures` needed
+no edit.
+
+## Which of these are still pinned, and which are not
+
+**A name with a same-shaped sibling is not pinned any more.** Two bugs came from letters that moved
+onto a different member of the right shape: `AbstractIme->N:Z` became `O` while `N` went on existing
+as an unrelated boolean, and the undo re-commit went `s` → `t` while a smaller method inherited `s`.
+Both assembled, verified and ran. Nothing static catches that, because there is nothing wrong with
+the emitted code — it calls a real method with the right types. Only *what Gboard itself does with
+the member* tells them apart.
+
+So the table above is now a record of what these were, not a set of inputs. What the patches
+actually do:
+
+| member | how it is identified | why |
+|---|---|---|
+| suppression flag | the `move-result` / `iget-boolean` / `if-nez` run before the sole takeText call | `N` still exists on 18 as something else |
+| undo re-commit | the one `AbstractIme->…(L…;Z)V` call in the dispatcher | `s` and `t` are indistinguishable by shape |
+| committable text | the parameter type of that call | falls out of the same match |
+| slot field, availability, clear | the register the Optional getter is called on, walked out from the re-commit | `()Z` has three candidates on the slot, `()V` has nine |
+| store `getInt` | the `(String, I)I` that does **not** call `Integer.parseInt` | its sibling reads the value as text |
+| store `contains` | the `(I)Z` that calls `SharedPreferences.contains` | its sibling delegates to a boolean getter |
+
+Still pinned, and safely so — each was checked to be **signature-unique** on its class, so a rename
+makes it vanish rather than letting the letter survive on the wrong member. `checkPreferenceStorePins`
+and the existence helpers in `shared/Resolve.kt` assert they are still there:
+
+`Lqhy;->I(Context)`, `Lqhy;->k(String,Z)Z`, `Lqhy;->T(I,Object)V`, `LatinIme->y`, and the slot's
+`a()Lj$/util/Optional;`.
+
+The rule to apply to anything added later: **if a member has a same-signature sibling, derive it; if
+it does not, assert it exists.** Which applies is a fact about the APK, so check before choosing.
 
 Resource ids all moved: `enable_scrub_delete` `0x7f140995`→`0x7f140a1f`, `enable_gesture_input`
 `0x7f14097b`→`0x7f140a05`, `pref_enable_flick_symbols` `0x7f140977`→`0x7f140a01`.

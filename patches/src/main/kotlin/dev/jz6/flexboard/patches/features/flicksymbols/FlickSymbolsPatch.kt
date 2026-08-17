@@ -7,6 +7,7 @@ import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
 import dev.jz6.flexboard.patches.features.scrubdelete.ApplyPreferenceValuesFingerprint
 import dev.jz6.flexboard.patches.features.scrubdelete.PreferenceStoreWriteFingerprint
+import dev.jz6.flexboard.patches.features.scrubdelete.resolvePreferenceContains
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 
 /**
@@ -62,7 +63,10 @@ val flickSymbolsPatch = bytecodePatch(
         val setter = PreferenceStoreWriteFingerprint.method
         val setterDescriptor = "${setter.definingClass}->${setter.name}(ILjava/lang/Object;)V"
 
-        ApplyPreferenceValuesFingerprint.method.defaultFlickSymbolsOn(setterDescriptor)
+        ApplyPreferenceValuesFingerprint.method.defaultFlickSymbolsOn(
+            setterDescriptor,
+            resolvePreferenceContains(),
+        )
     }
 }
 
@@ -75,7 +79,10 @@ val flickSymbolsPatch = bytecodePatch(
 private const val FLICK_SYMBOLS_PREFERENCE = "0x7f140a01"
 
 /** `SharedPreferences.contains`, keyed by resource id rather than by the resolved string. */
-private const val PREFERENCE_CONTAINS = "Lqhy;->ak(I)Z"
+// The id-keyed `contains` is resolved at patch time rather than named here: its signature is
+// shared with a sibling that resolves the id to a key and delegates to a boolean *getter*, so a
+// swapped letter would silently turn "has the user ever set this?" into "is it currently true?".
+// See resolvePreferenceContains in scrubdelete/Fingerprints.kt.
 
 private const val APPLY_PREFERENCES_REGISTER_COUNT = 13
 
@@ -94,7 +101,10 @@ private const val ALREADY_SET_LABEL = "flexboard_flick_symbols_already_set"
  * field can address it wherever it lands; an `invoke` could not, and emitting `pN` into one is what
  * produced an unappliable bundle once before. See `docs/register-encoding.md`.
  */
-private fun MutableMethod.defaultFlickSymbolsOn(setterDescriptor: String) {
+private fun MutableMethod.defaultFlickSymbolsOn(
+    setterDescriptor: String,
+    preferenceContains: String,
+) {
     val registerCount = implementation?.registerCount
         ?: error("LatinApp->d(Lqhy;)V has no implementation")
     check(registerCount == APPLY_PREFERENCES_REGISTER_COUNT) {
@@ -112,7 +122,7 @@ private fun MutableMethod.defaultFlickSymbolsOn(setterDescriptor: String) {
         """
             move-object/from16 v2, p1
             const v0, $FLICK_SYMBOLS_PREFERENCE
-            invoke-virtual { v2, v0 }, $PREFERENCE_CONTAINS
+            invoke-virtual { v2, v0 }, $preferenceContains
             move-result v1
             if-nez v1, :$ALREADY_SET_LABEL
             const/4 v1, 0x1
