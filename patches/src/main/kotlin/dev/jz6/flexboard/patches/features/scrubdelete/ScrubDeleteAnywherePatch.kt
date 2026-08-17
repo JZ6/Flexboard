@@ -15,6 +15,7 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.checkAssignable
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
+import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.usesField
 
@@ -33,10 +34,11 @@ import dev.jz6.flexboard.patches.shared.usesField
  * ```
  *
  * So this patch does not implement a gesture. It widens where Gboard's own gesture is allowed to
- * start, in two edits:
+ * start, and where it is allowed to travel, in three edits:
  *
  *  1. `ScrubDeleteMotionEventHandler.<init>` passes **-1** instead of `KEYCODE_DEL`.
  *  2. `g()` skips the comparison when the configured keycode is negative.
+ *  3. `g()` gives the tracking rect the full keyboard height, not one key's worth.
  *
  * A negative sentinel is what makes the second edit register-free: every Android keycode is
  * non-negative, so the test is `if-ltz` — format 21t, one register, no constant, and therefore no
@@ -87,7 +89,12 @@ val swipeToDeletePatch = bytecodePatch(
         checkPreferenceStorePins()
 
         ScrubDeleteConstructorFingerprint.method.chooseStartKeyFromPreference(this)
+
+        // Both edit `g()`, and both add an instruction to it. Neither depends on running first:
+        // each locates what it needs by a shape the other does not produce. See the note on
+        // [trackAcrossFullKeyboard] for why that mattered enough to design for.
         ScrubHandleMotionEventFingerprint.method.acceptWildcardStartKey()
+        ScrubHandleMotionEventFingerprint.method.trackAcrossFullKeyboard()
     }
 }
 
@@ -130,6 +137,27 @@ private const val STOCK_START_KEY_LABEL = "flexboard_stock_start_key"
 private const val SCRUB_HANDLE_REGISTER_COUNT = 13
 
 private const val WILDCARD_LABEL = "flexboard_any_start_key"
+
+private const val STOCK_VERTICAL_BOUNDS_LABEL = "flexboard_stock_vertical_bounds"
+
+/**
+ * The view the tracking rect is measured in, and whose height the widened rect spans.
+ *
+ * Neither `getWidth` nor `getHeight` is declared here — both are inherited from `View`. Naming the
+ * subclass anyway is not a liberty: it is exactly how Gboard spells the `getWidth` call two
+ * instructions above where this patch inserts, so dex resolution through the superclass chain is
+ * demonstrated by the very method being edited rather than assumed.
+ */
+private const val KEYBOARD_VIEW =
+    "Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;"
+
+private const val KEYBOARD_VIEW_GET_WIDTH = "$KEYBOARD_VIEW->getWidth()I"
+private const val KEYBOARD_VIEW_GET_HEIGHT = "$KEYBOARD_VIEW->getHeight()I"
+
+private const val RECT = "Landroid/graphics/Rect;"
+private const val RECT_LEFT = "$RECT->left:I"
+private const val RECT_TOP = "$RECT->top:I"
+private const val RECT_BOTTOM = "$RECT->bottom:I"
 
 /**
  * Overrides the `const/16 vN, 67` feeding `Lpvs;-><init>`'s first argument with the wildcard, but
@@ -273,11 +301,18 @@ private fun MutableMethod.acceptWildcardStartKey() {
             "expected $SCRUB_HANDLE_REGISTER_COUNT — refusing to guess register mapping"
     }
 
-    val reads = instructions.withIndex().filter { (_, instruction) ->
-        instruction.opcodeName() == "IGET" && instruction.usesField(CONFIG_START_KEY_FIELD)
+    // Matched on the *gate's* shape — a read of the field immediately tested by `if-ne` — rather
+    // than on being the only read in the method. [trackAcrossFullKeyboard] adds a second read of
+    // the same field, tested by `if-gez`, so "the only read" stopped being true the moment these
+    // two patches shared a method. Keying on the shape means neither has to run first.
+    val body = instructions
+    val reads = body.withIndex().filter { (index, instruction) ->
+        instruction.opcodeName() == "IGET" &&
+            instruction.usesField(CONFIG_START_KEY_FIELD) &&
+            body.getOrNull(index + 1)?.opcodeName() == "IF_NE"
     }
     check(reads.size == 1) {
-        "Expected exactly one read of $CONFIG_START_KEY_FIELD in " +
+        "Expected exactly one read of $CONFIG_START_KEY_FIELD tested by `if-ne` in " +
             "$SCRUB_MOTION_EVENT_HANDLER->g, found ${reads.size}"
     }
     val (readIndex, read) = reads.single()
@@ -302,5 +337,160 @@ private fun MutableMethod.acceptWildcardStartKey() {
         gateIndex,
         "if-ltz v$configRegister, :$WILDCARD_LABEL",
         ExternalLabel(WILDCARD_LABEL, gatePassed),
+    )
+}
+
+/**
+ * Gives the tracking rect the full keyboard height, so a swipe can wander off its starting row.
+ *
+ * ## What the rect is
+ *
+ * When a scrub begins, `g()` captures the bounds of the key the finger went down on and keeps them
+ * in `ScrubMotionEventHandler->h:Rect`. Every subsequent move is tested against it, and the first
+ * point outside ends the gesture:
+ *
+ * ```
+ * Rect;->contains(x, y)      # in r(), on every move
+ * if-eqz -> …                # outside: dispatch the leave code, clear `f`, gesture over
+ * ```
+ *
+ * Gboard then widens that rect — but on one axis only:
+ *
+ * ```
+ * Lsvk;->F(startKey, keyboardView, rect)   # the starting key's bounds
+ * rect.left   = 0                          # ← full keyboard width
+ * rect.right  = keyboardView.getWidth()
+ * rect.top    = (int)((float)rect.top    - Lpvr;->g:F)   # one key tall, plus 4mm
+ * rect.bottom = (int)((float)rect.bottom + Lpvr;->g:F)
+ * ```
+ *
+ * `Lpvr;->g:F` is 4mm on 18.0.3 (`0x7f070935`, raw `0x405` — mantissa 4, unit `MM`). Note it is an
+ * **outset**, not an inset: `sub-float` on the top edge and `add-float` on the bottom widen the
+ * rect rather than shrink it. The corridor is therefore one key row plus 4mm either side.
+ *
+ * ## Why that is wrong for this patch specifically
+ *
+ * For stock Gboard the corridor is generous, because the gesture only ever starts on backspace and
+ * a thumb dragging sideways from a known key does not stray far. Flexboard's whole premise is that
+ * it starts *anywhere*, so the corridor is anchored wherever the finger happened to land — and a
+ * swipe that begins on the top letter row and drifts naturally downward leaves it mid-gesture. The
+ * gesture does not degrade, it cancels, which reads as the swipe simply not working.
+ *
+ * So this mirrors what Gboard already does horizontally, on the other axis. It is not a new policy
+ * being invented; it is the same policy applied to the axis Google left alone because they never
+ * needed it.
+ *
+ * ## Shape of the edit
+ *
+ * The stock computation is **kept and then overwritten**, exactly as
+ * [chooseStartKeyFromPreference] keeps the stock keycode. Overwriting is a few wasted instructions
+ * once per gesture and buys two things worth far more: "off" means byte-for-byte stock, and the
+ * insert is a single forward branch rather than an excision with two merge points.
+ *
+ * ```
+ *   …stock top/bottom outset runs…
+ *   iget    vS, vConfig, Lpvs;->a:I
+ *   if-gez  vS, :stock_vertical_bounds     # a real keycode: leave Gboard's rect alone
+ *   const/4 vS, 0
+ *   iput    vS, vRect, Rect->top:I
+ *   invoke-virtual { vView }, SoftKeyboardView;->getHeight()I
+ *   move-result vS
+ *   iput    vS, vRect, Rect->bottom:I
+ *   :stock_vertical_bounds                 # stock resumes
+ * ```
+ *
+ * `vS` is deliberately the register the stock `iput` to `bottom` reads, which holds an `int` there.
+ * Our path leaves an `int` in it too, on both edges of the branch, so the merge is type-identical
+ * and no register is defined on only one edge — the verifier failure the note at the end of
+ * `docs/motion-event-handlers.md` warns about. Nothing else is touched: the `float` scratch the
+ * stock outset uses is written on both paths, because the stock code still runs on both.
+ *
+ * The zero is materialised with `const/4` rather than borrowed from the register Gboard uses for
+ * `rect.left`. Reusing that one would mean proving it still holds zero thirty instructions later,
+ * and one extra instruction is cheaper than a liveness argument that could quietly stop being true.
+ *
+ * The gate is the same wildcard sentinel everything else keys off, so `ScrubMoveMotionEventHandler`
+ * (spacebar cursor drag) and `InlineSuggestionScrubSpaceMotionEventHandler` — which share this
+ * method and pass 62 — keep their one-key corridor.
+ */
+private fun MutableMethod.trackAcrossFullKeyboard() {
+    val registerCount = implementation?.registerCount
+        ?: error("$SCRUB_MOTION_EVENT_HANDLER->g has no implementation")
+    check(registerCount == SCRUB_HANDLE_REGISTER_COUNT) {
+        "$SCRUB_MOTION_EVENT_HANDLER->g has $registerCount registers, " +
+            "expected $SCRUB_HANDLE_REGISTER_COUNT — refusing to guess register mapping"
+    }
+
+    val body = instructions
+
+    fun soleWrite(field: String): IndexedValue<TwoRegisterInstruction> {
+        val matches = body.withIndex().filter { (_, instruction) ->
+            instruction.opcodeName() == "IPUT" && instruction.usesField(field)
+        }
+        check(matches.size == 1) {
+            "Expected exactly one write to $field in $SCRUB_MOTION_EVENT_HANDLER->g, " +
+                "found ${matches.size}"
+        }
+        val (index, instruction) = matches.single()
+        return IndexedValue(index, instruction as TwoRegisterInstruction)
+    }
+
+    // The rect register, taken from the write this patch replaces the effect of.
+    val (bottomIndex, bottomWrite) = soleWrite(RECT_BOTTOM)
+    val rectRegister = bottomWrite.registerB
+    val scratchRegister = bottomWrite.registerA
+
+    // Every edge has to be the same Rect, or "the rect" is not one object and none of the reasoning
+    // above holds.
+    for (field in listOf(RECT_LEFT, RECT_TOP)) {
+        val (_, write) = soleWrite(field)
+        check(write.registerB == rectRegister) {
+            "The write to $field in $SCRUB_MOTION_EVENT_HANDLER->g targets v${write.registerB}, " +
+                "but $RECT_BOTTOM targets v$rectRegister — these are not the same Rect"
+        }
+    }
+
+    // Gboard's own full-width override, which this mirrors. Asserting it is still there is what
+    // makes "we are widening the other axis the same way" a fact rather than a story about an
+    // older build: if Google ever stops widening horizontally, the premise needs re-examining.
+    val widthIndex = body.indexOfSoleCall(
+        KEYBOARD_VIEW_GET_WIDTH,
+        "$SCRUB_MOTION_EVENT_HANDLER->g",
+    )
+    val viewRegister = body[widthIndex].invokeRegisterAt(0)
+    check(widthIndex < bottomIndex) {
+        "$KEYBOARD_VIEW_GET_WIDTH is called at $widthIndex, after the write to $RECT_BOTTOM at " +
+            "$bottomIndex — the rect is not built in the order this patch reads it"
+    }
+
+    // Order-independent by construction: this asks which object every read of the field goes
+    // through, not which read comes where. [acceptWildcardStartKey] may or may not already have
+    // inserted its branch, and adding a read of its own is exactly what this function then does.
+    val configRegisters = body
+        .filter { it.opcodeName() == "IGET" && it.usesField(CONFIG_START_KEY_FIELD) }
+        .map { (it as TwoRegisterInstruction).registerB }
+        .toSet()
+    check(configRegisters.size == 1) {
+        "Reads of $CONFIG_START_KEY_FIELD in $SCRUB_MOTION_EVENT_HANDLER->g go through " +
+            "${configRegisters.size} different registers ($configRegisters); with more than one " +
+            "there is no single register this patch can safely read the sentinel from"
+    }
+    val configRegister = configRegisters.single()
+
+    // Captured before the insertion shifts indices; the label resolves by instruction identity.
+    val stockResumes = body[bottomIndex + 1]
+
+    addInstructionsWithLabels(
+        bottomIndex + 1,
+        """
+            iget v$scratchRegister, v$configRegister, $CONFIG_START_KEY_FIELD
+            if-gez v$scratchRegister, :$STOCK_VERTICAL_BOUNDS_LABEL
+            const/4 v$scratchRegister, 0x0
+            iput v$scratchRegister, v$rectRegister, $RECT_TOP
+            invoke-virtual { v$viewRegister }, $KEYBOARD_VIEW_GET_HEIGHT
+            move-result v$scratchRegister
+            iput v$scratchRegister, v$rectRegister, $RECT_BOTTOM
+        """,
+        ExternalLabel(STOCK_VERTICAL_BOUNDS_LABEL, stockResumes),
     )
 }

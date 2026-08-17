@@ -52,6 +52,7 @@ SCRUB_DELETE = ('Lcom/google/android/libraries/inputmethod/motioneventhandler/sc
                 'ScrubDeleteMotionEventHandler;')
 ABSTRACT_HANDLER = ('Lcom/google/android/libraries/inputmethod/motioneventhandler/'
                     'AbstractMotionEventHandler;')
+KEYBOARD_VIEW = 'Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;'
 LATIN_IME = 'Lcom/google/android/apps/inputmethod/libs/latin5/LatinIme;'
 ABSTRACT_IME = 'Lcom/google/android/libraries/inputmethod/ime/AbstractIme;'
 LATIN_APP = 'Lcom/google/android/apps/inputmethod/latin/LatinApp;'
@@ -180,6 +181,21 @@ def body(dl, descriptor):
 
 def regs(arg):
     return [int(x) for x in re.findall(r'v(\d+)', arg)]
+
+
+# Mnemonics whose first register operand is a *source*, not a destination. Everything else that
+# names a register writes the first one, which is what makes `writes_before` usable as a liveness
+# test rather than a guess.
+READS_FIRST_OPERAND = ('if-', 'invoke', 'iput', 'sput', 'aput', 'return', 'throw', 'monitor',
+                       'fill-array', 'packed-switch', 'sparse-switch')
+
+
+def writes_before(ins, reg, after_pc, before_pc):
+    """Instructions in (after_pc, before_pc] that overwrite vreg."""
+    return [(pc, n) for pc, n, a in ins
+            if after_pc < pc <= before_pc
+            and not n.startswith(READS_FIRST_OPERAND)
+            and regs(a)[:1] == [reg]]
 
 
 # --------------------------------------------------------------------------- checks
@@ -381,11 +397,72 @@ def run(dl):
               f'got {c["registers"]}')
         reads = [i for i, (pc, n, a) in enumerate(ins)
                  if n == 'iget' and f'{config}->a:I' in a]
+        # The patch selects the gate by shape — the read `if-ne` tests — because it adds a second
+        # read of the same field for the full-height rect. Both predicates hold on a stock dex.
+        gated = [i for i in reads if ins[i + 1][1] == 'if-ne']
         if check('scrubdelete: start-key read is unique', len(reads) == 1, f'found {len(reads)}'):
             gate = ins[reads[0] + 1]
             check('scrubdelete: if-ne follows the read', gate[1] == 'if-ne', gate[1])
             check('scrubdelete: the if-ne compares that register',
                   regs(ins[reads[0]][2])[0] in regs(gate[2])[:2])
+        check('scrubdelete: exactly one if-ne-gated start-key read', len(gated) == 1,
+              f'found {len(gated)}')
+        # All reads must go through one object register, which is how trackAcrossFullKeyboard
+        # finds the config without depending on which patch edited g() first.
+        objs = {regs(ins[i][2])[1] for i in reads}
+        check('scrubdelete: start-key reads share one object register', len(objs) == 1, str(objs))
+
+        # ---- the tracking rect, which trackAcrossFullKeyboard gives the full keyboard height
+        rect_regs = {}
+        for edge in ('left', 'right', 'top', 'bottom'):
+            w = [i for i, (pc, n, a) in enumerate(ins)
+                 if n == 'iput' and f'Landroid/graphics/Rect;->{edge}:I' in a]
+            if check(f'scrubdelete: one write to Rect.{edge}', len(w) == 1, f'found {len(w)}'):
+                rect_regs[edge] = regs(ins[w[0]][2])
+        check('scrubdelete: every Rect edge is the same object',
+              len({v[1] for v in rect_regs.values()}) == 1,
+              str({k: v[1] for k, v in rect_regs.items()}))
+
+        width = [i for i, (pc, n, a) in enumerate(ins)
+                 if f'{KEYBOARD_VIEW}->getWidth()I' in a]
+        # Gboard's own full-width override is the precedent the vertical edit mirrors. If it ever
+        # stops widening horizontally, "we widen the other axis the same way" needs re-examining.
+        if check('scrubdelete: getWidth is called once in g()', len(width) == 1,
+                 f'found {len(width)}'):
+            bottom = [i for i, (pc, n, a) in enumerate(ins)
+                      if n == 'iput' and 'Landroid/graphics/Rect;->bottom:I' in a]
+            check('scrubdelete: getWidth precedes the bottom write',
+                  bool(bottom) and width[0] < bottom[0])
+        # The stock outset that the full-height write replaces the effect of. `unop82` is
+        # int-to-float and `unop87` float-to-int; c7 is sub-float/2addr and c6 add-float/2addr, so
+        # this confirms the top edge is widened upward and the bottom downward — an outset, not an
+        # inset, whatever the field is named.
+        outset = [n for pc, n, a in ins if n in ('binop2addrc6', 'binop2addrc7')]
+        check('scrubdelete: the stock rect outset is one sub + one add',
+              outset.count('binop2addrc7') >= 1 and outset.count('binop2addrc6') >= 1,
+              str(outset))
+
+        # The three registers the inserted block reads have to still hold what it assumes at the
+        # insertion point. This is the argument the patch cannot make for itself — it derives each
+        # register from the instruction that loads it and then trusts it across a gap — so it is
+        # made here instead, against the real method body.
+        if rect_regs and width:
+            bottom_pc = [pc for pc, n, a in ins
+                         if n == 'iput' and 'Landroid/graphics/Rect;->bottom:I' in a][0]
+            loads = {
+                'config': (regs(ins[reads[0]][2])[1], f':{config}'),
+                'keyboard view': (regs(ins[width[0]][2])[0], f'{SCRUB}->d:'),
+                'rect': (rect_regs['bottom'][1], f'{SCRUB}->h:'),
+            }
+            for what, (reg, marker) in loads.items():
+                src = [pc for pc, n, a in ins
+                       if n == 'iget-object' and marker in a and regs(a)[:1] == [reg]]
+                if not check(f'scrubdelete: the {what} register is loaded in g()', bool(src),
+                             f'v{reg} {marker}'):
+                    continue
+                clobbered = writes_before(ins, reg, src[-1], bottom_pc)
+                check(f'scrubdelete: the {what} register survives to the insertion point',
+                      not clobbered, f'v{reg} rewritten at {clobbered}')
 
     # ---- tuning
     c, _ = body(dl, f'{SCRUB}-><init>({CONTEXT}{delegate}{config})V')

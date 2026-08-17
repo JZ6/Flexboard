@@ -104,8 +104,20 @@ Everything downstream of offset 114 is key-agnostic. In particular the tracking 
 129: iput  v7, v6, Landroid/graphics/Rect;->right:I
 ```
 
-with only `top`/`bottom` inset by `Lpbu;->g:F`. So the engine already tracks across the whole
-keyboard once a gesture starts — the key restriction applies solely to where it *begins*.
+with `top`/`bottom` widened by `Lpbu;->g:F` — 4mm, `sub-float` on the top edge and `add-float` on
+the bottom. It is an **outset**, not an inset, whatever the field is named. So the engine already
+tracks across the whole keyboard *horizontally* once a gesture starts, and the key restriction
+applies solely to where it begins; but *vertically* the corridor is only the starting key's own
+height plus 4mm either side.
+
+**That asymmetry is a problem specific to Flexboard, and `swipeToDeletePatch` now removes it.**
+Stock Gboard only ever starts this gesture on backspace, so a corridor anchored to one known key is
+generous. Once the gesture can start anywhere, it is anchored wherever the finger landed, and a
+swipe that begins on the top letter row and drifts downward leaves it — the gesture cancels rather
+than degrading, which reads as the swipe simply not working. The patch mirrors what Google already
+does on the other axis: `top = 0`, `bottom = getHeight()`, gated on the wildcard sentinel so the
+spacebar cursor drag and the inline-suggestion scrub keep their one-key corridor. Leaving the
+keyboard entirely still cancels, because the rect is measured in `SoftKeyboardView` coordinates.
 
 ## The engine is bidirectional by construction
 
@@ -184,7 +196,7 @@ that way deliberately.
 | `d:F` | `0x7f070910` | 16pt | per-step distance when `Lpbv;->j` is 1 (scrub move) |
 | `e:F` | `0x7f07090e` | 8pt | per-step distance otherwise (scrub delete) |
 | `f:J` | `0x7f0c00ed` | 1000 ms | delay before the `noScrubbing` toast |
-| `g:F` | `0x7f07090d` | 4mm | vertical inset applied to the tracking rect |
+| `g:F` | `0x7f07090d` | 4mm | vertical **outset** applied to the tracking rect (`0x7f070935` on 18.0.3) |
 
 `b:J` is the one that shapes the feel. `p(Landroid/view/MotionEvent;I)Z` opens with it
 (`regs=10, ins=3`, so v7 is `this`, v8 the event, v9 the pointer id):

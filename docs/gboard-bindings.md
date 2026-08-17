@@ -81,7 +81,9 @@ The rule to apply to anything added later: **if a member has a same-signature si
 it does not, assert it exists.** Which applies is a fact about the APK, so check before choosing.
 
 Resource ids all moved: `enable_scrub_delete` `0x7f140995`→`0x7f140a1f`, `enable_gesture_input`
-`0x7f14097b`→`0x7f140a05`, `pref_enable_flick_symbols` `0x7f140977`→`0x7f140a01`.
+`0x7f14097b`→`0x7f140a05`, `pref_enable_flick_symbols` `0x7f140977`→`0x7f140a01`. The scrub engine's
+tuning dimens moved too — the vertical rect outset `Lpvr;->g:F` is `0x7f070935` on 18.0.3 (raw
+`0x405`: mantissa 4, unit `MM`), was `0x7f07090d` on 17.7.7.
 
 ## Touch and dispatch
 
