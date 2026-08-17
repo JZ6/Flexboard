@@ -1,3 +1,8 @@
+# [1.0.1-dev.2](https://github.com/JZ6/Flexboard/compare/v1.0.1-dev.1...v1.0.1-dev.2) (2026-08-17)
+
+* **Gboard:** bump 1.0.1-dev.2
+* **Gboard:** track the swipe across the full keyboard height
+
 # [1.0.1-dev.1](https://github.com/JZ6/Flexboard/compare/v1.0.0...v1.0.1-dev.1) (2026-08-17)
 
 * **Gboard:** bump to 1.0.1-dev.1
