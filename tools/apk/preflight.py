@@ -82,7 +82,6 @@ EXPECTED = {
     'store_singleton': 'I',              # Lqhy;->I(Context)Lqhy;
     'store_contains': 'ak',              # contains, keyed by resource id
     'store_write': 'T',                  # (I, Object) -> void
-    'ime_context_field': 'B',
     'handler_context_field': 'o',
     'undo_slot_field': 'y',
     'recommit': 'Lcom/google/android/libraries/inputmethod/ime/AbstractIme;->t(Lojt;Z)V',
@@ -94,7 +93,6 @@ EXPECTED = {
     'contains': 'Lqhy;->ak(I)Z',
     'scrub_g_registers': 13,
     'scrub_r_registers': 13,
-    'delete_ctor_registers': 12,
     'engine_ctor_registers': 11,
     'apply_preferences_registers': 13,
     'sigcheck_registers': 8,
@@ -263,10 +261,9 @@ def run(dl):
                       f'count=v{count_reg} this=v{ime_reg} flag=v{flag_reg} '
                       f'scratch={E["undo_scratch"]}')
 
-    ime_ctx = find_instance_field(dl, ABSTRACT_IME, E['ime_context_field'])
-    check('undo: IME Context field resolves', ime_ctx is not None, str(ime_ctx))
-    check('undo: its value is a Context', bool(ime_ctx) and ime_ctx.endswith(':' + CONTEXT),
-          str(ime_ctx))
+    # The IME's Context field used to be checked here, because the undo patch reached the
+    # preference store through it to read an on/off toggle. Undo is unconditional now, so nothing
+    # resolves a Context inside the dispatcher and there is nothing left to assert.
 
     # The undo cluster, resolved the way the patch resolves it: from the handler that performs
     # Gboard's own undo, anchored on the re-commit's *shape* rather than any name.
@@ -365,9 +362,12 @@ def run(dl):
     # ---- swipe to delete
     ctor = f'{SCRUB_DELETE}-><init>({CONTEXT}{delegate})V'
     c, ins = body(dl, ctor)
+    # The patch now replaces the keycode constant outright rather than reading a preference to
+    # decide it, so the checks that proved three registers dead here are gone with the insertion
+    # they justified — the free-register scan, the all-arguments-are-consts window, and the Context
+    # parameter's liveness. What remains is what still has to be true: exactly one keycode constant,
+    # and it is the one feeding the config.
     if check('scrubdelete: delete ctor exists', ins is not None, ctor):
-        check('scrubdelete: delete ctor register count',
-              c['registers'] == E['delete_ctor_registers'], f'got {c["registers"]}')
         keys = [i for i, (pc, n, a) in enumerate(ins)
                 if n == 'const/16' and a.endswith(f'#{E["stock_start_keycode"]}')]
         cfgs = [i for i, (pc, n, a) in enumerate(ins) if f'{config}-><init>(IZIIIIII)V' in a]
@@ -377,19 +377,6 @@ def run(dl):
                      f'found {len(cfgs)}')
         if ok_k and ok_c:
             check('scrubdelete: keycode precedes the config ctor', keys[0] < cfgs[0])
-            window = ins[keys[0] + 1:cfgs[0]]
-            computed = [n for pc, n, a in window if not n.startswith('const')]
-            check('scrubdelete: every argument between them is a const', not computed,
-                  str(computed))
-            key_reg = regs(ins[keys[0]][2])[0]
-            ctx_reg = c['registers'] - 3 + 1
-            free = [r for pc, n, a in window for r in regs(a)[:1]]
-            free = [r for r in dict.fromkeys(free)
-                    if r not in (key_reg, ctx_reg) and r < 16]
-            check('scrubdelete: three scratch registers are free', len(free) >= 3, str(free))
-            clobbered = any(regs(a)[:1] == [ctx_reg] for pc, n, a in ins[:keys[0]])
-            check('scrubdelete: Context register is not clobbered first', not clobbered,
-                  f'v{ctx_reg}')
 
     c, ins = body(dl, f'{SCRUB}->g(Landroid/view/MotionEvent;)V')
     if check('scrubdelete: g() exists', ins is not None):
@@ -533,7 +520,6 @@ def run(dl):
         check('bypass: digest method exists', c2 is not None)
 
     failed = check.finish()
-    print('resolved IME Context field:     ', ime_ctx)
     print('resolved handler Context field: ', handler_ctx)
     return failed
 

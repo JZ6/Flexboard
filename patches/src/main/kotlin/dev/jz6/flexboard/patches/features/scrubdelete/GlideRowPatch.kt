@@ -10,8 +10,7 @@ import org.w3c.dom.Element
 
 /**
  * Greys out the two rows [forceScrubPreferencesPatch] writes — **Glide typing** and **Glide
- * delete** — while Flexboard's gesture is on, and puts the switch that un-greys them directly
- * above.
+ * delete** — and puts a note directly above saying why.
  *
  * That patch writes `enable_gesture_input=false` and `enable_scrub_delete=true` at every app start:
  * a leftward drag across the letters is also a glide input so the two cannot both be live, and the
@@ -20,44 +19,40 @@ import org.w3c.dom.Element
  * silently reverted at the next app start. Greying them makes the constraint visible instead of
  * fought.
  *
- * ## `dependency`, inverted
+ * ## Statically disabled, not a dependency
  *
- * androidx disables a preference whose dependency is unchecked, which is the wrong way round —
- * Flexboard being **on** is what has to disable the row. `TwoStatePreference` inverts it on request:
+ * This used to add a `SwitchPreferenceCompat` keyed `flexboard_enabled` with
+ * `android:disableDependentsState="true"`, and make both rows `android:dependency` on it — so that
+ * turning Flexboard off un-greyed them and handed glide typing back. That switch is gone; see
+ * [swipeToDeletePatch].
  *
- * ```java
- * public boolean shouldDisableDependents() {
- *     return (mDisableDependentsState ? mChecked : !mChecked) || super.shouldDisableDependents();
- * }
- * ```
+ * The two mechanisms could not be mixed. androidx requires a preference carrying the dependency's
+ * key to exist **in the same hierarchy**, and throws `IllegalStateException` from
+ * `registerDependency` otherwise — which would take out the whole gesture settings screen rather
+ * than fail quietly. Removing the switch therefore meant removing both `dependency` attributes in
+ * the same edit.
  *
- * So the switch below carries `android:disableDependentsState="true"` and the glide row is made to
- * depend on it. Both attributes are **framework** ones, so neither depends on Gboard's own resource
- * table surviving R8 — and Gboard's own trail row already uses `android:dependency` in this very
- * file, which is what proves the mechanism is live in this build.
+ * What replaces them is simpler than what it replaces: `android:enabled="false"` written straight
+ * onto each row. A framework attribute, no key, no hierarchy requirement, and nothing that can
+ * throw. The rows are greyed for as long as the patch is applied, which is now exactly as long as
+ * the preferences are being forced — the two can no longer disagree, because neither is conditional.
  *
- * The change is live rather than needing a restart: `setChecked` calls `notifyDependencyChange`, so
- * the glide row un-greys on the tap.
+ * ## The note is there on purpose
  *
- * ## The switch is visible on purpose
- *
- * A dependency needs a preference with that key *in the same hierarchy* — androidx throws
- * `IllegalStateException` from `registerDependency` otherwise, which would take out the whole
- * screen. It could have been hidden, but a row that greys out with no explanation is worse than
- * the row being tappable. Showing it puts the remedy in the place the problem is met.
- *
- * It stores `flexboard_enabled`, the same key Flexboard's own settings screen writes, so the two
- * switches are one setting and cannot disagree.
+ * A row that greys out with no explanation is worse than the row being tappable, and that argument
+ * did not go away with the switch. So a non-selectable, non-persistent `Preference` sits above them
+ * saying what is doing it and how to undo it. It carries a key only so this patch can recognise its
+ * own work and stay idempotent when a bundle is applied over an already-patched APK.
  */
 internal val glideTypingRowPatch = resourcePatch(
-    description = "Greys out the Gboard glide settings that Flexboard writes for itself while " +
-        "swipe-to-delete is on, and adds the switch that hands them back.",
+    description = "Greys out the Gboard glide settings that Flexboard writes for itself, and " +
+        "explains what is doing it.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
     finalize {
         document(GESTURE_SETTINGS_XML).use { gestureSettings ->
-            gestureSettings.dependGlideTypingOnFlexboard()
+            gestureSettings.disableGlideRows()
         }
     }
 }
@@ -66,12 +61,18 @@ internal val glideTypingRowPatch = resourcePatch(
 private const val GESTURE_SETTINGS_XML = "res/xml/setting_gesture.xml"
 
 private const val PREFERENCE_SCREEN_TAG = "PreferenceScreen"
-private const val SWITCH_TAG = "SwitchPreferenceCompat"
+private const val PREFERENCE_TAG = "Preference"
 
-private const val SWITCH_TITLE = "Swipe anywhere to delete"
-private const val SWITCH_SUMMARY =
-    "Flexboard. While this is on it manages the two settings below; turn it off to use glide " +
-        "typing instead."
+/**
+ * Not a Flexboard setting, and deliberately not one the user can change. It exists so the greyed
+ * rows below it have a stated cause, and so this patch can recognise its own work.
+ */
+private const val NOTE_KEY = "flexboard_glide_note"
+private const val NOTE_TITLE = "Managed by Flexboard"
+private const val NOTE_SUMMARY =
+    "Swipe-anywhere-to-delete needs Glide delete on and glide typing off, so it sets both and " +
+        "the two settings below are locked. To use glide typing again, re-patch Gboard without " +
+        "Flexboard's Swipe to Delete."
 
 /** Glide typing, Glide trail, Glide delete, Glide cursor control. */
 private const val GESTURE_ROW_COUNT = 4
@@ -79,34 +80,33 @@ private const val GESTURE_ROW_COUNT = 4
 /** Glide delete and Glide cursor control, in that order. */
 private const val UNIDENTIFIED_ROW_COUNT = 2
 
-private fun Document.dependGlideTypingOnFlexboard() {
+private fun Document.disableGlideRows() {
     val root = documentElement
     check(root.tagName == PREFERENCE_SCREEN_TAG) {
         "$GESTURE_SETTINGS_XML has root <${root.tagName}>, expected <$PREFERENCE_SCREEN_TAG>"
     }
 
-    // Idempotent: applying a bundle over an already-patched APK must not add the row twice.
-    if (root.childElements().any { it.androidAttribute("key") == SCRUB_ENABLED_KEY }) return
+    // Idempotent: applying a bundle over an already-patched APK must not add the note twice.
+    if (root.childElements().any { it.androidAttribute("key") == NOTE_KEY }) return
 
-    // Both resolved before anything is inserted or given a dependency, since both searches read
-    // the very attributes this then writes.
+    // Both resolved before anything is inserted or disabled, since both searches read the very
+    // attributes this then writes.
     val glideRow = root.findGlideTypingRow()
     val deleteRow = root.findGlideDeleteRow(glideRow)
 
-    val switch = createElement(SWITCH_TAG).apply {
-        setAndroidAttribute("key", SCRUB_ENABLED_KEY)
-        setAndroidAttribute("title", SWITCH_TITLE)
-        setAndroidAttribute("summary", SWITCH_SUMMARY)
-        // Matches the patches' own default, so an unset key renders as on rather than off.
-        setAndroidAttribute("defaultValue", "true")
-        setAndroidAttribute("persistent", "true")
-        // The inversion. Without it the glide row would grey out when Flexboard is *off*.
-        setAndroidAttribute("disableDependentsState", "true")
+    val note = createElement(PREFERENCE_TAG).apply {
+        // A key only so the idempotence test above has something to match. Nothing reads it, and
+        // `persistent="false"` keeps it out of the preference file entirely.
+        setAndroidAttribute("key", NOTE_KEY)
+        setAndroidAttribute("title", NOTE_TITLE)
+        setAndroidAttribute("summary", NOTE_SUMMARY)
+        setAndroidAttribute("persistent", "false")
+        setAndroidAttribute("selectable", "false")
     }
-    root.insertBefore(switch, root.firstChild)
+    root.insertBefore(note, root.firstChild)
 
-    glideRow.setAndroidAttribute("dependency", SCRUB_ENABLED_KEY)
-    deleteRow.setAndroidAttribute("dependency", SCRUB_ENABLED_KEY)
+    glideRow.setAndroidAttribute("enabled", "false")
+    deleteRow.setAndroidAttribute("enabled", "false")
 }
 
 /**
@@ -175,7 +175,9 @@ private fun Element.findGlideDeleteRow(glideRow: Element): Element {
 private fun Element.findGlideTypingRow(): Element {
     val dependents = childElements().filter { it.androidAttribute("dependency") != null }.toList()
     check(dependents.size == 1) {
-        "Expected exactly one <$SWITCH_TAG android:dependency=…> in $GESTURE_SETTINGS_XML, found " +
+        // Gboard's own Glide trail row, which depends on glide typing. This patch adds no
+        // dependency of its own any more, so the only one in the file is Gboard's.
+        "Expected exactly one row with android:dependency=… in $GESTURE_SETTINGS_XML, found " +
             "${dependents.size} — the row that identifies glide typing is no longer unique"
     }
     val dependencyKey = dependents.single().androidAttribute("dependency")

@@ -20,10 +20,7 @@ import android.view.WindowInsetsController;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
-import android.widget.Switch;
 import android.widget.TextView;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Flexboard's settings screen.
@@ -70,16 +67,12 @@ import java.util.List;
  */
 public final class FlexboardSettingsActivity extends Activity {
 
-    /** Must match SCRUB_ENABLED_KEY in ScrubDeleteAnywherePatch.kt. */
-    private static final String KEY_ENABLED = "flexboard_enabled";
     /** Must match STEP_SCALE_KEY in ScrubTuningPatch.kt. */
     private static final String KEY_STEP_SCALE = "flexboard_scrub_step_scale";
     /** Must match MAX_WORDS_KEY in ScrubTuningPatch.kt. */
     private static final String KEY_MAX_WORDS = "flexboard_max_words";
     /** Must match HOLD_DELAY_KEY in ScrubTuningPatch.kt. */
     private static final String KEY_HOLD_DELAY = "flexboard_scrub_hold_ms";
-    /** Must match UNDO_ENABLED_KEY in UndoDeletePatch.kt. */
-    private static final String KEY_UNDO = "flexboard_undo_enabled";
 
     private static final int STEP_SCALE_MIN = 25;
     private static final int STEP_SCALE_MAX = 300;
@@ -104,19 +97,7 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final String TITLE = "Flexboard";
     private static final String SUBTITLE = "Swipe anywhere to delete the previous word.";
     private static final String SECTION = "Swipe to delete";
-    private static final String SECTION_UNDO = "Swipe to undo";
 
-    private static final String UNDO_TITLE = "Swipe right to undo";
-    private static final String UNDO_SUMMARY =
-            "Swiping right after a delete puts the words back, using Gboard's own undo. Only as the "
-                    + "very next thing you do, and only once. Off leaves a rightward swipe doing "
-                    + "nothing, as it does in stock Gboard.";
-
-    private static final String ENABLED_TITLE = "Swipe anywhere";
-    private static final String ENABLED_SUMMARY =
-            "Off puts Gboard back as it shipped: the delete swipe works on the backspace key and "
-                    + "nowhere else, at Gboard's own distance and hold. Glide typing does not come "
-                    + "back on its own — turn it on in Gboard's settings if you want it.";
     private static final String TAKES_EFFECT =
             "Changes apply the next time the keyboard is opened.";
 
@@ -169,15 +150,11 @@ public final class FlexboardSettingsActivity extends Activity {
     /** Only used when the theme gives no action bar to put the title in. */
     private static final int HEADING_SP = 28;
 
-    private static final float DISABLED_ALPHA = 0.4f;
 
     /** Renders the stored int as the value shown beside a row's title. */
     private interface Label {
         String of(int value);
     }
-
-    /** Everything the switch greys out. Collected as the rows are built. */
-    private final List<View> tunables = new ArrayList<>();
 
     private SharedPreferences preferences;
     private int colorBackground;
@@ -227,7 +204,6 @@ public final class FlexboardSettingsActivity extends Activity {
         column.setPadding(dp(EDGE_DP), dp(EDGE_DP), dp(EDGE_DP), dp(EDGE_DP * 2));
 
         addSectionHeader(column, SECTION);
-        addSwitch(column, KEY_ENABLED, ENABLED_TITLE, ENABLED_SUMMARY, true, this::setTunablesEnabled);
 
         addSlider(
                 column,
@@ -263,19 +239,11 @@ public final class FlexboardSettingsActivity extends Activity {
                 HOLD_DELAY_DEFAULT,
                 value -> value == 0 ? "Off" : value + " ms");
 
-        // Its own section, below the sliders and outside `tunables`: undo is not part of the
-        // swipe-anywhere gesture and keeps working when the master switch is off, because Gboard's
-        // own backspace-key delete fills the same undo slot.
-        addSectionHeader(column, SECTION_UNDO);
-        addSwitch(column, KEY_UNDO, UNDO_TITLE, UNDO_SUMMARY, true, null);
-
         TextView footnote = new TextView(this);
         footnote.setText(TAKES_EFFECT);
         footnote.setTextColor(colorSummary);
         footnote.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
         column.addView(footnote, marginTop(dp(EDGE_DP)));
-
-        setTunablesEnabled(preferences.getBoolean(KEY_ENABLED, true));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(colorBackground);
@@ -442,73 +410,6 @@ public final class FlexboardSettingsActivity extends Activity {
     }
 
     /** Run when a switch changes, for the one that also drives something on screen. */
-    private interface OnToggle {
-        void changed(boolean isChecked);
-    }
-
-    /**
-     * One switch row: title with the toggle on the right, summary beneath.
-     *
-     * <p>No row added here goes into {@link #tunables}. The master switch is the thing doing the
-     * disabling, and the undo toggle is independent of it — undo works on Gboard's own backspace-key
-     * delete too, so it stays live when the master switch is off.
-     *
-     * @param extra additional work on change, or {@code null}. Only the master switch needs it.
-     */
-    private void addSwitch(
-            LinearLayout parent,
-            final String key,
-            String title,
-            String summary,
-            final boolean fallback,
-            final OnToggle extra) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView titleView = new TextView(this);
-        titleView.setText(title);
-        titleView.setTextColor(colorTitle);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, TITLE_SP);
-        row.addView(
-                titleView,
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        Switch toggle = new Switch(this);
-        toggle.setChecked(preferences.getBoolean(key, fallback));
-        // Tinted for the same reason the sliders are: the widget follows the theme, the palette
-        // follows the system night setting, and untinted they disagree in light mode.
-        ColorStateList checkedAccent =
-                new ColorStateList(
-                        new int[][] {new int[] {android.R.attr.state_checked}, new int[0]},
-                        new int[] {colorAccent, colorSummary});
-        toggle.setThumbTintList(checkedAccent);
-        toggle.setTrackTintList(checkedAccent);
-        toggle.setOnCheckedChangeListener(
-                (button, isChecked) -> {
-                    preferences.edit().putBoolean(key, isChecked).apply();
-                    if (extra != null) {
-                        extra.changed(isChecked);
-                    }
-                });
-        row.addView(toggle);
-
-        parent.addView(row, marginTop(dp(ROW_TOP_DP)));
-
-        TextView summaryView = new TextView(this);
-        summaryView.setText(summary);
-        summaryView.setTextColor(colorSummary);
-        summaryView.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
-        parent.addView(summaryView, marginTop(dp(TIGHT_DP)));
-    }
-
-    private void setTunablesEnabled(boolean enabled) {
-        for (View view : tunables) {
-            view.setEnabled(enabled);
-            view.setAlpha(enabled ? 1f : DISABLED_ALPHA);
-        }
-    }
-
     /**
      * One row: title with its current value on the right, summary beneath, slider under that.
      *
@@ -580,13 +481,6 @@ public final class FlexboardSettingsActivity extends Activity {
                     public void onStopTrackingTouch(SeekBar seekBar) {}
                 });
         parent.addView(bar, marginTop(dp(LOOSE_DP)));
-
-        // The whole row dims together. The SeekBar is the only one that also has to stop
-        // responding, which setEnabled(false) handles.
-        tunables.add(titleView);
-        tunables.add(valueView);
-        tunables.add(summaryView);
-        tunables.add(bar);
     }
 
     private LinearLayout.LayoutParams marginTop(int margin) {

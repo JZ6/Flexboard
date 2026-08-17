@@ -87,31 +87,38 @@ Removing Flexboard leaves glide typing off — tick it back on in Gboard's own s
 
 ## Settings
 
-Gboard's settings gain a **Flexboard** entry that opens a screen with two switches and three
-sliders:
+Gboard's settings gain a **Flexboard** entry that opens a screen with three sliders:
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Swipe anywhere** | on | The master switch. Off puts Gboard back as it shipped — see below. Also appears in Gboard's own **Glide typing** screen, as the same setting rather than a copy. |
 | **Swipe length** | 36% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe. |
 | **Max words per swipe** | 1 | The most words one swipe can delete. At 1 a swipe deletes a single word however far it travels; 10 means no limit. Swiping back still restores. |
 | **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
-| **Swipe right to undo** | on | Whether a rightward swipe after a delete puts the words back. Off leaves it doing nothing, as in stock Gboard. Independent of the master switch — see below. |
 
-All five are read out of Gboard's own preference store, so there is no separate settings app and
-nothing to keep in sync. Setting the three sliders to 100%, 10 and 200 ms puts each of them back to
-Gboard's own value; why they do not start there is in [`docs/design.md`](docs/design.md).
+All three are read out of Gboard's own preference store, so there is no separate settings app and
+nothing to keep in sync. Setting them to 100%, 10 and 200 ms puts each back to Gboard's own value;
+why they do not start there is in [`docs/design.md`](docs/design.md).
 
-**Turning the switch off does not turn the delete swipe off** — it hands it back to Gboard. The
-swipe works on the backspace key again and nowhere else, at Gboard's own distance and its 200 ms
-hold, and the three sliders grey out. That is the difference between the switch and unticking the
-patch in Morphe: the switch changes behaviour, unticking it means the code is never installed.
+Changes are not instant: the gesture picks up a new setting the next time the keyboard is opened.
 
-Two things it deliberately does not do. **Glide typing stays off** — Flexboard turned it off and
-does not turn it back on, so tick it back on in Gboard's settings if you want it; the switch does
-stop Flexboard rewriting it, so it will stay on once you do. And changes are not instant: the
-gesture picks up the new setting the next time the keyboard is opened, and the preference writes
-stop at the next time Gboard's process starts.
+### There is no on/off switch, and that is deliberate
+
+Flexboard used to carry a master switch, and a separate one for undo. Both are gone. **Untick the
+patch in Morphe instead** — that is the off switch.
+
+They were removed because of what they cost rather than what they did. Reading a preference from
+patched bytecode means finding registers that are provably dead at the point the read is inserted,
+and R8 re-runs register allocation on every Gboard release — so each switch was a fresh derivation
+to redo, and a fresh chance to get one wrong, every single version bump. Between them the two
+switches accounted for most of the work in the 17.7.7 → 18.0.3 port. The sliders stay because their
+values genuinely vary by thumb and screen; an on/off switch duplicates something Morphe already
+does properly.
+
+**One consequence is user-visible: glide typing is off for as long as Swipe to Delete is applied.**
+A leftward drag across the letters is also a glide input, so the two cannot both be live. Flexboard
+forces glide typing off at every app start and greys out the two affected rows in Gboard's **Glide
+typing** screen, with a note saying what is doing it. Getting glide typing back means re-patching
+without Swipe to Delete.
 
 ## Swipe right to undo
 
@@ -124,8 +131,9 @@ Two limits worth knowing, both inherited rather than chosen:
   almost any other input, so typing a character after the delete loses the undo.
 - **One level.** Undo once and the slot is empty; a second right-swipe does nothing.
 
-Its switch is deliberately **not** greyed out by the master switch: Gboard fills the same undo slot
-when you swipe on the backspace key, so undo keeps working even with swipe-anywhere off.
+It is always on when the patch is applied. Swiping right after a delete did nothing at all in stock
+Gboard, so nothing is being taken away by giving it a meaning — and Gboard fills the same undo slot
+when you swipe on the backspace key, so it works there too.
 
 ## Flick keys for symbols
 

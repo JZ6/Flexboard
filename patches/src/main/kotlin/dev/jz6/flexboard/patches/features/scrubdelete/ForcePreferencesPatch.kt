@@ -1,11 +1,10 @@
 package dev.jz6.flexboard.patches.features.scrubdelete
 
 import app.morphe.patcher.Fingerprint
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
-import app.morphe.patcher.util.smali.ExternalLabel
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 
 /**
@@ -34,25 +33,28 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
  * caches only refresh when the keyboard is shown, so glide typing kept coming back. See
  * `docs/glide-detection.md`.
  *
- * ## Both writes are skipped when Flexboard is switched off
+ * ## Both writes are unconditional, and there is no restore
  *
- * There is still no restore: turning the switch off leaves glide typing off, to be ticked back on
- * in Gboard's own settings. Skipping the writes is what makes that possible rather than merely
- * documented — left unconditional, this would re-force glide typing off at every app start, so
- * ticking it back on would silently undo itself on the next launch.
+ * These used to be gated on a `flexboard_enabled` preference, so that switching Flexboard off
+ * stopped it re-forcing glide typing off at every launch and let the user tick glide back on. That
+ * switch is gone — see [swipeToDeletePatch] for why — so the writes now happen on every start for
+ * as long as the patch is applied, and glide typing cannot be ticked back on while it is. Getting
+ * glide typing back means re-patching without Swipe to Delete.
  *
- * The `enable_scrub_delete` write is skipped for symmetry rather than necessity. It is Gboard's own
- * default and harmless to leave on, but a disabled Flexboard has no business writing preferences.
+ * That is the trade the removal made, and it is worth being explicit that it is user-visible rather
+ * than purely internal. What it buys is one fewer preference read, which is one fewer place needing
+ * registers proved dead against each Gboard build.
+ *
+ * [glideTypingRowPatch] greys the two affected rows out so this is visible in the settings rather
+ * than presenting as a switch that will not stay where it is put.
  */
 internal val forceScrubPreferencesPatch = bytecodePatch(
     description = "Forces Gboard's scrub delete preference on and glide typing off at app start, " +
-        "unless Flexboard's own switch is off."
+        "because the widened gesture needs the first and conflicts with the second."
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
     execute {
-        checkPreferenceStorePins()
-
         // Resolving the setter is the assertion that it still exists. An emitted invoke to a
         // missing method assembles happily and only fails on the device, with no diagnostic.
         val setter = PreferenceStoreWriteFingerprint.method
@@ -95,8 +97,6 @@ private const val GLIDE_TYPING_PREFERENCE = "0x7f140a05" // enable_gesture_input
 
 private const val APPLY_PREFERENCES_REGISTER_COUNT = 13
 
-private const val NOT_ENABLED_LABEL = "flexboard_not_enabled"
-
 private fun MutableMethod.forcePreferences(setterDescriptor: String) {
     val registerCount = implementation?.registerCount
         ?: error("LatinApp->d(Lqhy;)V has no implementation")
@@ -108,28 +108,20 @@ private fun MutableMethod.forcePreferences(setterDescriptor: String) {
         "LatinApp->d takes $parameterTypes, expected a single Lqhy;"
     }
 
-    // Captured before the insertion shifts indices; the label resolves by instruction identity.
-    val stockResumes = instructions.first()
-
     // v0..v2 are dead at method entry — the stock body's first act is to load v0 with a string —
     // so they are free to claim. The store is copied out of its parameter register with
     // `move-object/from16`, whose 16-bit source field can address it wherever it lands; an
     // `invoke` could not, and emitting `pN` into one is what produced an unappliable bundle once
     // before. See docs/register-encoding.md.
     //
-    // The branch leaves v0 and v1 holding different types on the two edges — an int against a
-    // `Boolean` — which is harmless because the stock body writes both before reading either.
-    // `flickSymbolsPatch` relies on exactly the same thing in this method.
-    addInstructionsWithLabels(
+    // Straight-line now that the preference gate is gone, so there is no longer a branch merging
+    // two different types into v0 and v1. `flickSymbolsPatch` still inserts into this method and
+    // still relies on v0..v2 being dead at entry, which this leaves true: everything below writes
+    // each register before reading it.
+    addInstructions(
         0,
         """
             move-object/from16 v2, p1
-
-            const-string v0, "$SCRUB_ENABLED_KEY"
-            const/4 v1, 0x1
-            invoke-virtual {v2, v0, v1}, $PREFERENCE_GET_BOOLEAN
-            move-result v0
-            if-eqz v0, :$NOT_ENABLED_LABEL
 
             const v0, $SCRUB_DELETE_PREFERENCE
             const/4 v1, 0x1
@@ -143,6 +135,5 @@ private fun MutableMethod.forcePreferences(setterDescriptor: String) {
             move-result-object v1
             invoke-virtual {v2, v0, v1}, $setterDescriptor
         """,
-        ExternalLabel(NOT_ENABLED_LABEL, stockResumes),
     )
 }

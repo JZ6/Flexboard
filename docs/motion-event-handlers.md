@@ -533,3 +533,81 @@ where `:handled` is the stock treat-as-handled exit. A patch that wants that exi
 switch. It also avoids an early `return`, which would skip the `Trace.endSection()` in the epilogue
 and leave the trace stack unbalanced — the method body sits inside a `try` whose handler exists to
 call it.
+
+## The two preference reads that were removed, and how they were derived
+
+Flexboard had a master on/off switch and an undo on/off switch. Both were removed — the reasoning is
+in [`design.md`](design.md); what follows is the part that was expensive to establish and would have
+to be redone from scratch if either is ever wanted back. The code is gone, so this is the only
+record of it.
+
+Both were removed because a preference read is an *insertion*, and an insertion needs registers
+proved dead at the point it goes in. R8 re-runs register allocation on every Gboard build, so every
+fact below is a fact about **one** build and has to be re-derived on each bump. That is the whole
+cost argument in one sentence.
+
+### Master switch: reading `flexboard_enabled` in `ScrubDeleteMotionEventHandler.<init>`
+
+The patch kept Gboard's `const/16 vN, 67` and conditionally overwrote it, so that "off" meant
+byte-for-byte stock:
+
+```
+const/16 v1, 67                 <- stock, untouched
+invoke-static { vCtx }, Lqhy;->I(Context)Lqhy;
+move-result-object vStore
+const-string vKey, "flexboard_enabled"
+const/4 vFallback, 0x1
+invoke-virtual { vStore, vKey, vFallback }, Lqhy;->k(String,Z)Z
+move-result vStore
+if-eqz vStore, :stock_start_key
+const/16 v1, -1
+:stock_start_key
+```
+
+Four things had to hold, none of them free:
+
+- **Every instruction between the keycode constant and `Lpvs;-><init>` is itself a `const`.** That
+  is what proved the registers they write are dead at the insertion point — written before anything
+  reads them, so borrowing three of them cannot lose a live value. If Gboard ever *computes* one of
+  those arguments, the proof collapses.
+- **Three scratch registers, all below v16**, because a `35c` invoke packs its registers into
+  nibbles and cannot address higher.
+- **The `Context` parameter register, derived from the Dalvik calling convention** — parameters
+  occupy the last `ins` registers — and shown not to be written before the insertion point.
+- **The uninitialised `Lpvs;` in v0 is fine across the inserted branch.** `new-instance` runs before
+  the arguments are built, so an uninitialised reference is live over the block. This verifies: it
+  is the shape javac emits for `new Foo(cond ? a : b)`, where a forward branch merges the same
+  uninitialised type from the same allocation site. Only a *backward* branch, or an exception
+  handler, with an uninitialised reference live is rejected.
+
+On 18.0.3 the constructor had 12 registers and parameters `(Context, Lpvo;)`.
+
+### Undo switch: reading `flexboard_undo_enabled` inside the dispatcher
+
+This one needed a `Context` from a class that is not one. `LatinIme` extends `AbstractIme` extends
+`Object` — no `Service`, no `ContextWrapper` — so passing `this` to the preference store assembles
+cleanly and then fails ART's verifier at run time, taking the dispatcher and therefore the whole
+keyboard with it. That shipped as `0.0.1-dev.1`.
+
+The way through was `AbstractIme->B:Landroid/content/Context;`, resolved from the field table rather
+than named, with two assertions: that the IME register is assignable to the class *declaring* the
+field (needed for the `iget-object` to verify at all), and that the field's type really is a
+`Context`. The declaring class must be named on `AbstractIme` rather than `LatinIme`, because being
+at least an `AbstractIme` is all the patch can prove about that register — Gboard's own reads spell
+it `LatinIme->B`, which is correct for Gboard and a claim the patch cannot make.
+
+It also had to borrow a register for `getBoolean`'s `true` fallback. Both scratch registers were
+already carrying the store and the key, so the **suppression flag** register was borrowed and then
+restored by re-reading the same field the prologue read:
+
+```
+const/4 vFlag, 0x1
+invoke-virtual { vSlot, vKey, vFlag }, Lqhy;->k(String,Z)Z
+move-result vSlot
+iget-boolean vFlag, vThis, <suppression field>   <- restore, identical to the prologue's read
+if-eqz vSlot, :not_rightward
+```
+
+That restore was load-bearing. The exit jumps to the stock `if-nez` which tests exactly that
+register, so leaving a borrowed `1` there would tell Gboard every delete finish was already handled
+and swallow it.

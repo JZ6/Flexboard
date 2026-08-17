@@ -38,8 +38,8 @@ cleared on almost any other input, so undo only works as the very next thing you
 Neither is a decision; both are Gboard's, and lifting them would mean the reimplementation that was
 avoided. `UndoDeletePatch.kt` has the full account.
 
-Its switch is deliberately outside the master switch's group. Gboard fills the same undo slot when
-you swipe on the backspace key, so undo stays meaningful even with swipe-anywhere off.
+Undo is unconditional. It had a switch, outside the master switch's group because Gboard fills the
+same undo slot from the backspace key; both switches are now gone — see below.
 
 ## Why flick keys has no runtime switch
 
@@ -49,13 +49,47 @@ run — and a control that silently stops working is worse than no control. Unti
 Morphe is the honest way to turn it off.
 
 The same reasoning does not apply to the glide settings, which are rewritten on every start
-precisely because Gboard must not be left able to break the gesture; they follow the master switch
-instead.
+precisely because Gboard must not be left able to break the gesture.
+
+## Why there is no on/off switch for anything
+
+Flexboard carried two: a master switch, and one for undo. Both were removed, and Morphe unticking a
+patch is now the only off switch.
+
+The argument is about cost per Gboard version rather than about the feature. Reading a preference
+from patched bytecode is an *insertion*, and an insertion needs registers proved dead at the point
+it goes in — which is precisely what R8 re-rolls on every build. The master switch needed three
+scratch registers inside a constructor, with a proof that every intervening instruction was a
+`const`, a `Context` parameter shown unclobbered, all three registers under the `35c` nibble limit,
+and an argument that an uninitialised `Lpvs;` live across the inserted branch still verified. The
+undo switch needed the IME's `Context` resolved out of a field on `AbstractIme` — the derivation
+whose absence bricked the keyboard in `0.0.1-dev.1` — plus a borrow of the suppression flag that had
+to be exactly undone or Gboard would swallow every delete finish.
+
+None of that was buying much. Every one of those facts had to be re-established for 18.0.3, and
+between them the two switches accounted for most of the port. What they offered a user, Morphe
+already offers properly and for free.
+
+The sliders stay, because their values genuinely vary by thumb and by screen, and because two of
+the three are substitutions of a constructor argument read from a resource — the cheap shape, with
+no scratch registers and no control flow touched.
+
+The trade is real and worth naming: **glide typing can no longer be handed back from inside
+Gboard.** It is forced off for as long as the patch is applied.
 
 ## Why the glide rows are greyed out rather than left alone
 
 Glide delete is written on, glide typing off, at every start. A user who changed either would see
 the change appear to take and then quietly revert — the worst of the three options. Greying them out
-while the gesture is on states the constraint instead of hiding it, and the switch that lifts it
-sits directly above them in that same Gboard screen, so the way out is where the problem is.
+states the constraint instead of hiding it.
+
+They are greyed with a plain `android:enabled="false"`. It used to be an androidx `dependency` on
+the master switch, which had the advantage of un-greying live when the switch was tapped; with the
+switch gone that mechanism became unusable, and not merely redundant. androidx requires a preference
+carrying the dependency's key to exist in the same hierarchy and throws `IllegalStateException` from
+`registerDependency` otherwise — so removing the switch while leaving the dependencies would have
+taken out Gboard's whole gesture settings screen. A static attribute has no such requirement.
+
+A greyed row with no explanation is still worse than a tappable one, so a non-selectable note sits
+above them saying what is doing it and that re-patching without Swipe to Delete is the way back.
 [`gboard-settings-ui.md`](gboard-settings-ui.md) covers how the rows are reached and disabled.

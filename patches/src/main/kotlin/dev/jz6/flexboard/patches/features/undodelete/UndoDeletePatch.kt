@@ -10,17 +10,11 @@ import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
-import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_GET_BOOLEAN
-import dev.jz6.flexboard.patches.features.scrubdelete.checkPreferenceStorePins
-import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
-import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.callsMethod
-import dev.jz6.flexboard.patches.shared.checkAssignable
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldOwnerType
-import dev.jz6.flexboard.patches.shared.findInstanceField
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
@@ -77,8 +71,8 @@ val swipeRightToUndoPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_GBOARD)
 
     execute {
-        checkPreferenceStorePins()
-
+        // No `checkPreferenceStorePins()` here any more: this patch reads no preference, so the
+        // store's descriptors are not among the things it can be broken by.
         LatinImeHandleEventFingerprint.method.undoOnRightwardScrub(this)
     }
 }
@@ -115,13 +109,17 @@ private const val UNDO_DONE_LABEL = "flexboard_undo_done"
  */
 private val SCRATCH_REGISTERS = listOf(2, 3)
 
-/**
- * The switch on Flexboard's settings screen. Absent means on, so an existing install keeps the
- * behaviour it had before the setting existed. Duplicated as a literal in
- * `FlexboardSettingsActivity.java`, for the same reason the scrub keys are: a patch-added resource
- * has no id until aapt2 recompiles, so bytecode cannot address one.
+/*
+ * `flexboard_undo_enabled` used to live here, as a switch on Flexboard's settings screen.
+ *
+ * It was removed deliberately. Reading it meant reaching the preference store from inside the
+ * dispatcher, which meant resolving the IME's `Context` out of a field on `AbstractIme` — and every
+ * one of those steps is a name or a register that R8 re-rolls on each Gboard build. Undo is
+ * strictly additive (swiping right did nothing before this patch existed) and Gboard fills the undo
+ * slot whether or not Flexboard is installed, so "always on" costs a user nothing and costs the
+ * next version bump one fewer derivation. The patch itself is still selectable in Morphe, which is
+ * where turning a feature off belongs.
  */
-internal const val UNDO_ENABLED_KEY = "flexboard_undo_enabled"
 
 /** Everything the emitted undo needs, read out of the handler that performs Gboard's own undo. */
 private data class StockUndo(
@@ -297,38 +295,17 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
     // patch whose derivation had worked perfectly, which is the opposite of the point.
     val suppressedField = flagRead.fieldDescriptor()
 
-    // The IME register, carrying the only type it is *proven* to hold. Reading `AbstractIme->N:Z`
+    // The IME register, carrying the only type it is *proven* to hold. Reading the suppression flag
     // off it shows it is at least an `AbstractIme`; that it happens to be a `LatinIme` at run time
-    // is true but not established here, which is why the Context field is named on `AbstractIme`
-    // below rather than on the subclass.
+    // is true but not established here.
+    //
+    // This patch used to reach the IME's `Context` through a field on `AbstractIme` in order to
+    // read an on/off preference, and that whole apparatus is gone: undo is unconditional, so there
+    // is no preference to read and nothing here is handed to the preference store. The derivation
+    // is kept in `docs/motion-event-handlers.md` rather than in code, because it was expensive to
+    // establish and would be needed again if the toggle ever came back.
     val ime = TypedRegister(flagRead.registerB, flagRead.fieldOwnerType())
     val thisRegister = ime.register
-
-    // Gboard keeps the IME's Context in a field, and reaching it is the whole reason this patch
-    // does not simply pass `this` to the preference store. `0.0.1-dev.1` did exactly that: it
-    // assembled, failed verification at run time, took the dispatcher with it, and the keyboard
-    // never appeared. The two checks below are what that release lacked.
-    //
-    // Resolved from AbstractIme's own field table rather than trusting a descriptor string, so a
-    // Gboard that moves or retypes the field fails here instead of on a device.
-    val contextField = context.findInstanceField(ime.type, IME_CONTEXT_FIELD_NAME)
-        ?: error(
-            "${ime.type} has no `$IME_CONTEXT_FIELD_NAME` field — the IME's Context has moved, " +
-                "and $PREFERENCE_STORE_GET would be handed something that is not a Context",
-        )
-
-    // Reading the field at all requires the register to be a subclass of the class declaring it.
-    context.checkAssignable(ime, contextField.definingClass, "The IME register in $LATIN_IME->q")
-    // And what the preference store is handed has to be an actual Context. This is the assertion
-    // whose absence shipped as 0.0.1-dev.1.
-    context.checkAssignable(
-        contextField.type,
-        ANDROID_CONTEXT,
-        "The value of ${contextField.definingClass}->$IME_CONTEXT_FIELD_NAME, " +
-            "which $PREFERENCE_STORE_GET is handed",
-    )
-    val imeContextField = "${contextField.definingClass}->" +
-        "$IME_CONTEXT_FIELD_NAME:${contextField.type}"
 
     val test = instructions[flagIndex + 1]
     check(test.opcodeName() == "IF_NEZ") {
@@ -355,28 +332,22 @@ private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
             "flag=v$flagRegister scratch=$SCRATCH_REGISTERS"
     }
 
-    // The count test comes before the preference read so the common case — every non-rightward
-    // scrub finish — costs one comparison rather than a preference lookup.
+    // A leftward or empty scrub leaves on the first comparison with nothing touched, which is what
+    // keeps Gboard's own path byte-identical in the common case.
     //
-    // The `true` fallback has to be staged somewhere, and the two scratch registers are both already
-    // carrying the store and the key by that point. It goes in the flag register, which is then
-    // *restored by re-reading the same field the prologue read* — the identical instruction from
-    // three slots earlier, so the value afterwards is provably what it was. That matters because the
-    // exit below jumps to the stock `if-nez`, which tests exactly that register: leaving a borrowed
-    // 1 there would tell Gboard the event was already handled and swallow every delete finish.
+    // **The suppression flag is no longer borrowed.** While undo was a preference, the `true`
+    // fallback for `getBoolean` had to be staged somewhere, both scratch registers were already
+    // carrying the store and the key, and the flag register was the only slot left — so it was
+    // borrowed and then restored by re-reading the same field the prologue read. Getting that
+    // restore wrong would have told Gboard every delete finish was already handled and swallowed
+    // it. Removing the preference read removes the borrow, and with it the invariant: the only
+    // exit to `:$NOT_RIGHTWARD_LABEL` is now the first `if-lez`, reached before anything writes
+    // the flag. Every path that *does* write it ends at `:$UNDO_DONE_LABEL`, which sets it to 1 —
+    // the value a rightward scrub wants anyway.
     addInstructionsWithLabels(
         flagIndex + 1,
         """
             if-lez v$countRegister, :$NOT_RIGHTWARD_LABEL
-            iget-object v$slot, $ime, $imeContextField
-            invoke-static { v$slot }, $PREFERENCE_STORE_GET
-            move-result-object v$slot
-            const-string v$value, "$UNDO_ENABLED_KEY"
-            const/4 v$flagRegister, 0x1
-            invoke-virtual { v$slot, v$value, v$flagRegister }, $PREFERENCE_GET_BOOLEAN
-            move-result v$slot
-            iget-boolean v$flagRegister, v$thisRegister, $suppressedField
-            if-eqz v$slot, :$NOT_RIGHTWARD_LABEL
             iget-object v$slot, v$thisRegister, ${stock.slotField}
             invoke-virtual { v$slot }, ${stock.available}
             move-result v$value

@@ -28,11 +28,9 @@ ACTIVITY = ROOT / (
 # (Kotlin name, Java name). The names differ where each side reads more naturally on its own terms;
 # what has to match is the value.
 PAIRS = [
-    ("SCRUB_ENABLED_KEY", "KEY_ENABLED"),
     ("STEP_SCALE_KEY", "KEY_STEP_SCALE"),
     ("MAX_WORDS_KEY", "KEY_MAX_WORDS"),
     ("HOLD_DELAY_KEY", "KEY_HOLD_DELAY"),
-    ("UNDO_ENABLED_KEY", "KEY_UNDO"),
     ("STEP_SCALE_DEFAULT", "STEP_SCALE_DEFAULT"),
     ("MAX_WORDS_DEFAULT", "MAX_WORDS_DEFAULT"),
     # The slider's top position, and the "no limit" sentinel the clamp tests against. Split from the
