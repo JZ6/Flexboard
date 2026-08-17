@@ -2,14 +2,11 @@
 
 Ideas, in no particular order and with no promises. Kept verbatim as written.
 
-
 update settings to match rest of gboard
 
-move settings to top of list
-
+can we make the backspace swipe work as before without being limited to max 1 word delete
 
 flick up to undo autocorrect 
-
 
 Hot keys as new tool bar objects
 
