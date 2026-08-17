@@ -87,7 +87,8 @@ Removing Flexboard leaves glide typing off — tick it back on in Gboard's own s
 
 ## Settings
 
-Gboard's settings gain a **Flexboard** entry that opens a screen with three sliders:
+Gboard's settings gain a **Flexboard** entry that opens a screen with three sliders. They shape
+the swipe-anywhere gesture; the backspace key keeps Gboard's own behaviour, see below.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -100,6 +101,23 @@ nothing to keep in sync. Setting them to 100%, 10 and 200 ms puts each back to G
 why they do not start there is in [`docs/design.md`](docs/design.md).
 
 Changes are not instant: the gesture picks up a new setting the next time the keyboard is opened.
+
+### The backspace key still behaves the way Gboard built it
+
+The sliders above apply to swipes that start **anywhere on the letters**. A swipe that starts on the
+**backspace key** — the one place Gboard's own word-delete has always worked — keeps Gboard's
+distance per word and is not capped, so it still deletes as many words as you drag across.
+
+That is deliberate. A one-word cap and a short swipe are right for a gesture you trigger by accident
+sometimes; they are wrong for the deliberate press-and-drag on backspace that people already have
+muscle memory for. Flexboard adds a gesture rather than replacing one.
+
+It works because Gboard keeps the key a gesture started on for the gesture's whole life, so the
+engine can still tell the two apart even though Flexboard widened the gate that used to distinguish
+them. The derivation is in [`docs/motion-event-handlers.md`](docs/motion-event-handlers.md).
+
+Hold delay is the exception: it is decided before a gesture activates, and is shared. At the default
+of 0 ms neither swipe has a hold.
 
 ### There is no on/off switch, and that is deliberate
 

@@ -99,6 +99,7 @@ EXPECTED = {
     'sigcheck_returns': [6, 4, 3],
     'undo_scratch': [2, 3],
     'clamp_scratch': [5, 7, 9],
+    'distance_scratch': [7, 8, 9],
     'stock_start_keycode': 67,
 }
 
@@ -194,6 +195,56 @@ def writes_before(ins, reg, after_pc, before_pc):
             if after_pc < pc <= before_pc
             and not n.startswith(READS_FIRST_OPERAND)
             and regs(a)[:1] == [reg]]
+
+
+def live_free(ins, register_count, at_pc):
+    """Registers that are dead at `at_pc`, by backward liveness over the real control flow.
+
+    A forward "is the next touch a write?" scan is not sound here and gets a real answer wrong:
+    in `r()` it reports v3 free because the table walk writes it, but the `if-gt` guarding that
+    walk branches straight past the write to a path that reads v3. Borrowing it would corrupt the
+    extrapolated word count on long swipes, silently. So this does the fixpoint properly.
+    """
+    n = len(ins)
+    pcs = [i[0] for i in ins]
+    index = {p: k for k, p in enumerate(pcs)}
+
+    def successors(k):
+        _, mnemonic, args = ins[k]
+        match = re.search(r'-> (\d+)', args)
+        if mnemonic.startswith('goto'):
+            return [index[int(match.group(1))]] if match else []
+        if mnemonic.startswith(('return', 'throw')):
+            return []
+        out = [index[int(match.group(1))]] if match else []
+        if k + 1 < n:
+            out.append(k + 1)
+        return out
+
+    live = [set() for _ in range(n + 1)]
+    for _ in range(500):
+        changed = False
+        for k in range(n - 1, -1, -1):
+            _, mnemonic, args = ins[k]
+            r = regs(args)
+            out = set()
+            for t in successors(k):
+                out |= live[t]
+            if mnemonic.startswith(READS_FIRST_OPERAND):
+                sources, destination = r, None
+            else:
+                sources, destination = r[1:], (r[0] if r else None)
+            new = set(out)
+            if destination is not None:
+                new.discard(destination)
+            new |= set(sources)
+            if new != live[k]:
+                live[k] = new
+                changed = True
+        if not changed:
+            break
+    at = live[index[at_pc]]
+    return [r for r in range(register_count) if r not in at]
 
 
 # --------------------------------------------------------------------------- checks
@@ -467,6 +518,59 @@ def run(dl):
           bool(handler_ctx) and handler_ctx.endswith(':' + CONTEXT))
     chain = superclass_chain(dl, SCRUB)
     check('tuning: `this` in r() can legally read it', ABSTRACT_HANDLER in chain, str(chain))
+
+    # ---- start-key recovery, for the backspace-keeps-stock-behaviour edits
+    c, ins = body(dl, f'{SCRUB}->g(Landroid/view/MotionEvent;)V')
+    if ins:
+        views = [i for i, (pc, n, a) in enumerate(ins)
+                 if n == 'iput-object' and a.endswith(':Landroid/view/View;')]
+        check('startkey: one View field written in g()', len(views) == 1, f'found {len(views)}')
+        kd = [i for i, (pc, n, a) in enumerate(ins)
+              if n.startswith('invoke') and a.endswith(')Lpnu;')]
+        if check('startkey: one no-arg call returning Lpnu;', len(kd) == 1, f'found {len(kd)}'):
+            # The chain is walked back from that unique anchor; f() itself is called twice, so it
+            # can only be identified by which call feeds the key-data accessor.
+            action_reg = regs(ins[kd[0]][2])[0]
+            ri = [i for i in range(kd[0] - 1, -1, -1)
+                  if ins[i][1] == 'move-result-object' and regs(ins[i][2])[0] == action_reg]
+            if check('startkey: the ActionDef feeding it is produced in g()', bool(ri)):
+                acc = ins[ri[0] - 1][2]
+                check('startkey: it comes from an ActionDef accessor',
+                      acc.endswith(')Lcom/google/android/libraries/inputmethod/metadata/ActionDef;'),
+                      acc[-60:])
+                sel_reg = regs(acc.split('}')[0])[1]
+                si = [i for i in range(ri[0] - 2, -1, -1)
+                      if ins[i][1] == 'sget-object' and regs(ins[i][2])[0] == sel_reg]
+                check('startkey: its action selector is loaded in g()', bool(si))
+                # Two Lpmy; statics are read in g(); the walk must land on the one the gate uses.
+                if si:
+                    sels = [a for pc, n, a in ins if n == 'sget-object' and 'Lpmy;' in a]
+                    check('startkey: the selector is disambiguated, not guessed', len(sels) > 1,
+                          f'only {len(sels)} candidate(s) — check is not discriminating')
+        kc = [i for i, (pc, n, a) in enumerate(ins) if n == 'iget' and 'Lpnu;->' in a]
+        check('startkey: one Lpnu; field read in g()', len(kc) == 1, f'found {len(kc)}')
+
+    c, ins = body(dl, f'{SCRUB}->r(Landroid/view/MotionEvent;Z)V')
+    if ins:
+        absi = [i for i, (pc, n, a) in enumerate(ins) if 'Ljava/lang/Math;->abs(F)F' in a]
+        if check('distance: Math.abs(F)F is unique in r()', len(absi) == 1, f'found {len(absi)}'):
+            delta = regs(ins[absi[0]][2])[0]
+            sub = [i for i in range(absi[0] - 1, -1, -1)
+                   if regs(ins[i][2])[:1] == [delta] and not ins[i][1].startswith('if-')]
+            if check('distance: the delta is written before it', bool(sub)):
+                # binop2addrc7 is sub-float/2addr (0xc7).
+                check('distance: it comes from a sub-float/2addr',
+                      ins[sub[0]][1] == 'binop2addrc7', ins[sub[0]][1])
+                # The scratch set, checked by real backward liveness rather than a forward scan --
+                # a forward scan wrongly reports v3 free, because the if-gt guarding the table walk
+                # branches past the write that makes it look dead.
+                site = sub[0] + 1
+                free = live_free(ins, c['registers'], ins[site][0])
+                want = E['distance_scratch']
+                check('distance: the scratch registers are dead at the insertion point',
+                      all(r in free for r in want), f'free={free} want={want}')
+                check('distance: v3 is correctly NOT among them', 3 not in free,
+                      'v3 looks free but is read on the extrapolation path')
 
     c, ins = body(dl, f'{SCRUB}->r(Landroid/view/MotionEvent;Z)V')
     if check('tuning: r() exists', ins is not None):

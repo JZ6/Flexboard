@@ -611,3 +611,60 @@ if-eqz vSlot, :not_rightward
 That restore was load-bearing. The exit jumps to the stock `if-nez` which tests exactly that
 register, so leaving a borrowed `1` there would tell Gboard every delete finish was already handled
 and swallow it.
+
+## Telling apart where a gesture started, after the gate has been widened
+
+`swipeToDeletePatch` replaces the configured start keycode with a wildcard, so `Lpvs;->a:I` no
+longer says anything about where the finger went down. The natural conclusion — that the engine can
+no longer distinguish a backspace swipe from a letter swipe — is wrong, and `scrubsettings` relies
+on it being wrong to give the backspace key Gboard's own feel back.
+
+**Gboard keeps the starting key itself.** `ScrubMotionEventHandler->m:Landroid/view/View;` is:
+
+| | |
+|---|---|
+| written | `g()` offset 188, on the `ACTION_DOWN` path just after the gate passes |
+| read | `s(Z)V`, which is how the key under the finger gets its pressed state |
+| cleared | `l()` offset 20, the reset |
+
+So it holds the starting `SoftKeyView` for exactly the lifetime of one gesture. Walking it back to a
+keycode is the same four steps `g()` performs at offsets 88–108:
+
+```
+sget-object   Lpmy;->a:Lpmy;
+SoftKeyView->f(Lpmy;)ActionDef      →   ActionDef->b()Lpnu;   →   Lpnu;->c:I
+```
+
+None of those names is pinned. They are read out of `g()`, anchored on the one unambiguous member:
+`ActionDef->b()Lpnu;` is called **once**, whereas `f(Lpmy;)` is called **twice** — for the action
+the gate requires present and the action it requires absent — so `f` cannot be identified on its
+own. Walking back from `b()` picks out which `f()` call feeds it, and therefore which of the two
+`Lpmy;` constants is the right one. Anchor on the unique thing and the ambiguous things resolve.
+
+### Undoing the step-table scaling for one case
+
+`scaleStepTable` multiplies `Lpvs;->h:[F` through by `scale/100` at construction, so the stock
+thresholds are gone by the time `r()` walks the table. Restoring them for backspace does not need a
+second array: the walk compares `|delta|` against the table, so comparing `|delta| · scale/100`
+against `T · scale/100` is the same test as `|delta|` against `T`. Multiplying the delta by the
+*same* factor recovers stock distance exactly, with one `mul-float` and no extra state.
+
+The multiply goes in right after the delta subtraction rather than after `Math.abs`, and both the
+reason and the near-miss are worth recording.
+
+**A forward "is the next touch a write?" scan is not sound for choosing scratch registers here.**
+Run one from the magnitude and it reports v3 free, because the `add-int/lit8` at the head of the
+table walk writes it. That is wrong: the `if-gt` guarding the walk branches straight past that write
+to the extrapolation path, which reads v3 as the previous bucket's threshold — zero on the first
+iteration, from the `const/4` above the loop. Borrowing v3 would have produced a wrong extrapolated
+word count for swipes past the end of the table, on a path that only fires for long swipes, with
+nothing crashing to say so.
+
+Real backward liveness over the control flow says only **v8 and v9** are dead at the magnitude,
+which is one short of what a preference read needs. At the delta subtraction, four registers are
+dead. So the insertion moved up, which is sound because the factor is positive: scaling before
+`abs` scales the sign test and the magnitude consistently, and zero stays zero so the
+delta-is-zero early-out is unchanged.
+
+`tools/apk/preflight.py` does the same fixpoint and asserts both halves — that the chosen registers
+are dead, *and* that v3 is not among them.
