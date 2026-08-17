@@ -1,3 +1,9 @@
+# [1.0.1-dev.1](https://github.com/JZ6/Flexboard/compare/v1.0.0...v1.0.1-dev.1) (2026-08-17)
+
+* **Gboard:** bump to 1.0.1-dev.1
+* **Gboard:** derive the obfuscated names that have look-alike siblings
+* **Gboard:** add welcome video
+
 # [1.0.0](https://github.com/JZ6/Flexboard/compare/v1.0.0-dev.1...v1.0.0) (2026-08-17)
 
 * **Gboard:** bump to 1.0.0
