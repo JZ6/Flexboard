@@ -1,9 +1,14 @@
 # Flexboard
 
-Swipe anywhere on Gboard to delete the previous word.
+Adding swipe gestures to Gboard.
 
-Gboard's only word-delete is a swipe on the backspace key, which means moving your thumb to the
-corner and back for every correction. Flexboard puts that gesture wherever your thumb already is.
+Swipe left anywhere on Gboard to delete the previous word.
+
+Swipe right to undo.
+
+More swipes coming :)
+
+https://github.com/user-attachments/assets/d5935fc0-8527-466e-9bdc-1f4c60a52617
 
 This is a [Morphe](https://github.com/MorpheApp) patch bundle for Gboard
 `18.0.3.954559732-release-arm64-v8a`
