@@ -75,7 +75,12 @@ BINDINGS = {
     'undo_slot': 'Lqyc;',
     'committable': 'Lojt;',
     'sigcheck': 'Lrpv;',
-    'sigcheck_flag': 'Lrox;',
+    # Not a cached signature verdict, despite the company it keeps here. Lrox;->b:Z is the global
+    # test-environment flag (Build.FINGERPRINT.equals("robolectric")), permanently false on a
+    # device and read in ~40 unrelated places. The signature check reads it once, as the value to
+    # return when the caller's digest cannot be computed -- an input, never an output. It is
+    # tracked only because reading it is part of what identifies the check.
+    'test_environment': 'Lrox;',
 }
 
 EXPECTED = {
@@ -931,7 +936,7 @@ def run(dl, apk=None):
         check('bypass: return registers', returns == E['sigcheck_returns'], str(returns))
         seen = {a.split(', ')[-1] for pc, n, a in ins if n.startswith(('sget', 'iget'))}
         for fd in (f'{sig_cls}->e:[B', f'{sig_cls}->d:[B', f'{sig_cls}->c:[B',
-                   f'{B["sigcheck_flag"]}->b:Z'):
+                   f'{B["test_environment"]}->b:Z'):
             check(f'bypass: reads {fd}', fd in seen)
         c2, _ = body(dl, f'{sig_cls}->c({CONTEXT}Ljava/lang/String;)[B')
         check('bypass: digest method exists', c2 is not None)

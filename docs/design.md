@@ -183,3 +183,45 @@ taken out Gboard's whole gesture settings screen. A static attribute has no such
 A greyed row with no explanation is still worse than a tappable one, so a non-selectable note sits
 above them saying what is doing it and that re-patching without Swipe to Delete is the way back.
 [`gboard-settings-ui.md`](gboard-settings-ui.md) covers how the rows are reached and disabled.
+
+## Why the signature bypass stays, though it gates nothing
+
+`docs/roadmap.md` asked whether the bypass patch is still needed. The answer is that nothing needs
+it, and it stays anyway.
+
+Gboard hashes its own signing certificate and compares it byte-for-byte against three baked-in
+digests. `Lrpv;->a` has exactly two callers. One is `WebDebugBridgeContentProvider;->call`, which
+checks the *caller* of a developer debug provider rather than Gboard. The other is `Lmm;->run()`
+case 8, scheduled from `LatinApp;->e()` on cold start in the main process — and its entire body is
+the check followed by `return-void`. It throws `IllegalStateException` on failure and does nothing
+on success, so a failing check skips no work, because there is none to skip. No Flexboard
+subsystem references `Lrpv;` at all.
+
+Patched without it, on 2026-08-18, the keyboard still opens: the throw lands on the background
+executor in `LatinApp;->c` and the process survives.
+
+It is kept because the cost of keeping is low and the cost of being wrong is not. An exception on
+every cold start is worth silencing even when it is survivable, it is presumably reported to
+Google's crash telemetry, and dropping it means betting that a background throw stays harmless on
+every device and Android version rather than the one it was tried on. The derivation is also among
+the more stable in the project.
+
+Two corrections this turned up, both recorded here because the wrong version was written down and
+believed for a while. The README and the patch both used to say re-signing made "the features
+sitting behind it stop working" — no feature sits behind it. And `Lrox;->b:Z`, listed among the
+signature fields and once called `sigcheck_flag`, is not a cached verdict: it is the global
+test-environment flag, permanently false on a device, which the check reads only as the value to
+return when a digest cannot be computed.
+
+### The methodology note
+
+The static reading of this was that dropping the patch would stop the keyboard starting. Every
+individual link in that chain was verified and correct — the construction site, the switch key,
+the guard, the absence of try ranges — and the conclusion was still wrong, because whether an
+uncaught background throw kills the process was never established and could not be, since the
+executor arrives through Dagger.
+
+The lesson is not "check harder". It is that the unresolved question was *identified* and then
+reported alongside a confident conclusion that depended on it. A conclusion is only as settled as
+the weakest link it rests on, and one device test disposed of an argument no amount of
+disassembly could have.

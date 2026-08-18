@@ -195,11 +195,18 @@ Untick it and the patched build replaces the Gboard you already have.
 
 ## Bypass Gboard signature
 
-Gboard checks its own signing certificate against a list baked into the app. A patched build is
-re-signed, so that check fails and the features sitting behind it stop working.
+Gboard hashes its own signing certificate and compares it against a list baked into the app. A
+patched build is re-signed, so that check fails. Flexboard forces it to pass.
 
-Nothing about this one is visible when it works — it exists so that re-signing does not silently
-switch parts of Gboard off.
+Nothing about this one is visible either way, and it turns out that nothing is behind it. The
+check gates no feature: its only real caller does nothing except the check itself, and throws if
+it fails. Patched **without** this one the keyboard still opens — the exception lands on a
+background thread during startup and everything carries on. So it removes a startup crash rather
+than restoring anything.
+
+It is kept anyway, because an exception on every cold start is worth silencing even when it is
+survivable, and because assuming it stays harmless on every device is a worse bet than simply
+patching it out.
 
 ## Development
 
