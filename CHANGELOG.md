@@ -1,3 +1,8 @@
+# [1.1.0](https://github.com/JZ6/Flexboard/compare/v1.1.0-dev.3...v1.1.0) (2026-08-18)
+
+* **Gboard:** bump to 1.1.0
+* **Gboard:** record that Bigger Toolbar works on a device
+
 # [1.1.0-dev.3](https://github.com/JZ6/Flexboard/compare/v1.1.0-dev.2...v1.1.0-dev.3) (2026-08-18)
 
 * **Gboard:** bump to 1.1.0-dev.3
