@@ -216,6 +216,11 @@ clips or crashes — the icons just get tight, and on a narrow phone 12 will be 
 Drag-to-reorder and long-press-to-customise keep working at every setting; this only changes where
 the line between the bar and the overflow menu falls.
 
+**On a foldable, both screens get the same number.** Gboard keeps two counts, one for folded and one
+for unfolded, so its toolbar differs between the inner and outer screen. Flexboard's slider is a
+single value and overrides both. If you fold, that is a change from stock and not an improvement —
+it is on the list.
+
 This shipped once before, in `1.1.0-dev.1`, and did nothing — it moved the ceiling rather than the
 count. If you tried it then, it is a different patch now.
 

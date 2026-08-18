@@ -112,6 +112,23 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * than naming a field. The preference store on the controller is obfuscated too, and is read back
  * out of the very method being patched — the sole field it touches of the store's type.
  *
+ * ## One number for both halves of a fold, and that is a change
+ *
+ * The method this patches opens by choosing *which* preference to read from device posture: unfolded
+ * it reads `foldable_access_points_count_on_bar`, otherwise `access_points_count_on_bar`. Gboard
+ * therefore keeps **two** counts and a foldable gets a different toolbar on its inner and outer
+ * screens, which is the right behaviour — the two screens are not the same width.
+ *
+ * Overriding at entry returns before that choice is made, so Flexboard's single slider now applies
+ * to both. On a foldable this is a regression against stock, and `docs/roadmap.md` records it as
+ * noticed on a device rather than deduced here.
+ *
+ * Fixing it is not hard and is deliberately not done yet, because it is a product decision before it
+ * is a technical one: it needs a second preference key, a second slider, and an answer to what an
+ * unset second value should mean. The mechanism is already in front of us — read the posture field
+ * the way the stock code does and pick between two keys — so it costs one `iget-object` and a
+ * branch, not new research.
+ *
  * ## On a device
  *
  * **Confirmed working in `1.1.0-dev.3`, 2026-08-18: the icon count moves.** That is the only axis
