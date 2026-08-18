@@ -3,7 +3,7 @@
 Why Flexboard behaves the way it does. The [README](../README.md) says what it does; this is the
 reasoning behind the choices a user would otherwise have to guess at.
 
-## Why the three sliders do not default to Gboard's values
+## Why the three swipe sliders do not default to Gboard's values
 
 **Swipe length, 36% rather than 100%.** Gboard's stock distance assumes a thumb travelling from the
 backspace key and back — the whole journey this patch exists to remove. A gesture that starts under
@@ -24,6 +24,43 @@ Neither could be changed by editing one number, because each of those two number
 — the default *and* a control-flow sentinel, at which the scaling or the clamp is skipped. Setting
 the default to the sentinel value would have made the chosen setting the one setting that does
 nothing. They are now four constants rather than two; `ScrubTuningPatch.kt` documents each.
+
+## Why the toolbar count is a slider when hold delay nearly was not
+
+Every preference this project reads costs the same thing — an insertion, and registers proved dead
+against each Gboard build — so the bar a new config has to clear is high. See below for the three
+that failed to clear it. The toolbar count clears it on both counts a config can:
+
+**There is no value that is right everywhere.** How many icons fit depends on how wide the screen
+is, because the bar divides its width by the number of items
+(`AccessPointsBar->K(II)I` gives each `min((width + 2·padding)/(n + 1), width/n)`). Ten is
+comfortable on a tablet and cramped on a small phone. That is not true of the hold delay, where one
+number was right and got hardcoded.
+
+**It is the cheapest insertion in the project.** `AccessPointsBar` keeps its real name through R8,
+because a layout addresses it as a string. The anchor is a *string literal* —
+`config_max_access_points` in the class's `<clinit>` — and R8 renames classes, methods and fields but
+never string contents. The `Context` is already a constructor parameter, so no field has to be
+resolved and nothing has to be shown assignable. Two scratch registers are needed, against three for
+each of the switches that were removed.
+
+The obfuscated field it targets, `->m:I`, is never written down. The patch inserts *before* Gboard's
+own `iput` and leaves that instruction to do the write, so a letter that moves onto a different
+member cannot be silently patched instead — the failure mode that shipped in `0.0.2-dev.1`.
+
+Two decisions worth naming:
+
+**The fallback is Gboard's own computed value, not a constant.** The preference is read with
+whatever the flag path just produced as its default, so an untouched slider leaves the ceiling
+exactly where Gboard put it — the patch is a no-op until you move something. An out-of-range value
+falls back the same way rather than being clamped into range, because a corrupt or hand-edited
+preference should read as "unset" and not as a number nobody chose.
+
+**Flexboard uses its own key rather than Gboard's.** Gboard has `access_points_count_on_bar`, and
+riding it would have removed the insertion entirely — the count could then be raised with a single
+hardcoded `const`. It was rejected because that key can only *lower* the count below the ceiling,
+because Gboard's own "reduce your toolbar icons" flow (`Lmjr;->b`) writes to it and would silently
+overwrite the user's choice, and because a value written there outlives the patch.
 
 ## Why undo is Gboard's own, not a reimplementation
 

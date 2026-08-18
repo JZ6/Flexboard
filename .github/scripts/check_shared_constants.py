@@ -38,6 +38,13 @@ PAIRS = [
     # cap at every setting.
     ("MAX_WORDS_NO_LIMIT", "MAX_WORDS_MAX"),
     ("HOLD_DELAY_DEFAULT", "HOLD_DELAY_DEFAULT"),
+    # The toolbar count has no shared *default*: the patch reads the preference with whatever Gboard
+    # itself computed as the fallback, so an unset value is stock behaviour rather than a number
+    # either side had to agree on. The bounds are shared, because the patch rejects anything outside
+    # them and the slider is what has to stay inside them.
+    ("TOOLBAR_COUNT_KEY", "KEY_TOOLBAR_COUNT"),
+    ("TOOLBAR_COUNT_MIN", "TOOLBAR_COUNT_MIN"),
+    ("TOOLBAR_COUNT_MAX", "TOOLBAR_COUNT_MAX"),
 ]
 
 KOTLIN_CONST = re.compile(r'internal const val (\w+) = (?:"([^"]*)"|(\d+))')

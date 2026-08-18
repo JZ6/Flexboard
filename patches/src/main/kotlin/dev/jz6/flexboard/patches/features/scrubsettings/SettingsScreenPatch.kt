@@ -106,7 +106,12 @@ private const val INTENT_TAG = "intent"
 
 private const val ENTRY_KEY = "flexboard_settings"
 private const val ENTRY_TITLE = "Flexboard"
-private const val ENTRY_SUMMARY = "Swipe length, word limit and hold delay"
+/**
+ * Deliberately vague about *which* settings. The screen's contents depend on which patches were
+ * ticked, and this row is added by every one of them — naming the sliders meant rewriting this line
+ * each time a feature landed, and it was already stale once.
+ */
+private const val ENTRY_SUMMARY = "Gesture and toolbar settings"
 
 /** Ignored once the intent carries a component, but it is what v0.3 shipped. */
 private const val ENTRY_ACTION = "android.intent.action.MAIN"

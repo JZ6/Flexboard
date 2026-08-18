@@ -56,6 +56,8 @@ KEYBOARD_VIEW = 'Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardV
 LATIN_IME = 'Lcom/google/android/apps/inputmethod/libs/latin5/LatinIme;'
 ABSTRACT_IME = 'Lcom/google/android/libraries/inputmethod/ime/AbstractIme;'
 LATIN_APP = 'Lcom/google/android/apps/inputmethod/latin/LatinApp;'
+ACCESS_POINTS_BAR = ('Lcom/google/android/libraries/inputmethod/accesspoint/widget/'
+                     'AccessPointsBar;')
 CONTEXT = 'Landroid/content/Context;'
 
 # `AbstractIme->…(L…;Z)V` — the shape of the undo re-commit, whatever it is called this build.
@@ -101,6 +103,13 @@ EXPECTED = {
     'clamp_scratch': [5, 7, 9],
     'distance_scratch': [7, 8, 9],
     'stock_start_keycode': 67,
+    'toolbar_scratch': [2, 5],
+    'toolbar_ctor_registers': 9,
+    'toolbar_ctor_ins': 3,
+    # Gboard's own stock icon count, the default of the getInt in the bar's constructor. Not used by
+    # the patch -- it reads the preference with whatever Gboard computed -- but it is the number the
+    # settings slider displays while unset, so it has to stay true.
+    'toolbar_stock_count': 5,
 }
 
 # --------------------------------------------------------------------------- dex helpers
@@ -600,6 +609,61 @@ def run(dl):
                 check('tuning: scratch is dead from the convergence onward',
                       not (set(scratch) & live),
                       f'scratch={scratch} live at/after {convergence}={sorted(live)}')
+
+    # ---- toolbar icon count
+    #
+    # The bar's own class name survives R8 (a layout addresses it as a string), and the anchor for
+    # the ceiling is a *string literal*, which R8 never rewrites. So unlike everything above, only
+    # the register numbers here can move between builds.
+    _, clinit = body(dl, f'{ACCESS_POINTS_BAR}-><clinit>()V')
+    check('toolbar: the bar declares config_max_access_points',
+          clinit is not None and any('config_max_access_points' in a for pc, n, a in clinit),
+          'the flag naming this class as the toolbar cap is gone')
+
+    ctor = f'{ACCESS_POINTS_BAR}-><init>({CONTEXT}Landroid/util/AttributeSet;)V'
+    c, ins = body(dl, ctor)
+    if check('toolbar: the bar constructor exists', ins is not None, ctor):
+        check('toolbar: its register count',
+              c['registers'] == E['toolbar_ctor_registers'], f'got {c["registers"]}')
+        check('toolbar: its parameter words',
+              c['ins'] == E['toolbar_ctor_ins'], f'got {c["ins"]}')
+
+        # The displayed default, so the settings slider does not claim a number Gboard stopped
+        # using. Read off the getInt the flag falls back to rather than written down twice.
+        gi = [i for i, (pc, n, a) in enumerate(ins)
+              if 'Landroid/content/res/TypedArray;->getInt(II)I' in a]
+        if check('toolbar: one getInt on the styled attributes', len(gi) == 1, f'found {len(gi)}'):
+            default_reg = regs(ins[gi[0]][2])[2]
+            src = [i for i in range(gi[0] - 1, -1, -1)
+                   if ins[i][1].startswith('const') and regs(ins[i][2])[:1] == [default_reg]]
+            literal = re.search(r'#(-?\d+)', ins[src[0]][2]) if src else None
+            check('toolbar: the stock count still matches the settings slider',
+                  literal is not None and int(literal.group(1)) == E['toolbar_stock_count'],
+                  f'got {literal and literal.group(1)}, '
+                  f'slider shows {E["toolbar_stock_count"]}')
+
+        flag = [i for i, (pc, n, a) in enumerate(ins) if 'Lnxp;->g()Ljava/lang/Object;' in a]
+        if check('toolbar: one flag read in the constructor', len(flag) == 1, f'found {len(flag)}'):
+            # By field *type*, not by opcode: `iput` (0x59) covers int and float alike, and the two
+            # dimensions read out of the same TypedArray follow just below. Restricting to after the
+            # flag read is what excludes `->y:I`, written near the top.
+            puts = [i for i, (pc, n, a) in enumerate(ins)
+                    if i > flag[0] and n == 'iput' and a.rstrip().endswith(':I')]
+            if check('toolbar: one int field written after it', len(puts) == 1,
+                     f'found {len(puts)}'):
+                site = ins[puts[0]][0]
+                ceiling = regs(ins[puts[0]][2])[0]
+                free = live_free(ins, c['registers'], site)
+                want = E['toolbar_scratch']
+                check('toolbar: the scratch registers are dead at the insertion point',
+                      all(r in free for r in want), f'free={free} want={want}')
+                # The standing guard. Everything else at this point is live: the TypedArray, the two
+                # constants the dimension reads still need, and the Context the store is handed.
+                held = [r for r in (0, 1, 3, 7) if r in free]
+                check('toolbar: v0, v1, v3 and v7 are correctly NOT among them', not held,
+                      f'{held} look free but are read after the ceiling is written')
+                check('toolbar: the ceiling register is not borrowed as scratch',
+                      ceiling not in want, f'v{ceiling} is in {want}')
 
     # ---- forced preferences and flick symbols share this hook
     c, _ = body(dl, f'{LATIN_APP}->d({store})V')

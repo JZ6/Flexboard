@@ -120,6 +120,53 @@ carries a given preference; do not guess.
 Full derivation of the glide preference id and why the write path is used:
 [`glide-detection.md`](glide-detection.md).
 
+## The access points bar (the toolbar), 18.0.3
+
+The row of icons above the keyboard. Unusually friendly territory: the widget classes keep their
+real names, because layouts address them as strings and R8 cannot rename what XML names.
+
+| Binding | What it is |
+|---|---|
+| `…/accesspoint/widget/AccessPointsBar` | The bar itself. `extends ViewGroup` — one row, custom `onMeasure`/`onLayout`, **no scrolling and no touch callbacks of its own**. Declared in `res/HNz.xml`. |
+| — ceiling | `AccessPointsBar->m:I` | The most items the bar will hold. Written **once**, in `<init>(Context, AttributeSet)`, at offset 72. |
+| — ceiling getter | `AccessPointsBar->i()I` | Reached through `Lmhm;->i()I`. |
+| — item width | `AccessPointsBar->K(II)I` | `min((width + 2·(e + f))/(n + 1), width/n)`. Items shrink as the count grows; nothing clips. |
+| — visible count | `AccessPointsBar->L()I` | Counts non-`GONE` children, plus the drag placeholder and the expand key. |
+| `AccessPointsBar->a:Lnxp;` | The Phenotype flag supplier, built in `<clinit>` from `config_max_access_points` with a `ro.com.google.ime.top_icon_num` system-property override and a default of `-1`. |
+| `…/accesspoint/widget/AccessPointsPanel` | The overflow panel. |
+| `…/accesspoint/widget/AccessPointsPanelViewPager` | `extends BidiViewPager` — the panel already pages. **The bar does not.** |
+| `Lmlh;->C(Ljava/util/List;)V` | The split. `n = min(Lmku;->b(bar.i()), size)`; `subList(0, n)` goes to the bar via `Lmhm;->m(List)`, the rest to the panel via `Lmhp;->m(List)`. |
+| `Lmku;->b(I)I` | Applies the user preference to the ceiling. |
+| `Lmjv;->a(II)I` | `pref >= 0 ? min(pref, cap) : b(cap)`. **The preference can only lower the count.** |
+| `Lmjv;->b(I)I` | `m() ? min(3, cap) : cap` — the reduced-mode floor. |
+| `Lmjr;->b(Landroid/content/Context;Z)Z` | Gboard's own "reduce your toolbar icons" flow, which writes the same preference. |
+
+Preference ids: `0x7f1409af` = `access_points_count_on_bar`, `0x7f140a43` =
+`foldable_access_points_count_on_bar`. Neither appears in any settings XML — they are written from
+code only.
+
+How the ceiling is computed, and the shape the patch anchors on:
+
+```
+44: const/4 v4, #5
+45: v2 = typedArray.getInt(2, v4)               # the style attribute on res/HNz.xml
+49: sget-object v5, AccessPointsBar->a:Lnxp;
+51: v4 = ((Long) v5.g()).intValue()
+63: if (v4 > 8 || v4 < 3) v4 = v2               # the flag is honoured only within [3, 8]
+72: iput v4, v6, ->m:I
+```
+
+`toolbarCountPatch` inserts before offset 72 and leaves the `iput` alone, so the field's obfuscated
+letter is never written down. It finds the site by walking from the single `Lnxp;->g()` call to the
+single following `iput` whose **field type** is `I` — filtering on the opcode would also match
+`->e:F` and `->f:F` at 79 and 85, since `iput` (`0x59`) covers int and float alike, and starting
+after the flag call is what excludes `->y:I` at 31.
+
+`v2` and `v5` are dead at offset 72; `v0` (the `TypedArray`), `v1`, `v3` and `v7` (the `Context`) are
+not. Offset 72 is also the start of a `try` range covering 72–86 whose handler recycles the
+`TypedArray` and rethrows — benign in both directions, since a throw propagates out of the
+constructor either way.
+
 ## Gesture and decoding
 
 | Binding | What it is |

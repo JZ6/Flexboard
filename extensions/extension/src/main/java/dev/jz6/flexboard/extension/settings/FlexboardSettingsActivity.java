@@ -61,9 +61,16 @@ import android.widget.TextView;
  * {@link #getPackageName()} is what keeps it correct after the package-rename patch, since both
  * sides resolve the same running package.
  *
- * <p>The keys must match the ones the bytecode patch reads. They are duplicated as literals in
- * <code>ScrubTuningPatch.kt</code>, because a patch-added resource has no id until aapt2 recompiles
- * and so cannot be addressed from bytecode.
+ * <p>The keys must match the ones the bytecode patches read. They are duplicated as literals in
+ * <code>ScrubTuningPatch.kt</code> and <code>ToolbarCountPatch.kt</code>, because a patch-added
+ * resource has no id until aapt2 recompiles and so cannot be addressed from bytecode.
+ * <code>check_shared_constants.py</code> fails the build when the two sides disagree.
+ *
+ * <p><b>Every section is shown whether or not its patch was applied.</b> The screen is one merged
+ * class and cannot know which patches the user ticked, so a slider for a patch that is not installed
+ * moves and stores and does nothing. Grouping by feature is what makes that legible; making it
+ * conditional would need a marker preference written at app start, which is another bytecode
+ * insertion for a cosmetic gain.
  */
 public final class FlexboardSettingsActivity extends Activity {
 
@@ -94,9 +101,28 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final int HOLD_DELAY_MAX = 300;
     private static final int HOLD_DELAY_DEFAULT = 0;
 
+    /** Must match TOOLBAR_COUNT_KEY in ToolbarCountPatch.kt. */
+    private static final String KEY_TOOLBAR_COUNT = "flexboard_toolbar_count";
+
+    /** Must match TOOLBAR_COUNT_MIN / TOOLBAR_COUNT_MAX in ToolbarCountPatch.kt. */
+    private static final int TOOLBAR_COUNT_MIN = 3;
+
+    private static final int TOOLBAR_COUNT_MAX = 10;
+
+    /**
+     * Gboard's own stock count, shown while the preference is unset.
+     *
+     * <p>Only ever displayed. The patch does not use it: it reads the preference with whatever
+     * Gboard itself computed as the default, so an untouched slider leaves the ceiling exactly where
+     * Gboard put it even if that is not this number. It is checked against the literal in
+     * `AccessPointsBar.<init>` by `tools/apk/preflight.py`, so what the slider shows stays truthful.
+     */
+    private static final int TOOLBAR_COUNT_DEFAULT = 5;
+
     private static final String TITLE = "Flexboard";
     private static final String SUBTITLE = "Swipe anywhere to delete the previous word.";
     private static final String SECTION = "Swipe to delete";
+    private static final String SECTION_TOOLBAR = "Toolbar";
 
     private static final String TAKES_EFFECT =
             "Changes apply the next time the keyboard is opened.";
@@ -238,6 +264,19 @@ public final class FlexboardSettingsActivity extends Activity {
                 HOLD_DELAY_MAX,
                 HOLD_DELAY_DEFAULT,
                 value -> value == 0 ? "Off" : value + " ms");
+
+        addSectionHeader(column, SECTION_TOOLBAR);
+
+        addSlider(
+                column,
+                KEY_TOOLBAR_COUNT,
+                "Icons on the toolbar",
+                "How many icons fit on the toolbar above the keyboard. The rest stay in the "
+                        + "overflow menu behind the chevron. More icons means narrower ones.",
+                TOOLBAR_COUNT_MIN,
+                TOOLBAR_COUNT_MAX,
+                TOOLBAR_COUNT_DEFAULT,
+                value -> Integer.toString(value));
 
         TextView footnote = new TextView(this);
         footnote.setText(TAKES_EFFECT);
