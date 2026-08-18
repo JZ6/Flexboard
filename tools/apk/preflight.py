@@ -34,6 +34,7 @@ a patch needs rewriting too.
 """
 import os
 import re
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -110,6 +111,21 @@ EXPECTED = {
     # the patch -- it reads the preference with whatever Gboard computed -- but it is the number the
     # settings slider displays while unset, so it has to stay true.
     'toolbar_stock_count': 5,
+    # ---- select all button
+    # The three resource ids Gboard's text-editing access-point seed uses together. The patch finds
+    # the seed by them and then reads the builder's setters out of it by the value each is handed,
+    # because five setters share the signature (I)V and naming one would be a bet on R8's letters.
+    'selectall_seed_literals': [0x7f080546, 0x7f140720, 0x7f141218],
+    # Gboard's own "Select all", already present for the text editing panel. Asserted because the
+    # button would otherwise be labelled with whatever the id came to mean.
+    'selectall_label': 0x7f140576,
+    'selectall_split_registers': 7,
+    'selectall_split_ins': 2,
+    'selectall_split_scratch': [0, 1, 2, 3, 4],
+    'selectall_oncreate_registers': 12,
+    # The keycode Gboard wraps a Runnable in, and the dispatcher that runs it. Two other classes
+    # test this keycode and decline it, so "something tests it" is not the check that matters.
+    'selectall_runnable_keycode': -40007,
 }
 
 # --------------------------------------------------------------------------- dex helpers
@@ -178,6 +194,42 @@ def find_instance_field(dl, type_, name):
                 return fd
         cur = sup
     return None
+
+
+def switch_keys(dex, c):
+    """Every case key of every switch in a method, including the ones no literal search can find.
+
+    A packed-switch payload stores only its *first* key and a count; the rest are implied by
+    position, so a keycode handled by one appears nowhere as a `const` and a literal search
+    reports it unhandled. That is not a hypothetical -- it is how -10086 was first, wrongly,
+    concluded to be handled, and how the -40007 dispatcher was first, wrongly, concluded absent.
+    """
+    b, keys = dex.b, set()
+    base = c['insns_off']
+    end = base + 2 * c['insns_size']
+    p = base
+    while p < end:
+        unit = struct.unpack_from('<H', b, p)[0]
+        op = unit & 0xff
+        if op == 0x00 and unit >> 8:
+            ident = unit >> 8
+            if ident == 1:                                     # packed-switch payload
+                size = struct.unpack_from('<H', b, p + 2)[0]
+                first = struct.unpack_from('<i', b, p + 4)[0]
+                keys.update(range(first, first + size))
+                n = size * 2 + 4
+            elif ident == 2:                                   # sparse-switch payload
+                size = struct.unpack_from('<H', b, p + 2)[0]
+                keys.update(struct.unpack_from(f'<{size}i', b, p + 4))
+                n = size * 4 + 2
+            else:                                              # fill-array-data
+                width = struct.unpack_from('<H', b, p + 2)[0]
+                size = struct.unpack_from('<I', b, p + 4)[0]
+                n = (size * width + 1) // 2 + 4
+            p += 2 * n
+            continue
+        p += 2 * dexlib._L[op]
+    return keys
 
 
 def body(dl, descriptor):
@@ -266,18 +318,35 @@ class Report:
         self.rows.append((bool(ok), name, detail))
         return bool(ok)
 
+    def skip(self, name, why):
+        """A check that could not run.
+
+        Deliberately not the same thing as a pass. A check that silently does not run is the
+        failure mode this tool exists to prevent, so a skip is printed and counted apart from the
+        pass total rather than being folded into it.
+        """
+        self.rows.append((None, name, why))
+        return False
+
     def finish(self):
         width = max(len(n) for _, n, _ in self.rows)
-        failed = 0
+        failed = skipped = 0
         for ok, name, detail in self.rows:
-            failed += not ok
-            line = f'{"PASS" if ok else "FAIL"}  {name:<{width}}  {detail if not ok else ""}'
-            print(line.rstrip())
-        print(f'\n{len(self.rows) - failed}/{len(self.rows)} passed')
+            if ok is None:
+                skipped += 1
+                state = 'SKIP'
+            else:
+                failed += not ok
+                state = 'PASS' if ok else 'FAIL'
+            shown = detail if ok is not True else ''
+            print(f'{state}  {name:<{width}}  {shown}'.rstrip())
+        total = len(self.rows) - skipped
+        tail = f', {skipped} skipped' if skipped else ''
+        print(f'\n{total - failed}/{total} passed{tail}')
         return failed
 
 
-def run(dl):
+def run(dl, apk=None):
     B, E = BINDINGS, EXPECTED
     store, config, delegate = B['store'], B['config'], B['delegate']
     check = Report()
@@ -665,6 +734,186 @@ def run(dl):
                 check('toolbar: the ceiling register is not borrowed as scratch',
                       ceiling not in want, f'v{ceiling} is in {want}')
 
+    # ---- select all button
+    #
+    # Both insertion points are derived structurally rather than named, so what these checks guard
+    # is the *shape* the derivation relies on -- that each one still resolves to exactly one method.
+    # A second match is as much a failure as none: the patch would pick one and give no sign.
+    seed_literals = set(E['selectall_seed_literals'])
+    keycode = E['selectall_runnable_keycode']
+    keycode_masked = keycode & 0xffffffff
+    seeds, splits, runners = [], [], []
+    for dex in dl:
+        for cls_name, _af, cls_data in dex.classes():
+            if not cls_data:
+                continue
+            for m_name, _maf, m_off in dex.class_methods(cls_data):
+                if not m_off:
+                    continue
+                try:
+                    mc = dex.code(m_off)
+                except Exception:
+                    continue
+                lits, calls = set(), []
+                for _pc, _op, mn, txt in dex.walk(mc):
+                    if mn and mn.startswith('const') and txt:
+                        try:
+                            lits.add(int(txt, 16))
+                        except ValueError:
+                            pass
+                    elif mn and mn.startswith('invoke') and txt:
+                        calls.append(txt)
+                if seed_literals <= lits:
+                    seeds.append(m_name)
+                if m_name.endswith('(Ljava/util/List;)V'):
+                    subs = calls.count('Ljava/util/List;->subList(II)Ljava/util/List;')
+                    if subs == 2 and 'Ljava/lang/Math;->min(II)I' in calls:
+                        splits.append(m_name)
+                # The dispatcher that makes the button do anything: it both sees the Runnable
+                # keycode and calls run(). Two other classes test that keycode and *decline* it,
+                # so "something mentions the keycode" would be the wrong test.
+                #
+                # The keycode reaches the real dispatcher through a packed-switch, so it is not a
+                # literal there and switch_keys is what finds it. Checking only `lits` reports the
+                # dispatcher missing on a build where it is present and working.
+                if 'Ljava/lang/Runnable;->run()V' in calls:
+                    if (keycode in lits or keycode_masked in lits
+                            or keycode in switch_keys(dex, mc)):
+                        runners.append(m_name)
+
+    check('selectall: a dispatcher turns the Runnable keycode into run()', bool(runners),
+          f'no method both sees {hex(keycode_masked)} and calls Runnable.run()')
+
+    if check('selectall: exactly one access-point seed method', len(seeds) == 1, str(seeds)):
+        c, ins = body(dl, seeds[0])
+        # The setters are told apart by the literal handed to each, so each literal must appear
+        # once. Two occurrences and the derivation picks the first, silently.
+        for want in E['selectall_seed_literals']:
+            n = sum(1 for _pc, mn, a in ins
+                    if mn.startswith('const') and re.search(r'0x[0-9a-f]+', a)
+                    and int(re.search(r'0x[0-9a-f]+', a).group(), 16) == want)
+            check(f'selectall: seed loads {hex(want)} exactly once', n == 1, f'found {n}')
+        # `args` is "{v0, v1}, Lowner;->name(...)ret" -- the descriptor is what follows the
+        # register list, so parsing has to drop that first.
+        def called(a):
+            return a.split('}, ')[-1]
+
+        builder = access_point = None
+        for _pc, mn, a in ins:
+            if mn.startswith('invoke') and '()' in called(a) and not called(a).endswith(')V'):
+                builder = called(a).split(')')[-1]
+                # The type declaring the factory is also what the build method returns, which is
+                # what the patch derives it as.
+                access_point = called(a).split('->')[0]
+                break
+        if check('selectall: the seed opens a builder', builder is not None):
+            setters = [called(a) for _pc, mn, a in ins
+                       if mn.startswith('invoke') and called(a).startswith(f'{builder}->')
+                       and called(a).endswith('(I)V')]
+            # Distinct, not merely three calls. The patch tells the icon, label and content
+            # description apart *by which setter each literal reaches*; if all three literals
+            # came to reach the same setter, counting call sites would still say three and the
+            # button would be built with two of its three properties silently unset.
+            check('selectall: it drives three distinct (I)V setters',
+                  len(set(setters)) == 3, f'found {len(set(setters))} distinct of {len(setters)}')
+            # The very ambiguity the derivation exists to route around -- if this ever drops to
+            # one, naming the setter would have been safe and this machinery is over-built.
+            d_b, sup_b, cd_b = find_class(dl, builder)
+            if check('selectall: the builder class is present', d_b is not None):
+                same = [m for m, _a, _o in d_b.class_methods(cd_b) if m.endswith('(I)V')]
+                check('selectall: (I)V is still ambiguous on the builder', len(same) > 1,
+                      f'only {len(same)}: naming it would now be safe')
+                # Mirrors the patch's soleBuilderMethod assertions. All four, not three -- the
+                # build method is as much a derivation as the setters, and leaving it out means a
+                # Gboard bump that grows a sibling returning the access-point type reports green
+                # here and throws at apply time.
+                for sig, what in (('(Ljava/lang/String;)V', 'id setter'),
+                                  ('(Ljava/lang/Runnable;)V', 'action setter'),
+                                  ('(Ljava/lang/String;Ljava/lang/Object;)V', 'extras setter'),
+                                  (f'(){access_point}', 'build method')):
+                    n = sum(1 for m, _a, _o in d_b.class_methods(cd_b) if m.endswith(sig))
+                    check(f'selectall: exactly one {what} on the builder', n == 1, f'found {n}')
+
+                # The other half of the mechanism: the action setter is what bakes the keycode the
+                # dispatcher above switches on. If it stops doing that, the button still builds
+                # and still renders, and tapping it does nothing at all.
+                action = next((m for m, _a, _o in d_b.class_methods(cd_b)
+                               if m.endswith('(Ljava/lang/Runnable;)V')), None)
+                if check('selectall: the builder has a Runnable setter to inspect', action):
+                    _ac, a_ins = body(dl, action)
+                    lits = set()
+                    for _pc, mn, a in a_ins or []:
+                        m = re.search(r'#(-?0x[0-9a-f]+|-?\d+)', a)
+                        if mn.startswith('const') and m:
+                            lits.add(int(m.group(1), 0) & 0xffffffff)
+                    check('selectall: the action setter still bakes the Runnable keycode',
+                          keycode_masked in lits,
+                          f'{hex(keycode_masked)} not among {sorted(hex(x) for x in lits)}')
+
+    # The label id is the one fact this feature rests on that has NO anchor in the dex: unlike the
+    # icon, 0x7f140576 has zero const sites, because nothing in stock Gboard loads it the way the
+    # patch does. So it cannot be checked without the resource table, and until the APK argument
+    # existed this constant sat in EXPECTED asserted by nothing while its comment claimed
+    # otherwise. A bump renumbers string resources, and the button would ship labelled with
+    # whatever the id came to mean.
+    if apk is None:
+        check.skip('selectall: the label id still reads "Select all"',
+                   'no APK given; pass one as the second argument to check resource ids')
+    else:
+        try:
+            import zipfile
+
+            import arsc
+            table = arsc.load(zipfile.ZipFile(apk).read('resources.arsc'))
+            label = table.value(E['selectall_label'])
+            check('selectall: the label id still reads "Select all"', label == 'Select all',
+                  f'{hex(E["selectall_label"])} now reads {label!r}')
+            icon = table.name(E['selectall_seed_literals'][0])
+            check('selectall: the icon id is still a drawable',
+                  str(icon).startswith('drawable/'), f'reads {icon!r}')
+        except Exception as exc:
+            check('selectall: the label id still reads "Select all"', False,
+                  f'could not read resources from {apk}: {exc}')
+
+    if check('selectall: exactly one access-points split method', len(splits) == 1, str(splits)):
+        c, ins = body(dl, splits[0])
+        check('selectall: the split register count',
+              c['registers'] == E['selectall_split_registers'], f'got {c["registers"]}')
+        check('selectall: the split parameter words',
+              c['ins'] == E['selectall_split_ins'], f'got {c["ins"]}')
+        free = live_free(ins, c['registers'], 0)
+        want = E['selectall_split_scratch']
+        check('selectall: the scratch registers are dead at the split entry',
+              all(r in free for r in want), f'free={free} want={want}')
+        # The list parameter is substituted wholesale at entry, so it has to still be genuinely an
+        # input: some path must read it before writing it.
+        #
+        # "Never written" is the wrong test and fails here for a benign reason. The method opens
+        # with an early return taken when the bar view is null, and that path reuses the parameter
+        # register as scratch before returning -- it never reads the list at all. Backward liveness
+        # over the real CFG answers the question that actually matters, and answers it soundly:
+        # if the parameter is live at entry, every path that reads it reads what was passed in.
+        p1 = c['registers'] - c['ins'] + 1
+        check('selectall: the list parameter is live at entry', p1 not in free,
+              f'v{p1} is dead at entry, so substituting it would reach nothing')
+
+    # Read superclasses straight out of each class_def rather than resolving every class through
+    # find_class, which is a scan per class and turns this into minutes.
+    imes = []
+    for dex in dl:
+        for i in range(dex.cls_n):
+            ci, _af, su, _io, _sf, _ao, _cd, _sv = struct.unpack_from(
+                '<8I', dex.b, dex.cls_o + 32 * i)
+            if su != 0xffffffff and dex.type(su) == 'Landroid/inputmethodservice/InputMethodService;':
+                imes.append(dex.type(ci))
+    if check('selectall: exactly one InputMethodService subclass', len(imes) == 1, str(imes)):
+        c, ins = body(dl, f'{imes[0]}->onCreate()V')
+        if check('selectall: it declares onCreate()V', ins is not None):
+            check('selectall: its register count',
+                  c['registers'] == E['selectall_oncreate_registers'], f'got {c["registers"]}')
+            free = live_free(ins, c['registers'], 0)
+            check('selectall: v0 is dead at onCreate entry', 0 in free, f'free={free}')
+
     # ---- forced preferences and flick symbols share this hook
     c, _ = body(dl, f'{LATIN_APP}->d({store})V')
     check('prefs: applyPreferenceValues exists', c is not None)
@@ -693,16 +942,19 @@ def run(dl):
 
 
 def main():
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
         print(__doc__.strip().split('## Use')[1].split('## Updating')[0].strip(), file=sys.stderr)
         return 2
     tree = sys.argv[1]
+    # Optional, because most checks only need the dex. The resource ids a patch emits cannot be
+    # checked without it, and those checks report SKIP rather than passing when it is absent.
+    apk = sys.argv[2] if len(sys.argv) == 3 else None
     dl = dexlib.load(tree)
     if not dl:
         print(f'no .dex files in {tree}', file=sys.stderr)
         return 2
     print(f'{len(dl)} dex files from {tree}\n')
-    return 1 if run(dl) else 0
+    return 1 if run(dl, apk) else 0
 
 
 if __name__ == '__main__':

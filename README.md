@@ -158,6 +158,20 @@ It is always on when the patch is applied. Swiping right after a delete did noth
 Gboard, so nothing is being taken away by giving it a meaning — and Gboard fills the same undo slot
 when you swipe on the backspace key, so it works there too.
 
+## Select all
+
+Adds a **Select all** button to the toolbar above the keyboard. One tap selects everything in the
+text field.
+
+Gboard can already do this, behind its **Text editing** toolbar button — open that panel, then tap
+select all. This is the same action without the panel.
+
+The button takes the first slot on the toolbar, which pushes whatever used to be last into the
+overflow menu behind the chevron. Long-press the toolbar to reorder it like any other button.
+
+It borrows the text editing panel's icon, because Gboard ships no select-all icon of its own and
+Flexboard adds no images. The label is Gboard's own "Select all".
+
 ## Flick keys for symbols
 
 Gboard can already enter a key's hinted symbol when you pull down on it — **Flick keys to enter

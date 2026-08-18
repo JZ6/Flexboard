@@ -79,6 +79,42 @@ hardcoded `const`. It was rejected because that key can only *lower* the count b
 because Gboard's own "reduce your toolbar icons" flow (`Lmjr;->b`) writes to it and would silently
 overwrite the user's choice, and because a value written there outlives the patch.
 
+## Why the select-all button carries a Runnable rather than a keycode
+
+Every other button on Gboard's toolbar works by emitting a keycode, so the obvious build is a button
+emitting `TEXT_EDITING_SELECT_ALL`. That button would render, press, highlight, and do nothing.
+
+`TEXT_EDITING_SELECT_ALL` is -10086, and the number appears exactly **once** in the app: as an entry
+in the map that resolves `<key_code>` when Gboard parses keyboard XML. Two packed-switches cover it
+and neither acts on it — one is a classifier, the other is metrics. The only implementation lives in
+the text-editing keyboard's own consume-event hook, so it runs only while that panel is open.
+
+Undo is what makes this counter-intuitive, and it is why the assumption survived as long as it did.
+Undo is also a "text editing" keycode, Flexboard's undo works from anywhere, and the difference is
+invisible from outside: undo is consumed at *IME* level by four separate handlers, and select-all by
+none. Reasoning from undo to select-all gives the wrong answer.
+
+What the button uses instead is a Gboard mechanism that is genuinely global: the access-point
+builder's `Runnable` setter, which does not store a field but wraps the Runnable as key data under
+keycode **-40007** — and *that* is dispatched at IME level. So the button carries code rather than
+an instruction, and the code calls `performContextMenuAction(selectAll)` on the input connection,
+which is what Gboard's own panel does.
+
+**Nothing is published or registered**, which is the part worth recording because a lot of work went
+into the route that is not used. Gboard's access-point providers build notification objects and
+store them in fields, and what later publishes them was never established — that question blocked
+the feature for a while. It turned out to be avoidable: the method that splits the ordered list into
+"on the bar" and "in the overflow" takes that list **as a parameter** and only reads it. Substituting
+a longer list at entry adds a button, and the whole notification machinery is bypassed.
+
+**The builder's setters are derived, not named.** Five of them share the signature `(I)V`. That is
+exactly the shape behind this project's worst bug — `AbstractIme->s` was the undo re-commit on
+17.7.7, and on 18 a *different* method inherited `s` with the same signature. So the setters are
+read out of Gboard's own text-editing seed method, identified by the value each one is handed: the
+one given a drawable id is the icon, the two given string ids are the label and the content
+description. `preflight.py` asserts that `(I)V` is still ambiguous there — if it ever stops being,
+this machinery is over-built and can go.
+
 ## Why undo is Gboard's own, not a reimplementation
 
 The first estimate for the feature assumed Flexboard would have to capture the deleted text and
