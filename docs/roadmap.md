@@ -4,6 +4,12 @@ Ideas, in no particular order and with no promises. Kept verbatim as written.
 
 update settings to match rest of gboard
 
+some settings disabled like grammer check and ai writing tools
+
+
+max tool icon slider isnt working, i dont see amount of tools changing, also do we still need the hold delay slider?
+
+
 can we make the backspace swipe work as before without being limited to max 1 word delete
 
 flick up to undo autocorrect 

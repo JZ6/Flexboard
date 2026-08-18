@@ -69,14 +69,28 @@ template instantiation does **not** share git ancestry, so there is no merge bas
 `git pull` from upstream is not available at any price. Picking up a template improvement means
 comparing a file and porting the change by hand.
 
+The history rewrite of 2026-08-17 made that doubly true: every commit here was re-hashed, so even
+the root commit no longer matches upstream's by object id. File comparison is the only mechanism.
+
 ```bash
 git remote add template https://github.com/MorpheApp/morphe-patches-template.git   # once
 git fetch template
-git diff template/main -- gradle/libs.versions.toml
+
+# Sort every template file into identical / differing / absent-here.
+git ls-tree -r template/main --name-only | while read -r f; do
+    if   [ ! -e "$f" ];                                       then echo "absent    $f"
+    elif git diff --quiet template/main -- "$f" 2>/dev/null;  then echo "identical $f"
+    else                                                           echo "differs   $f"; fi
+done | sort
 ```
 
-Which makes the list below the useful thing: an empty diff for anything in the first group means
-there is nothing to port.
+Which makes the four lists below the useful thing. Run the sweep, then read each name off them:
+anything `identical` in the first group needs nothing; anything `differs` or `absent` should already
+be accounted for by the second, third or fourth. **A name the lists do not mention is the only real
+output** — that is a template change nobody has triaged yet.
+
+As of the last sweep the counts were 13 identical, 13 differing and 9 absent, and every one of the
+22 non-identical files is named below.
 
 **Upstream's — keep byte-identical.** These are deliberately untouched so a future comparison is a
 clean yes/no. `gradle/libs.versions.toml` is the busiest file in the template's history, and
@@ -109,6 +123,31 @@ version, which upstream bumps and this project should follow.
 
 **Generated, never hand-edited:** `patches-bundle.json`, `patches-list.json`, `CHANGELOG.md`, and
 the `README.md` block between the `PATCHES_START` and `PATCHES_END` markers.
+
+**Absent on purpose — do not restore.** These exist upstream and are missing here by decision, which
+a sweep cannot distinguish from an oversight. That is exactly the trap this group exists to close: a
+sync that "helpfully" puts them back would reintroduce the release pipeline this project removed.
+
+| | |
+|---|---|
+| `.releaserc`, `package.json`, `package-lock.json` | semantic-release config. See [`releasing.md`](releasing.md) for why versions are chosen by hand |
+| `.github/workflows/open_pull_request.yml` | Opens a dev→main PR. Stable is promoted by fast-forward so the two branches keep identical history; a merge commit would break that |
+| `patches/.../app/template/patches/example/*.kt`, `extensions/.../app/template/.../ExamplePatch.java`, `patches/.../app/template/patches/shared/Constants.kt` | Template examples, replaced by the `dev/jz6/` tree |
+
+One deletion is easy to miss because it is a *fragment* rather than a file: `patches/build.gradle.kts`
+upstream ends with a `publish { dependsOn("generatePatchesList") }` block, and it is gone here.
+Restoring it re-runs `jar` after `buildAndroid` has merged `classes.dex` into it, which silently
+produces a bundle that offers zero patches on device — the bug that shipped in v0.0.0 through
+v1.0.0.
+
+### Sync log
+
+Kept because "is this file behind, or did we change it on purpose?" is unanswerable from the diff
+alone once a few months have passed.
+
+| When | Taken | Notes |
+|---|---|---|
+| 2026-08-17 | Gradle wrapper 9.6.1 → 9.7.0 (`gradle-wrapper.jar`, `.properties`, `gradlew`, `gradlew.bat`) | The only genuine delta. `libs.versions.toml` was already byte-identical and the `app.morphe.patches` pin already matched at 1.3.3, so patcher and plugin needed nothing. All 13 differing files were confirmed deliberate. |
 
 ## Building
 
