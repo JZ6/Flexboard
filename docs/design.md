@@ -3,11 +3,15 @@
 Why Flexboard behaves the way it does. The [README](../README.md) says what it does; this is the
 reasoning behind the choices a user would otherwise have to guess at.
 
-## Why the three swipe sliders do not default to Gboard's values
+## What the three swipe sliders default to, and why
 
-**Swipe length, 36% rather than 100%.** Gboard's stock distance assumes a thumb travelling from the
-backspace key and back — the whole journey this patch exists to remove. A gesture that starts under
-your thumb wants a shorter one.
+**Swipe length, 100% — Gboard's own.** This shipped at 36% up to `1.1.0-dev.1`, reasoning that
+Gboard's distance assumes a thumb travelling from the backspace key and back, which is the whole
+journey this patch exists to remove, so a gesture starting under your thumb wants a shorter one.
+The reasoning is sound and the number was too aggressive: at 36% an ordinary swipe crosses three or
+four thresholds, and the word cap is then doing the work of hiding it. Shipping Gboard's own
+distance makes the gesture behave exactly like the one people already know, and leaves shortening it
+to anyone who wants that.
 
 **Max words per swipe, 1 rather than no limit.** One word per swipe makes each deletion deliberate
 rather than a run that then has to be swiped back.
@@ -17,13 +21,19 @@ makes it feel like a press-and-drag rather than a flick. Zero is not an improvem
 as continuity: it is what Flexboard did before the delay was adjustable at all, so existing installs
 keep the feel they had.
 
-All three are sliders precisely because that is a preference and not a fact — 100%, 10 and 200 ms
-put every one of them back to Gboard's own.
+All three are sliders precisely because that is a preference and not a fact. Only two now differ
+from Gboard's own, and 10 and 200 ms put those back.
 
-Neither could be changed by editing one number, because each of those two numbers was doing two jobs
-— the default *and* a control-flow sentinel, at which the scaling or the clamp is skipped. Setting
-the default to the sentinel value would have made the chosen setting the one setting that does
-nothing. They are now four constants rather than two; `ScrubTuningPatch.kt` documents each.
+**Neither of those two defaults could be moved by editing one number**, because each number was
+doing two jobs — the default *and* a control-flow sentinel, at which the scaling or the clamp is
+skipped. Setting a default to its sentinel value makes the chosen setting the one setting that does
+nothing. They are four constants rather than two for that reason, and `ScrubTuningPatch.kt`
+documents each.
+
+Swipe length is the worked example, in both directions. Moving it off 100 is what forced the split
+in the first place; moving it back to 100 has made `STEP_SCALE_DEFAULT` and `STEP_SCALE_IDENTITY`
+hold the same number again, which looks redundant and is not. Collapsing them would silently
+re-arm the trap the next time the default moves.
 
 ## Why the toolbar count is a slider when hold delay nearly was not
 

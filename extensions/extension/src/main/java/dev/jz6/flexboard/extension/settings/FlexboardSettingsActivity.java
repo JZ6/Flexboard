@@ -84,7 +84,7 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final int STEP_SCALE_MIN = 25;
     private static final int STEP_SCALE_MAX = 300;
     /** Must match STEP_SCALE_DEFAULT in ScrubTuningPatch.kt. */
-    private static final int STEP_SCALE_DEFAULT = 36;
+    private static final int STEP_SCALE_DEFAULT = 100;
 
     private static final int MAX_WORDS_MIN = 1;
     /**

@@ -93,7 +93,7 @@ the swipe-anywhere gesture; the backspace key keeps Gboard's own behaviour, see 
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Swipe length** | 36% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe. |
+| **Swipe length** | 100% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe. |
 | **Max words per swipe** | 1 | The most words one swipe can delete. At 1 a swipe deletes a single word however far it travels; 10 means no limit. Swiping back still restores. |
 | **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
 
@@ -101,8 +101,9 @@ The screen also carries **Icons on the toolbar**, which belongs to the Bigger To
 described [further down](#bigger-toolbar).
 
 Every value is read out of Gboard's own preference store, so there is no separate settings app and
-nothing to keep in sync. Setting the three above to 100%, 10 and 200 ms puts each back to Gboard's
-own value; why they do not start there is in [`docs/design.md`](docs/design.md).
+nothing to keep in sync. Swipe length already ships at Gboard's own distance; setting the other two
+to 10 and 200 ms puts those back as well, and why they do not start there is in
+[`docs/design.md`](docs/design.md).
 
 Changes are not instant: a new setting is picked up the next time the keyboard is opened.
 

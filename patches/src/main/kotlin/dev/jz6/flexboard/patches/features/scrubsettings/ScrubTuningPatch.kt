@@ -100,17 +100,25 @@ internal const val HOLD_DELAY_KEY = "flexboard_scrub_hold_ms"
 internal const val MAX_WORDS_KEY = "flexboard_max_words"
 
 /**
- * Percent of Gboard's own swipe distance. A shorter swipe per word is the point of the gesture —
- * Gboard's stock distance assumes a thumb travelling from the backspace key, which is exactly the
- * journey this patch removes.
+ * Percent of Gboard's own swipe distance. Ships at Gboard's own value, so the gesture is the one
+ * Gboard built and the slider is what shortens it — a shorter swipe per word is available to anyone
+ * who wants it, rather than assumed for everyone.
+ *
+ * This was 36 up to `1.1.0-dev.1`, on the reasoning that Gboard's distance assumes a thumb
+ * travelling from the backspace key and a gesture starting under your thumb wants less. That is
+ * sound in principle and turned out to be too aggressive in practice.
  */
-internal const val STEP_SCALE_DEFAULT = 36
+internal const val STEP_SCALE_DEFAULT = 100
 
 /**
  * The percentage at which scaling is a no-op, so the table is left alone rather than multiplied by
- * 1.0. **Not the default**: these were one constant until the default moved off 100, at which point
- * sharing them would have made the new default mean "do nothing" — the one value asked for being the
- * one value with no effect.
+ * 1.0.
+ *
+ * **Deliberately a separate constant from [STEP_SCALE_DEFAULT] even though the two now hold the same
+ * number.** They were one constant once; when the default moved off 100 that made the sentinel
+ * follow it, so the one value the user had asked for became the one value with no effect. The
+ * default has since come back to 100, which makes them look redundant — they are not. Splitting
+ * them is what lets the default move again without dragging the sentinel along.
  */
 internal const val STEP_SCALE_IDENTITY = 100
 
