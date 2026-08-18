@@ -1,3 +1,11 @@
+# [1.1.0-dev.1](https://github.com/JZ6/Flexboard/compare/v1.0.1-dev.2...v1.1.0-dev.1) (2026-08-18)
+
+* **Gboard:** bump to 1.1.0-dev.1
+* **Gboard:** make the toolbar's icon count adjustable
+* **Gboard:** keep Gboard's own behaviour for swipes from the backspace key
+* **Gboard:** update the roadmap
+* **Gboard:** remove the master and undo switches
+
 # [1.0.1](https://github.com/JZ6/Flexboard/compare/v1.0.1-dev.2...v1.0.1) (2026-08-18)
 
 * **Gboard:** 1.0.1 release
