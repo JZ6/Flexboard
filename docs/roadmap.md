@@ -16,6 +16,8 @@ gesture down on a to select all
 
 tool bar amount used to be different between inner and outer screen of a fold
 
+use graph 6 material icon for fleksy settings
+
 add select all copy paste hotkeys
 
 increased tool bar size fit more buttons
@@ -33,6 +35,11 @@ The list above is kept as written; this notes which of it has landed, rather tha
   `1.1.0-dev.2`, rebuilt against the right target: it had been raising the bar's *capacity*, which
   the count is computed from but not bound by. The count itself is now overridden, above both of the
   gates that were discarding the capacity. Also covers **max tool icon slider isnt working**.
+
+- **tool bar amount used to be different between inner and outer screen of a fold** — it was, and
+  the first cut of *Bigger Toolbar* flattened it: Gboard picks its count preference by device class,
+  a fold changes class when it opens, and overriding at entry returned before that choice. There are
+  now two sliders, the second applying only while unfolded and falling back to the first.
 
 - **add select all copy paste hotkeys** — partly. *Select All Button* puts a one-tap **Select all**
   on the toolbar. Copy, cut and paste are not built; the mechanism now exists for them, so they are

@@ -43,6 +43,7 @@ PAIRS = [
     # either side had to agree on. The bounds are shared, because the patch rejects anything outside
     # them and the slider is what has to stay inside them.
     ("TOOLBAR_COUNT_KEY", "KEY_TOOLBAR_COUNT"),
+    ("TOOLBAR_COUNT_UNFOLDED_KEY", "KEY_TOOLBAR_COUNT_UNFOLDED"),
     ("TOOLBAR_COUNT_MIN", "TOOLBAR_COUNT_MIN"),
     ("TOOLBAR_COUNT_MAX", "TOOLBAR_COUNT_MAX"),
 ]

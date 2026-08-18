@@ -116,6 +116,10 @@ EXPECTED = {
     # the capacity the constructor writes -- and unusually good for one, because it does not merely
     # locate a method, it says in Google's own words what the value returned there is.
     'toolbar_count_log': 'oldVisibleCountOnBar %d, currentVisibleCountOnBar %d, definedCountOnBar %d',
+    # Gboard's own name for the device class an open fold reports. The enum's <clinit> hands it to
+    # each constant's constructor as a literal, and R8 rewrites the field but never the string, so
+    # this is what tells the foldable constant apart from DEVICE_TABLET sitting next to it.
+    'toolbar_foldable_name': 'DEVICE_FOLDABLE',
     'toolbar_count_registers': 5,
     'toolbar_count_ins': 2,
     'toolbar_count_scratch': [0, 1, 2],
@@ -798,6 +802,35 @@ def run(dl, apk=None):
                       f'{locals_} locals, insertion needs {len(E["toolbar_count_scratch"])}')
                 this_reg = c['registers'] - c['ins']
                 capacity_reg = c['registers'] - 1
+                # The device-class branch the unfolded override rides on. Gboard picks its own
+                # preference key from device class, and a fold changes class when it opens, so this
+                # is what makes the inner and outer screens separately configurable.
+                sgets = [a for _pc, mn, a in ins if mn == 'sget-object']
+                if check('toolbar: one enum constant chooses the preference key',
+                         len(sgets) == 1, f'found {len(sgets)}'):
+                    mode_type = sgets[0].rsplit(':', 1)[-1].strip()
+                    constant = sgets[0].split(', ')[-1].strip()
+                    # Resolved by name out of the enum's <clinit>, never by its letter: R8 rewrites
+                    # the field and leaves the string. A letter that moved onto DEVICE_TABLET would
+                    # put the override on the wrong screens and nothing else would notice.
+                    _cc, cins = body(dl, f'{mode_type}-><clinit>()V')
+                    named = next((i for i, (_pc, _mn, a) in enumerate(cins or [])
+                                  if E['toolbar_foldable_name'] in a), None)
+                    if check(f'toolbar: {mode_type} names {E["toolbar_foldable_name"]}',
+                             named is not None):
+                        stored = next((a for _pc, mn, a in cins[named:]
+                                       if mn == 'sput-object' and a.rstrip().endswith(mode_type)),
+                                      None)
+                        check('toolbar: the key branch tests the foldable constant',
+                              stored is not None and stored.split(', ')[-1].strip() == constant,
+                              f'branch tests {constant}, foldable is {stored}')
+                    modes = [a for _pc, mn, a in ins
+                             if mn == 'iget-object' and a.rstrip().endswith(f':{mode_type}')]
+                    if check('toolbar: one device-mode field read', len(modes) == 1,
+                             f'found {len(modes)}'):
+                        check('toolbar: the device mode is read off the receiver',
+                              regs(modes[0])[1] == this_reg,
+                              f'read off v{regs(modes[0])[1]}, receiver is v{this_reg}')
                 # What makes this the method that *finishes* the calculation rather than a step
                 # inside it. Insert before the gate and the value goes back where Gboard's own
                 # count preference and its reduced mode can each override it.

@@ -98,8 +98,8 @@ the swipe-anywhere gesture; the backspace key keeps Gboard's own behaviour, see 
 | **Max words per swipe** | 1 | The most words one swipe can delete. At 1 a swipe deletes a single word however far it travels; 10 means no limit. Swiping back still restores. |
 | **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
 
-The screen also carries **Icons on the toolbar**, which belongs to the Bigger Toolbar patch and is
-described [further down](#bigger-toolbar).
+The screen also carries **Icons on the toolbar** and **Icons when unfolded**, which belong to the
+Bigger Toolbar patch and are described [further down](#bigger-toolbar).
 
 Every value is read out of Gboard's own preference store, so there is no separate settings app and
 nothing to keep in sync. Swipe length already ships at Gboard's own distance; setting the other two
@@ -216,10 +216,11 @@ clips or crashes — the icons just get tight, and on a narrow phone 12 will be 
 Drag-to-reorder and long-press-to-customise keep working at every setting; this only changes where
 the line between the bar and the overflow menu falls.
 
-**On a foldable, both screens get the same number.** Gboard keeps two counts, one for folded and one
-for unfolded, so its toolbar differs between the inner and outer screen. Flexboard's slider is a
-single value and overrides both. If you fold, that is a change from stock and not an improvement —
-it is on the list.
+**On a foldable, the two screens keep their own counts.** Gboard already works this way — the inner
+screen is wider and fits more — so Flexboard's settings carry a second slider, **Icons when
+unfolded**, that applies only while the phone is open. Leave it alone and the main slider covers
+both screens; move it and the inner screen gets its own number. On anything that does not fold the
+second slider does nothing.
 
 This shipped once before, in `1.1.0-dev.1`, and did nothing — it moved the ceiling rather than the
 count. If you tried it then, it is a different patch now.

@@ -14,6 +14,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import com.android.tools.smali.dexlib2.iface.reference.StringReference
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE
 import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
 import dev.jz6.flexboard.patches.features.scrubdelete.checkPreferenceStorePins
@@ -112,22 +113,39 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * than naming a field. The preference store on the controller is obfuscated too, and is read back
  * out of the very method being patched — the sole field it touches of the store's type.
  *
- * ## One number for both halves of a fold, and that is a change
+ * ## The two screens of a fold keep their own counts
  *
- * The method this patches opens by choosing *which* preference to read from device posture: unfolded
- * it reads `foldable_access_points_count_on_bar`, otherwise `access_points_count_on_bar`. Gboard
- * therefore keeps **two** counts and a foldable gets a different toolbar on its inner and outer
- * screens, which is the right behaviour — the two screens are not the same width.
+ * The method this patches opens by choosing *which* preference to read, from the **device class**
+ * Gboard has decided it is running on: `foldable_access_points_count_on_bar` when that class is
+ * `DEVICE_FOLDABLE`, `access_points_count_on_bar` otherwise. It is worth being exact that this is a
+ * device class and not a fold posture — the enum's other constants are `DEVICE_PHONE`,
+ * `DEVICE_TABLET`, `DEVICE_TV`, `DEVICE_WATCH` and so on. What makes it behave like a posture is
+ * that the class is *live*: it comes from `DeviceModeNotification.getCurrentDeviceMode`, an
+ * observable, and the listener that receives changes writes the field and refreshes the bar. Open a
+ * fold and the class changes, so the key changes.
  *
- * Overriding at entry returns before that choice is made, so Flexboard's single slider now applies
- * to both. On a foldable this is a regression against stock, and `docs/roadmap.md` records it as
- * noticed on a device rather than deduced here.
+ * The first version of this patch overrode at entry and returned before that choice was made, which
+ * gave one number to both screens. That was a regression against stock rather than a feature, and
+ * it was noticed on a device rather than deduced here.
  *
- * Fixing it is not hard and is deliberately not done yet, because it is a product decision before it
- * is a technical one: it needs a second preference key, a second slider, and an answer to what an
- * unset second value should mean. The mechanism is already in front of us — read the posture field
- * the way the stock code does and pick between two keys — so it costs one `iget-object` and a
- * branch, not new research.
+ * So the override is now made twice. On `DEVICE_FOLDABLE` the unfolded key is tried first, and
+ * anything unusable falls through to the main key, which falls through to Gboard's own:
+ *
+ * ```
+ * foldable ? (unfolded ?: main ?: stock) : (main ?: stock)
+ * ```
+ *
+ * **The chain matters more than the second slider does.** The obvious alternative — each screen
+ * falling independently to stock — means setting the main slider changes one screen and leaves the
+ * other alone, which is incoherent on the overwhelming majority of devices, where there is no other
+ * screen. This way the main slider is the setting and the second is an override for the one screen
+ * that might want a different one.
+ *
+ * `DEVICE_FOLDABLE` is resolved by **name**, out of the enum's own `<clinit>`, where the constant is
+ * handed its literal name before being stored. Reading the `sget-object` alone would be a bet that
+ * this branch still tests the foldable class rather than, say, the tablet constant declared beside
+ * it — a letter moving between enum constants is the `AbstractIme->s` failure wearing different
+ * clothes, and it would put the override on the wrong screens with nothing to notice.
  *
  * ## On a device
  *
@@ -220,6 +238,24 @@ private const val MAX_ACCESS_POINTS_FLAG = "config_max_access_points"
 internal const val TOOLBAR_COUNT_KEY = "flexboard_toolbar_count"
 
 /**
+ * The override that applies only while the device presents as a foldable — in practice, the large
+ * inner screen of an open fold.
+ *
+ * Separate from [TOOLBAR_COUNT_KEY] because Gboard's own count is per device class and a fold
+ * changes class when it opens, so one number for both screens is a change from stock rather than a
+ * feature. **Duplicated in `FlexboardSettingsActivity`** for the same reason as the key above, and
+ * kept in step by the same check.
+ */
+internal const val TOOLBAR_COUNT_UNFOLDED_KEY = "flexboard_toolbar_count_unfolded"
+
+/**
+ * Gboard's own name for the device class an open fold reports, as written in the enum's `<clinit>`.
+ *
+ * The string is the anchor, not the field: R8 rewrites every name in that class except this one.
+ */
+private const val DEVICE_FOLDABLE = "DEVICE_FOLDABLE"
+
+/**
  * The slider's range, and the bounds a stored value has to fall within to be used at all.
  *
  * Three is Gboard's own floor, and the count its reduced mode drops to regardless. Twelve is well
@@ -245,6 +281,16 @@ internal const val TOOLBAR_COUNT_MAX = 12
 private const val UNSET_COUNT = "-0x1"
 
 private const val STOCK_COUNT_LABEL = "flexboard_stock_count"
+
+/**
+ * Where the unfolded override falls to when it is unset, out of range, or the device is not a fold.
+ *
+ * The fallback runs **override → main slider → Gboard's own**, rather than each screen falling
+ * independently to stock. It is the difference between "the slider is the setting, and the big
+ * screen can differ if you say so" and "setting one slider changes one screen" — and only the first
+ * behaves sensibly for the overwhelming majority of devices, which have no second screen at all.
+ */
+private const val MAIN_COUNT_LABEL = "flexboard_main_count"
 
 /** A `35c` invoke addresses its registers in 4-bit nibbles, so v15 is the highest usable one. */
 private const val PACKED_INVOKE_REGISTER_LIMIT = 16
@@ -423,43 +469,122 @@ private fun MutableMethod.overrideCountFromPreference(context: BytecodePatchCont
         "Scratch registers $DEFINED_COUNT_SCRATCH_REGISTERS do not all fit a 35c invoke's nibbles"
     }
 
-    // The store, read out of the method being patched rather than named. Exactly one field of that
-    // type is touched here, and it is declared on the receiver's own class — which is what makes
-    // `iget-object … p0` type-correct, without resolving anything on the class itself. Which
-    // register Gboard's own read uses does not matter; preflight asserts it is p0 there too, as a
-    // consistency check rather than a requirement of this emission.
-    val storeReads = instructions.filter {
-        it.opcodeName() == "IGET_OBJECT" && it.fieldReferenceOrNull()?.type == PREFERENCE_STORE
-    }
-    check(storeReads.size == 1) {
-        "Expected exactly one $PREFERENCE_STORE field read in ${toDescriptor()}, found " +
-            "${storeReads.size} — the preference store is no longer reachable from the receiver"
-    }
-    val storeField = storeReads.single().fieldDescriptor()
-    check(storeField.substringBefore("->") == definingClass) {
-        "$storeField is read off something other than the receiver in ${toDescriptor()}, so it " +
-            "cannot be reached with `iget-object … p0`"
-    }
+    // Both fields are read out of the method being patched rather than named, and both are declared
+    // on the receiver's own class — which is what makes `iget-object … p0` type-correct without
+    // resolving anything on the class itself. Which register Gboard's own reads use does not matter;
+    // preflight asserts they are p0 there too, as a consistency check rather than a requirement.
+    val storeField = soleFieldReadOfType(PREFERENCE_STORE, "the preference store")
+    val foldable = resolveFoldableDeviceMode(context)
+    val modeField = soleFieldReadOfType(foldable.enumType, "the device mode")
 
     val (store, bound, fallback) = DEFINED_COUNT_SCRATCH_REGISTERS
     val entry = instructions.first()
 
-    addInstructionsWithLabels(
-        0,
+    // Reading a preference and returning it if it is usable, twice over: once for the unfolded
+    // override and once for the main value. Emitted from one place so the two cannot drift, which
+    // matters because the range check is what distinguishes "unset" from "set".
+    fun read(key: String, orElse: String) =
         """
             iget-object v$store, p0, $storeField
-            const-string v$bound, "$TOOLBAR_COUNT_KEY"
+            const-string v$bound, "$key"
             const/4 v$fallback, $UNSET_COUNT
             invoke-virtual { v$store, v$bound, v$fallback }, $getInt
             move-result v$store
             const/16 v$bound, $TOOLBAR_COUNT_MIN
-            if-lt v$store, v$bound, :$STOCK_COUNT_LABEL
+            if-lt v$store, v$bound, :$orElse
             const/16 v$bound, $TOOLBAR_COUNT_MAX
-            if-gt v$store, v$bound, :$STOCK_COUNT_LABEL
+            if-gt v$store, v$bound, :$orElse
             return v$store
+        """
+
+    addInstructionsWithLabels(
+        0,
+        """
+            iget-object v$store, p0, $modeField
+            sget-object v$bound, ${foldable.constant}
+            if-ne v$store, v$bound, :$MAIN_COUNT_LABEL
+            ${read(TOOLBAR_COUNT_UNFOLDED_KEY, MAIN_COUNT_LABEL)}
+            :$MAIN_COUNT_LABEL
+            ${read(TOOLBAR_COUNT_KEY, STOCK_COUNT_LABEL)}
         """,
         ExternalLabel(STOCK_COUNT_LABEL, entry),
     )
+}
+
+/** The enum type Gboard classifies devices with, and its `DEVICE_FOLDABLE` constant. */
+private data class FoldableDeviceMode(val enumType: String, val constant: String)
+
+/**
+ * Resolves `DEVICE_FOLDABLE` by **name**, which is the one thing about it R8 cannot touch.
+ *
+ * The count method compares a field against a single enum constant, and that comparison is what
+ * picks the preference key. Taking the constant from the `sget-object` alone would be a bet that
+ * this is still the foldable branch and not, say, a tablet one — a letter moving between enum
+ * constants is precisely the `AbstractIme->s` failure with different names on it.
+ *
+ * So the letter is checked against the enum's own `<clinit>`, where `Enum(String name, int ordinal,
+ * …)` is handed the literal `DEVICE_FOLDABLE` immediately before the `sput-object` that stores it.
+ * Class, method and field names are all rewritten by R8; that string is not.
+ */
+private fun MutableMethod.resolveFoldableDeviceMode(
+    context: BytecodePatchContext,
+): FoldableDeviceMode {
+    val constants = instructions.filter { it.opcodeName() == "SGET_OBJECT" }
+    check(constants.size == 1) {
+        "Expected exactly one enum constant read in ${toDescriptor()} — the device mode the " +
+            "preference key is chosen on — but found ${constants.size}"
+    }
+    val constant = constants.single().fieldDescriptor()
+    val enumType = constants.single().fieldReferenceOrNull()?.type
+        ?: error("The enum constant read in ${toDescriptor()} has no field reference")
+    check(constant.substringBefore("->") == enumType) {
+        "$constant is not declared on $enumType, so it is not one of that enum's own constants"
+    }
+
+    val clinit = context.classDefByOrNull(enumType)?.methods?.firstOrNull { it.name == "<clinit>" }
+        ?: error("$enumType has no <clinit>, so its constants cannot be identified by name")
+    val body = clinit.implementation?.instructions?.toList().orEmpty()
+
+    val named = body.indexOfFirst {
+        ((it as? ReferenceInstruction)?.reference as? StringReference)?.string == DEVICE_FOLDABLE
+    }
+    check(named >= 0) {
+        "$enumType does not name a $DEVICE_FOLDABLE constant. Gboard no longer classifies devices " +
+            "the way the unfolded override depends on."
+    }
+    val stored = body.drop(named).firstOrNull {
+        it.opcodeName() == "SPUT_OBJECT" && it.fieldReferenceOrNull()?.type == enumType
+    } ?: error("$DEVICE_FOLDABLE in $enumType is named but never stored")
+
+    check(stored.fieldDescriptor() == constant) {
+        "${toDescriptor()} switches its preference key on $constant, but $DEVICE_FOLDABLE is " +
+            "${stored.fieldDescriptor()}. The branch is testing a different " +
+            "device class, and treating it as the foldable one would put the unfolded override on " +
+            "the wrong screens."
+    }
+    return FoldableDeviceMode(enumType, constant)
+}
+
+/**
+ * The one field this method reads whose type is [type], as a descriptor.
+ *
+ * Both fields the insertion needs — the preference store and the device mode — are obfuscated
+ * letters on an obfuscated class, and both are read by the stock body already. Taking them from
+ * there rather than naming them means the letters are outputs, not inputs.
+ */
+private fun MutableMethod.soleFieldReadOfType(type: String, what: String): String {
+    val reads = instructions.filter {
+        it.opcodeName() == "IGET_OBJECT" && it.fieldReferenceOrNull()?.type == type
+    }
+    check(reads.size == 1) {
+        "Expected exactly one $type field read in ${toDescriptor()} for $what, found ${reads.size}"
+    }
+    val descriptor = reads.single().fieldDescriptor()
+    check(descriptor.substringBefore("->") == definingClass) {
+        "$descriptor is read off something other than the receiver in ${toDescriptor()}, so it " +
+            "cannot be reached with `iget-object … p0`"
+    }
+    return descriptor
 }
 
 // -------------------------------------------------------------------------------------------

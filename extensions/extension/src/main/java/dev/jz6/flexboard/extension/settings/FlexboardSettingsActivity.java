@@ -104,6 +104,18 @@ public final class FlexboardSettingsActivity extends Activity {
     /** Must match TOOLBAR_COUNT_KEY in ToolbarCountPatch.kt. */
     private static final String KEY_TOOLBAR_COUNT = "flexboard_toolbar_count";
 
+    /**
+     * Must match TOOLBAR_COUNT_UNFOLDED_KEY in ToolbarCountPatch.kt.
+     *
+     * <p>Applies only while the device reports itself as a foldable, which in practice means the
+     * large inner screen of an open fold. Gboard keeps its own count per device class for the same
+     * reason, so a single value for both screens would be a change from stock rather than a
+     * feature. Unset, it falls back to {@link #KEY_TOOLBAR_COUNT} rather than to Gboard's own — the
+     * main slider is the setting, and this is an override for the one screen that may want a
+     * different one.
+     */
+    private static final String KEY_TOOLBAR_COUNT_UNFOLDED = "flexboard_toolbar_count_unfolded";
+
     /** Must match TOOLBAR_COUNT_MIN / TOOLBAR_COUNT_MAX in ToolbarCountPatch.kt. */
     private static final int TOOLBAR_COUNT_MIN = 3;
 
@@ -274,6 +286,18 @@ public final class FlexboardSettingsActivity extends Activity {
                 "Icons on the toolbar",
                 "How many icons fit on the toolbar above the keyboard. The rest stay in the "
                         + "overflow menu behind the chevron. More icons means narrower ones.",
+                TOOLBAR_COUNT_MIN,
+                TOOLBAR_COUNT_MAX,
+                TOOLBAR_COUNT_DEFAULT,
+                value -> Integer.toString(value));
+
+        addSlider(
+                column,
+                KEY_TOOLBAR_COUNT_UNFOLDED,
+                "Icons when unfolded",
+                "Foldables only. Overrides the setting above while the phone is open, because the "
+                        + "inner screen is wider and fits more. Leave it alone and the setting "
+                        + "above applies to both screens.",
                 TOOLBAR_COUNT_MIN,
                 TOOLBAR_COUNT_MAX,
                 TOOLBAR_COUNT_DEFAULT,
