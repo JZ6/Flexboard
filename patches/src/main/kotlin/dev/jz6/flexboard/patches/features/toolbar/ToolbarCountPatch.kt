@@ -112,22 +112,24 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * than naming a field. The preference store on the controller is obfuscated too, and is read back
  * out of the very method being patched — the sole field it touches of the store's type.
  *
- * ## Before trusting this on a device
+ * ## On a device
  *
- * `compileKotlin` is blind to Gboard and `preflight.py` is blind to the Kotlin, so neither says
- * anything about behaviour. The version that shipped broken passed both. This is the list that was
- * written and not run:
+ * **Confirmed working in `1.1.0-dev.3`, 2026-08-18: the icon count moves.** That is the only axis
+ * that ever settled this — `compileKotlin` is blind to Gboard and `preflight.py` is blind to the
+ * Kotlin, and the version that shipped doing nothing passed both.
  *
- *  - the toolbar shows five icons with the slider untouched;
- *  - moving it to 8 and reopening the keyboard shows 8, with the surplus leaving the overflow panel;
+ * What was confirmed is that the slider takes effect. The rest of the list written before `dev.1`
+ * has not been reported on point by point, and is worth a pass if this is touched again:
+ *
+ *  - five icons with the slider untouched;
  *  - 10 renders without clipping, and 3 works;
  *  - drag-to-reorder and long-press customise still work at every setting;
  *  - Gboard's own settings screens are unaffected.
  *
- * Add one step at the front: **force-stop Gboard** before the first check. The count insertion runs
- * on every list rebuild and does not need it, but the capacity insertion is in a view constructor,
- * so a cached keyboard view can leave the two disagreeing until the process restarts. If 8 icons
- * appear only after a force-stop, that is the capacity lagging and not a failure of the count.
+ * If a setting ever appears not to take, **force-stop Gboard** before concluding anything from it.
+ * The count insertion runs on every list rebuild and does not need it, but the capacity insertion is
+ * in a view constructor, so a cached keyboard view can leave the two disagreeing until the process
+ * restarts — which looks like a failure of the count and is not.
  *
  * ## If it misbehaves
  *
