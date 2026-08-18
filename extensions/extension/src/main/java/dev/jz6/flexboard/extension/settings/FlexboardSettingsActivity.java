@@ -265,18 +265,23 @@ public final class FlexboardSettingsActivity extends Activity {
                 HOLD_DELAY_DEFAULT,
                 value -> value == 0 ? "Off" : value + " ms");
 
-        addSectionHeader(column, SECTION_TOOLBAR);
-
-        addSlider(
-                column,
-                KEY_TOOLBAR_COUNT,
-                "Icons on the toolbar",
-                "How many icons fit on the toolbar above the keyboard. The rest stay in the "
-                        + "overflow menu behind the chevron. More icons means narrower ones.",
-                TOOLBAR_COUNT_MIN,
-                TOOLBAR_COUNT_MAX,
-                TOOLBAR_COUNT_DEFAULT,
-                value -> Integer.toString(value));
+        // WITHHELD alongside the patch that reads it — see the note at the top of
+        // ToolbarCountPatch.kt. A slider whose value nothing acts on is worse than no slider, so it
+        // is not rendered. The constants stay declared so check_shared_constants.py keeps both
+        // sides in step while the patch is being fixed.
+        //
+        // addSectionHeader(column, SECTION_TOOLBAR);
+        //
+        // addSlider(
+        //         column,
+        //         KEY_TOOLBAR_COUNT,
+        //         "Icons on the toolbar",
+        //         "How many icons fit on the toolbar above the keyboard. The rest stay in the "
+        //                 + "overflow menu behind the chevron. More icons means narrower ones.",
+        //         TOOLBAR_COUNT_MIN,
+        //         TOOLBAR_COUNT_MAX,
+        //         TOOLBAR_COUNT_DEFAULT,
+        //         value -> Integer.toString(value));
 
         TextView footnote = new TextView(this);
         footnote.setText(TAKES_EFFECT);

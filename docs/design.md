@@ -35,7 +35,14 @@ in the first place; moving it back to 100 has made `STEP_SCALE_DEFAULT` and `STE
 hold the same number again, which looks redundant and is not. Collapsing them would silently
 re-arm the trap the next time the default moves.
 
-## Why the toolbar count is a slider when hold delay nearly was not
+## Why the toolbar count would be a slider when hold delay nearly was not
+
+> **Withheld as of `1.1.0-dev.2`.** It shipped in `1.1.0-dev.1` and did not work: the count did not
+> move, and the expand chevron did not appear either, which says the value never reached the field.
+> The patch is commented out and the slider is not rendered. The reasoning below is why it is worth
+> fixing rather than dropping; the two known defects and the better insertion point are recorded at
+> the top of `ToolbarCountPatch.kt`.
+
 
 Every preference this project reads costs the same thing — an insertion, and registers proved dead
 against each Gboard build — so the bar a new config has to clear is high. See below for the three

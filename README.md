@@ -97,9 +97,6 @@ the swipe-anywhere gesture; the backspace key keeps Gboard's own behaviour, see 
 | **Max words per swipe** | 1 | The most words one swipe can delete. At 1 a swipe deletes a single word however far it travels; 10 means no limit. Swiping back still restores. |
 | **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
 
-The screen also carries **Icons on the toolbar**, which belongs to the Bigger Toolbar patch and is
-described [further down](#bigger-toolbar).
-
 Every value is read out of Gboard's own preference store, so there is no separate settings app and
 nothing to keep in sync. Swipe length already ships at Gboard's own distance; setting the other two
 to 10 and 200 ms puts those back as well, and why they do not start there is in
@@ -174,30 +171,6 @@ One quirk worth knowing. Gboard's own settings row for it depends on **Touch & h
 numbers**, so while that is off the flick row shows as on but greyed out — the feature works, you
 just cannot toggle it from there. Enabling "Touch & hold keys for numbers" un-greys it. Flexboard
 deliberately does not change that setting for you, since nothing at runtime needs it.
-
-## Bigger toolbar
-
-The row of icons above the keyboard — Gboard calls it the access points bar — holds five, and
-everything past that sits in the overflow menu behind the chevron. This makes that number a slider,
-from 3 to 10, under **Toolbar** in Flexboard's settings.
-
-Five is not a layout constant; it is a ceiling Gboard computes once when the bar is built, from a
-server-side flag it will only honour between 3 and 8. Flexboard overrides the result of that
-calculation with your value. Gboard does have a preference of its own for this, but it can only
-lower the count and its own "reduce your toolbar icons" prompt writes to it, so Flexboard keeps its
-own key rather than fighting over that one.
-
-Leaving the slider alone changes nothing at all: the preference is read with Gboard's own computed
-ceiling as the fallback, so an unset value produces exactly the bytecode-identical behaviour of an
-unpatched build. A value outside 3–10 falls back the same way rather than being forced into range.
-
-**Icons get narrower, not smaller in number.** The bar divides its width by the number of items, so
-at 10 they are about half the width they are at 5. Eight is as far as Google's own layout has been
-built against; past that you are the first person testing it. Nothing clips or crashes — the icons
-just get tight.
-
-Drag-to-reorder and long-press-to-customise keep working at every setting; this only changes where
-the line between the bar and the overflow menu falls.
 
 ## Install as Gboard clone
 

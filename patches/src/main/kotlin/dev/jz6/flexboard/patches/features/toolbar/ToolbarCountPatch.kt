@@ -19,6 +19,34 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.opcodeName
 
+// ---------------------------------------------------------------------------------------------
+// WITHHELD — the patch below is commented out and does not ship. Everything under it still
+// compiles, deliberately: a commented-out file rots silently, and the derivation here is the part
+// worth keeping.
+//
+// It did not work on device. The count did not move and, more tellingly, the expand chevron did
+// not appear either — and `T()` adds the chevron whenever `d != m`, so a raised `m` should have
+// produced one even with no new icons to show. That says the slider's value is not reaching the
+// field at all.
+//
+// Two known defects, at least one of which is the cause:
+//
+//  1. **`m` is a ceiling, not the count.** The effective number is
+//     `Lmjv;->a(pref, cap)` = `min(access_points_count_on_bar, m)`, so a set preference pins the
+//     result underneath us, and reduced mode (`Lmjv;->b`) forces 3 regardless. Raising the ceiling
+//     changes nothing in either case. The fix is to move the read to `Lmku;->b(I)I`, whose return
+//     value *is* the final count: it sits after both gates, the store is already in a field there
+//     (`Lmku;->b:Lqhy;`) so no Context is needed, and v0/v1 are dead at entry.
+//  2. **The read may simply never re-run.** `m` is written in the bar's constructor, which happens
+//     at view inflation rather than on keyboard open, and Android caches keyboard views hard. This
+//     was never tested against a full force-stop of Gboard, which would settle it in seconds.
+//
+// Re-enabling is uncommenting this block. Fix (1) first; test (2) before assuming (1) was it.
+// The preflight checks under `toolbar:` are left in place so a Gboard bump still reports whether
+// these bindings have moved.
+// ---------------------------------------------------------------------------------------------
+
+/*
 /**
  * Makes the number of icons on Gboard's toolbar adjustable.
  *
@@ -96,6 +124,7 @@ val toolbarCountPatch = bytecodePatch(
         AccessPointsBarConstructorFingerprint.method.readCountFromPreference(this)
     }
 }
+*/
 
 /**
  * Unobfuscated, because Android instantiates views declared in XML by name and R8 cannot rename
