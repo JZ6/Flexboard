@@ -1,3 +1,10 @@
+# [1.1.0-dev.2](https://github.com/JZ6/Flexboard/compare/v1.1.0-dev.1...v1.1.0-dev.2) (2026-08-18)
+
+* **Gboard:** bump to 1.1.0-dev.2
+* **Gboard:** withhold Bigger Toolbar, which does not work on device
+* **Gboard:** default the swipe length to Gboard's own distance
+* **Gboard:** sync the gradle wrapper with the template
+
 # [1.1.0-dev.1](https://github.com/JZ6/Flexboard/compare/v1.0.1-dev.2...v1.1.0-dev.1) (2026-08-18)
 
 * **Gboard:** bump to 1.1.0-dev.1
