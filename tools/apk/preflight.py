@@ -112,6 +112,13 @@ EXPECTED = {
     'toolbar_scratch': [2, 5],
     'toolbar_ctor_registers': 9,
     'toolbar_ctor_ins': 3,
+    # Gboard's own log line for the order-update callback. The anchor for the *count*, as opposed to
+    # the capacity the constructor writes -- and unusually good for one, because it does not merely
+    # locate a method, it says in Google's own words what the value returned there is.
+    'toolbar_count_log': 'oldVisibleCountOnBar %d, currentVisibleCountOnBar %d, definedCountOnBar %d',
+    'toolbar_count_registers': 5,
+    'toolbar_count_ins': 2,
+    'toolbar_count_scratch': [0, 1, 2],
     # Gboard's own stock icon count, the default of the getInt in the bar's constructor. Not used by
     # the patch -- it reads the preference with whatever Gboard computed -- but it is the number the
     # settings slider displays while unset, so it has to stay true.
@@ -736,8 +743,90 @@ def run(dl, apk=None):
                 held = [r for r in (0, 1, 3, 7) if r in free]
                 check('toolbar: v0, v1, v3 and v7 are correctly NOT among them', not held,
                       f'{held} look free but are read after the ceiling is written')
-                check('toolbar: the ceiling register is not borrowed as scratch',
+                check('toolbar: the capacity register is not borrowed as scratch',
                       ceiling not in want, f'v{ceiling} is in {want}')
+
+    # The capacity checked above is not the icon count, and mistaking one for the other is what
+    # shipped this patch broken once. The count is `definedCountOnBar`, which Gboard names for us in
+    # a log line and which sits after both gates that can override the capacity. These checks guard
+    # the derivation that finds it, since it is an obfuscated letter that is never written down.
+    log_hits = []
+    for dex in dl:
+        for _cls_name, _af, cls_data in dex.classes():
+            if not cls_data:
+                continue
+            for m_name, _maf, m_off in dex.class_methods(cls_data):
+                if not m_off:
+                    continue
+                try:
+                    mc = dex.code(m_off)
+                except Exception:
+                    continue
+                if any(mn == 'const-string' and txt and E['toolbar_count_log'] in txt
+                       for _pc, _op, mn, txt in dex.walk(mc)):
+                    log_hits.append(m_name)
+    if check('toolbar: exactly one method logs definedCountOnBar', len(log_hits) == 1,
+             str(log_hits)):
+        _c, ins = body(dl, log_hits[0])
+
+        def called(a):
+            return a.split('}, ')[-1]
+
+        counts = sorted({called(a) for _pc, mn, a in ins
+                         if mn.startswith('invoke') and called(a).endswith('(I)I')})
+        # One, not "at least one". The patch takes the sole (I)I call as the count; a second would
+        # be picked between silently, and the log line says nothing about which is which.
+        if check('toolbar: one (I)I call in it', len(counts) == 1, str(counts)):
+            c, ins = body(dl, counts[0])
+            if check('toolbar: the count method has a body', ins is not None, counts[0]):
+                check('toolbar: its register count',
+                      c['registers'] == E['toolbar_count_registers'], f'got {c["registers"]}')
+                check('toolbar: its parameter words',
+                      c['ins'] == E['toolbar_count_ins'], f'got {c["ins"]}')
+                # The insertion is at method entry, so the proof that the scratch registers are
+                # free is arithmetic rather than a liveness fixpoint: locals below the parameters
+                # hold nothing before the first instruction runs.
+                locals_ = c['registers'] - c['ins']
+                check('toolbar: the scratch registers are locals at entry',
+                      locals_ == len(E['toolbar_count_scratch']),
+                      f'{locals_} locals, insertion needs {len(E["toolbar_count_scratch"])}')
+                this_reg = c['registers'] - c['ins']
+                capacity_reg = c['registers'] - 1
+                # What makes this the method that *finishes* the calculation rather than a step
+                # inside it. Insert before the gate and the value goes back where Gboard's own
+                # count preference and its reduced mode can each override it.
+                #
+                # Signature alone is not enough to find it -- the store's own id-keyed getInt is
+                # (II)I as well, and this check failed on that before it was narrowed. The gate is
+                # the (II)I call the *capacity parameter* flows into; the store read is a call that
+                # has nothing to do with it.
+                gates = [i for i, (_pc, mn, a) in enumerate(ins)
+                         if mn.startswith('invoke') and called(a).endswith('(II)I')
+                         and capacity_reg in regs(a.split('}, ')[0])]
+                if check('toolbar: it still applies the count gate', len(gates) == 1,
+                         f'found {len(gates)}'):
+                    # The other half, and the half that stops the check above from passing on a
+                    # coincidence: the gate's result must be what the method hands back. Input and
+                    # output together say the body is `return gate(..., capacity)`, which is the
+                    # property the patch actually depends on -- overriding at entry outranks the
+                    # gate only if the gate is the last word on the value.
+                    i = gates[0]
+                    flows = (i + 2 < len(ins)
+                             and ins[i + 1][1] == 'move-result'
+                             and ins[i + 2][1] == 'return'
+                             and regs(ins[i + 1][2]) == regs(ins[i + 2][2]))
+                    check('toolbar: the gate result is what it returns', flows,
+                          f'{[n for _pc, n, _a in ins[i:i + 3]]}')
+                stores = [a for _pc, mn, a in ins
+                          if mn == 'iget-object' and a.rstrip().endswith(f':{B["store"]}')]
+                # The preference store is read out of this method rather than named, so exactly one
+                # such field must be touched -- and off the receiver, or `iget-object ... p0` in the
+                # emitted code reads the wrong object.
+                if check('toolbar: one preference-store field read in it', len(stores) == 1,
+                         f'found {len(stores)}'):
+                    check('toolbar: it is read off the receiver',
+                          regs(stores[0])[1] == this_reg,
+                          f'read off v{regs(stores[0])[1]}, receiver is v{this_reg}')
 
     # ---- select all button
     #

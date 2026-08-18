@@ -35,14 +35,7 @@ in the first place; moving it back to 100 has made `STEP_SCALE_DEFAULT` and `STE
 hold the same number again, which looks redundant and is not. Collapsing them would silently
 re-arm the trap the next time the default moves.
 
-## Why the toolbar count would be a slider when hold delay nearly was not
-
-> **Withheld as of `1.1.0-dev.2`.** It shipped in `1.1.0-dev.1` and did not work: the count did not
-> move, and the expand chevron did not appear either, which says the value never reached the field.
-> The patch is commented out and the slider is not rendered. The reasoning below is why it is worth
-> fixing rather than dropping; the two known defects and the better insertion point are recorded at
-> the top of `ToolbarCountPatch.kt`.
-
+## Why the toolbar count is a slider when hold delay nearly was not
 
 Every preference this project reads costs the same thing — an insertion, and registers proved dead
 against each Gboard build — so the bar a new config has to clear is high. See below for the three
@@ -54,30 +47,77 @@ is, because the bar divides its width by the number of items
 comfortable on a tablet and cramped on a small phone. That is not true of the hold delay, where one
 number was right and got hardcoded.
 
-**It is the cheapest insertion in the project.** `AccessPointsBar` keeps its real name through R8,
-because a layout addresses it as a string. The anchor is a *string literal* —
-`config_max_access_points` in the class's `<clinit>` — and R8 renames classes, methods and fields but
-never string contents. The `Context` is already a constructor parameter, so no field has to be
-resolved and nothing has to be shown assignable. Two scratch registers are needed, against three for
-each of the switches that were removed.
+**Both insertions are cheap.** The one that does the work is entered with three dead locals and
+finds the preference store already sitting in a field on the receiver, so it needs no `Context` and
+no liveness argument at all. The second is the cheapest in the project on the older measure:
+`AccessPointsBar` keeps its real name through R8 because a layout addresses it as a string, the
+anchor is a *string literal* (`config_max_access_points` in the class's `<clinit>`, and R8 renames
+classes, methods and fields but never string contents), the `Context` is already a constructor
+parameter, and two scratch registers suffice against three for each of the switches that were
+removed.
 
-The obfuscated field it targets, `->m:I`, is never written down. The patch inserts *before* Gboard's
-own `iput` and leaves that instruction to do the write, so a letter that moves onto a different
-member cannot be silently patched instead — the failure mode that shipped in `0.0.2-dev.1`.
+Neither obfuscated member is written down. `->m:I` is never named — the patch inserts *before*
+Gboard's own `iput` and leaves that instruction to do the write, so a letter that moves onto a
+different member cannot be silently patched instead, the failure mode that shipped in `0.0.2-dev.1`.
+The preference store is read back out of the very method being patched, as the one field it touches
+of that type.
 
-Two decisions worth naming:
+Three decisions worth naming:
 
-**The fallback is Gboard's own computed value, not a constant.** The preference is read with
-whatever the flag path just produced as its default, so an untouched slider leaves the ceiling
-exactly where Gboard put it — the patch is a no-op until you move something. An out-of-range value
-falls back the same way rather than being clamped into range, because a corrupt or hand-edited
-preference should read as "unset" and not as a number nobody chose.
+**The fallback is Gboard's own behaviour, not a constant.** Neither insertion substitutes a number
+when the slider is untouched. The capacity one reads the preference with whatever the flag path just
+computed as its default; the count one runs *before* Gboard has computed anything and simply falls
+through into the stock body. So an unset value is not a value chosen to resemble Gboard's — it is
+Gboard's own code running with nothing done to it. An out-of-range value falls back the same way
+rather than being clamped into range, because a corrupt or hand-edited preference should read as
+"unset" and not as a number nobody chose.
 
 **Flexboard uses its own key rather than Gboard's.** Gboard has `access_points_count_on_bar`, and
-riding it would have removed the insertion entirely — the count could then be raised with a single
-hardcoded `const`. It was rejected because that key can only *lower* the count below the ceiling,
-because Gboard's own "reduce your toolbar icons" flow (`Lmjr;->b`) writes to it and would silently
-overwrite the user's choice, and because a value written there outlives the patch.
+riding it would have removed an insertion — but that key can only *lower* the count, Gboard's own
+"reduce your toolbar icons" flow (`Lmjr;->b`) writes to it and would silently overwrite the user's
+choice, and a value written there outlives the patch.
+
+**The slider outranks both of Gboard's own limits.** Overriding at the top of the count method skips
+`access_points_count_on_bar` and the reduced mode that forces three icons. Both exist to lower the
+count, and a user who has just moved this slider has said what they want more recently and more
+explicitly than either.
+
+### Two numbers, and the one that is not the count
+
+The first build of this patched the wrong one, so the distinction is worth stating plainly.
+
+The bar holds a **capacity**, `AccessPointsBar->m:I`, computed once in its constructor from a
+Phenotype flag clamped to `[3, 8]`. It reads like the count and is not: the bar renders whatever
+list it is handed — `m(List)` sets its child count from `list.size()` with no clamp anywhere — and
+the list is cut to length elsewhere, by a method Gboard's own logging calls `definedCountOnBar`. The
+capacity is only that method's *argument*, and it then goes through two gates that can each discard
+it: `min(access_points_count_on_bar, capacity)` whenever Gboard's preference is set, and a reduced
+mode returning a flat three.
+
+So raising the capacity raised nothing. It still gets raised, because eight other reads of `m:I` all
+ask *is the bar full?* — and one of them evicts the last child before inserting when the answer is
+yes. Both numbers move together; only one of them is the feature.
+
+### The methodology note
+
+`1.1.0-dev.1` was diagnosed from the expand chevron failing to appear alongside the count not
+moving: `T()` swaps the chevron in whenever the child count differs from the capacity, so a raised
+capacity should have produced one even with no extra icons to show. Its absence was read as proof
+that the write never landed.
+
+**The inference was void.** `T()` opens with an early return on a flag set only by the
+temporary-access-point flows, so in ordinary use it does nothing at all and could not have produced
+a chevron either way. The chevron seen in normal operation is an ordinary access point in the list,
+marked `expand_label_on_top_bar`. A second suspect recorded at the time — that the constructor might
+not re-run because Android caches keyboard views — had no evidence behind it either, and was carried
+forward for a day as though it did.
+
+What is uncomfortable is that the real cause needed no new disassembly. `gboard-bindings.md` already
+said, in the row above the one being patched, that the preference `Lmjv;->a` applies *can only lower
+the count*. The fact was written down, in the right file, and simply not carried through to the
+conclusion. The bypass patch's note in this file says a conclusion is only as settled as its weakest
+link; this is the other half of it — a conclusion can also be wrong because a link nobody thought to
+question was already documented as broken.
 
 ## Why the select-all button carries a Runnable rather than a keycode
 

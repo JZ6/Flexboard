@@ -128,15 +128,18 @@ real names, because layouts address them as strings and R8 cannot rename what XM
 | Binding | What it is |
 |---|---|
 | `…/accesspoint/widget/AccessPointsBar` | The bar itself. `extends ViewGroup` — one row, custom `onMeasure`/`onLayout`, **no scrolling and no touch callbacks of its own**. Declared in `res/HNz.xml`. |
-| — ceiling | `AccessPointsBar->m:I` | The most items the bar will hold. Written **once**, in `<init>(Context, AttributeSet)`, at offset 72. |
-| — ceiling getter | `AccessPointsBar->i()I` | Reached through `Lmhm;->i()I`. |
+| — capacity | `AccessPointsBar->m:I` | **Not the icon count.** Written once in `<init>(Context, AttributeSet)` at offset 72, and read in eight places that all ask the same question: *is the bar full?* — the chevron swap in `T()`, the odd-count spacer in `onMeasure`, the reserved slot in `L()`, and `y(Lmic;I)`, which evicts the last child before inserting when it believes the answer is yes. |
+| — capacity getter | `AccessPointsBar->i()I` | Reached through `Lmhm;->i()I`. Feeds `Lmku;->b(I)I` as its *argument*. |
+| — the render | `AccessPointsBar->m(List)V` | Sets `d = list.size()` with **no clamp against `m`**, then `W(List)` builds one child per element. The bar draws whatever list it is handed; the count is decided before this. |
 | — item width | `AccessPointsBar->K(II)I` | `min((width + 2·(e + f))/(n + 1), width/n)`. Items shrink as the count grows; nothing clips. |
 | — visible count | `AccessPointsBar->L()I` | Counts non-`GONE` children, plus the drag placeholder and the expand key. |
 | `AccessPointsBar->a:Lnxp;` | The Phenotype flag supplier, built in `<clinit>` from `config_max_access_points` with a `ro.com.google.ime.top_icon_num` system-property override and a default of `-1`. |
 | `…/accesspoint/widget/AccessPointsPanel` | The overflow panel. |
 | `…/accesspoint/widget/AccessPointsPanelViewPager` | `extends BidiViewPager` — the panel already pages. **The bar does not.** |
 | `Lmlh;->C(Ljava/util/List;)V` | The split. `n = min(Lmku;->b(bar.i()), size)`; `subList(0, n)` goes to the bar via `Lmhm;->m(List)`, the rest to the panel via `Lmhp;->m(List)`. |
-| `Lmku;->b(I)I` | Applies the user preference to the ceiling. |
+| `Lmku;->b(I)I` | **The icon count.** Gboard's own name for it, from the log line in `Lmlf;->c()V`: `definedCountOnBar`. Takes the capacity as an argument and puts it through both gates below, so its return value — not `->m:I` — is what decides how many icons land on the bar. Five callers, and two different capacities reach it: `Lmlh;->C` passes the bar's `m`, while `Lmln;->fn` passes a theme attribute (`0x7f0400ad`, default 5) with no bar in sight. |
+| `Lmlf;->c()V` | `AccessPointsListHolderController$7.onFinishUpdatingOrder`, and the anchor for the above. Logs `oldVisibleCountOnBar %d, currentVisibleCountOnBar %d, definedCountOnBar %d` and contains exactly one `(I)I` call — so a string R8 cannot rewrite names the value the obfuscated letter returns. |
+| `Lmku;->b:Lqhy;` | The preference store, `Lqhy;->I(context)` cached in `<init>`. Read inside `b(I)I` itself, which is where `toolbarCountPatch` derives it — no `Context` needed at the insertion point. |
 | `Lmjv;->a(II)I` | `pref >= 0 ? min(pref, cap) : b(cap)`. **The preference can only lower the count.** |
 | `Lmjv;->b(I)I` | `m() ? min(3, cap) : cap` — the reduced-mode floor. |
 | `Lmjr;->b(Landroid/content/Context;Z)Z` | Gboard's own "reduce your toolbar icons" flow, which writes the same preference. |
@@ -145,7 +148,10 @@ Preference ids: `0x7f1409af` = `access_points_count_on_bar`, `0x7f140a43` =
 `foldable_access_points_count_on_bar`. Neither appears in any settings XML — they are written from
 code only.
 
-How the ceiling is computed, and the shape the patch anchors on:
+How the capacity is computed, and the shape the second of the patch's two insertions anchors on.
+Worth reading with the row above in mind: this is the number that shipped patched in `1.1.0-dev.1`
+with nothing to show for it, because the table already said `Lmjv;->a` can only lower the count and
+that fact was not carried through to the conclusion.
 
 ```
 44: const/4 v4, #5
@@ -157,7 +163,9 @@ How the ceiling is computed, and the shape the patch anchors on:
 ```
 
 `toolbarCountPatch` inserts before offset 72 and leaves the `iput` alone, so the field's obfuscated
-letter is never written down. It finds the site by walking from the single `Lnxp;->g()` call to the
+letter is never written down. **This insertion is bookkeeping, not the feature** — it keeps the
+bar's own "am I full?" tests agreeing with the count set at `Lmku;->b(I)I`, and on its own it moves
+nothing. It finds the site by walking from the single `Lnxp;->g()` call to the
 single following `iput` whose **field type** is `I` — filtering on the opcode would also match
 `->e:F` and `->f:F` at 79 and 85, since `iput` (`0x59`) covers int and float alike, and starting
 after the flag call is what excludes `->y:I` at 31.

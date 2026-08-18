@@ -112,9 +112,10 @@ public final class FlexboardSettingsActivity extends Activity {
     /**
      * Gboard's own stock count, shown while the preference is unset.
      *
-     * <p>Only ever displayed. The patch does not use it: it reads the preference with whatever
-     * Gboard itself computed as the default, so an untouched slider leaves the ceiling exactly where
-     * Gboard put it even if that is not this number. It is checked against the literal in
+     * <p>Only ever displayed. Neither of the patch's two insertions uses it — one reads the
+     * preference with whatever Gboard itself computed as the default, the other falls through into
+     * Gboard's own code entirely — so an untouched slider leaves the count exactly where Gboard put
+     * it even if that is not this number. It is checked against the literal in
      * `AccessPointsBar.<init>` by `tools/apk/preflight.py`, so what the slider shows stays truthful.
      */
     private static final int TOOLBAR_COUNT_DEFAULT = 5;
@@ -265,23 +266,18 @@ public final class FlexboardSettingsActivity extends Activity {
                 HOLD_DELAY_DEFAULT,
                 value -> value == 0 ? "Off" : value + " ms");
 
-        // WITHHELD alongside the patch that reads it — see the note at the top of
-        // ToolbarCountPatch.kt. A slider whose value nothing acts on is worse than no slider, so it
-        // is not rendered. The constants stay declared so check_shared_constants.py keeps both
-        // sides in step while the patch is being fixed.
-        //
-        // addSectionHeader(column, SECTION_TOOLBAR);
-        //
-        // addSlider(
-        //         column,
-        //         KEY_TOOLBAR_COUNT,
-        //         "Icons on the toolbar",
-        //         "How many icons fit on the toolbar above the keyboard. The rest stay in the "
-        //                 + "overflow menu behind the chevron. More icons means narrower ones.",
-        //         TOOLBAR_COUNT_MIN,
-        //         TOOLBAR_COUNT_MAX,
-        //         TOOLBAR_COUNT_DEFAULT,
-        //         value -> Integer.toString(value));
+        addSectionHeader(column, SECTION_TOOLBAR);
+
+        addSlider(
+                column,
+                KEY_TOOLBAR_COUNT,
+                "Icons on the toolbar",
+                "How many icons fit on the toolbar above the keyboard. The rest stay in the "
+                        + "overflow menu behind the chevron. More icons means narrower ones.",
+                TOOLBAR_COUNT_MIN,
+                TOOLBAR_COUNT_MAX,
+                TOOLBAR_COUNT_DEFAULT,
+                value -> Integer.toString(value));
 
         TextView footnote = new TextView(this);
         footnote.setText(TAKES_EFFECT);
