@@ -205,13 +205,17 @@ internal const val TOOLBAR_COUNT_KEY = "flexboard_toolbar_count"
 /**
  * The slider's range, and the bounds a stored value has to fall within to be used at all.
  *
- * Three is Gboard's own floor, and the count its reduced mode drops to regardless. Ten is past the
- * eight the flag path accepts, which is as far as Google's own layout has been built against —
- * overriding the count directly means that clamp does not bind us, and nothing clips beyond it, the
- * icons just keep getting narrower.
+ * Three is Gboard's own floor, and the count its reduced mode drops to regardless. Twelve is well
+ * past the eight the flag path accepts, which is as far as Google's own layout has been built
+ * against — overriding the count directly means that clamp does not bind us.
+ *
+ * Nothing clips beyond it: the bar divides its width rather than overflowing it
+ * ([ACCESS_POINTS_BAR]`->K(II)I`), so a higher setting only makes each icon narrower. Twelve on a
+ * phone is genuinely tight, and that is the user's call to make — the range exists to be wide, not
+ * to be uniformly comfortable.
  */
 internal const val TOOLBAR_COUNT_MIN = 3
-internal const val TOOLBAR_COUNT_MAX = 10
+internal const val TOOLBAR_COUNT_MAX = 12
 
 /**
  * Out of range for the slider, so an unset preference reads as "leave Gboard alone".

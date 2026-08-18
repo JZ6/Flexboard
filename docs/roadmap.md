@@ -14,6 +14,8 @@ Hot keys as new tool bar objects
 
 gesture down on a to select all
 
+tool bar amount used to be different between inner and outer screen of a fold
+
 add select all copy paste hotkeys
 
 increased tool bar size fit more buttons
@@ -26,7 +28,7 @@ The list above is kept as written; this notes which of it has landed, rather tha
   the colours follow it including Material You, and the metrics match androidx preference rows.
 - **can we make the backspace swipe work as before without being limited to max 1 word delete** — a
   swipe starting on the backspace key keeps Gboard's distance per word and is not capped.
-- **increased tool bar size fit more buttons** — *Bigger Toolbar*, a 3–10 slider for the number of
+- **increased tool bar size fit more buttons** — *Bigger Toolbar*, a 3–12 slider for the number of
   icons on the access points bar. Shipped in `1.1.0-dev.1` and did nothing, withheld in
   `1.1.0-dev.2`, rebuilt against the right target: it had been raising the bar's *capacity*, which
   the count is computed from but not bound by. The count itself is now overridden, above both of the

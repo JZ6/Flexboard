@@ -194,7 +194,7 @@ deliberately does not change that setting for you, since nothing at runtime need
 
 The row of icons above the keyboard — Gboard calls it the access points bar — holds five, and
 everything past that sits in the overflow menu behind the chevron. This makes that number a slider,
-from 3 to 10, under **Toolbar** in Flexboard's settings.
+from 3 to 12, under **Toolbar** in Flexboard's settings.
 
 Five is not a layout constant. Gboard works out how many icons the bar gets each time the list is
 rebuilt, starting from a ceiling it computes from a server-side flag and then lowering it — for its
@@ -203,13 +203,13 @@ room. Flexboard replaces the answer rather than the starting point, so the slide
 on it.
 
 Leaving the slider alone changes nothing at all: with no value stored, Flexboard's code falls
-straight through and Gboard's own runs untouched. A value outside 3–10 is treated the same way as no
+straight through and Gboard's own runs untouched. A value outside 3–12 is treated the same way as no
 value rather than being forced into range.
 
 **Icons get narrower, not smaller in number.** The bar divides its width by the number of items, so
-at 10 they are about half the width they are at 5. Eight is as far as Google's own layout has been
-built against; past that you are the first person testing it. Nothing clips or crashes — the icons
-just get tight.
+at 10 they are about half the width they are at 5, and at 12 narrower still. Eight is as far as
+Google's own layout has been built against; past that you are the first person testing it. Nothing
+clips or crashes — the icons just get tight, and on a narrow phone 12 will be very tight indeed.
 
 Drag-to-reorder and long-press-to-customise keep working at every setting; this only changes where
 the line between the bar and the overflow menu falls.

@@ -107,7 +107,7 @@ public final class FlexboardSettingsActivity extends Activity {
     /** Must match TOOLBAR_COUNT_MIN / TOOLBAR_COUNT_MAX in ToolbarCountPatch.kt. */
     private static final int TOOLBAR_COUNT_MIN = 3;
 
-    private static final int TOOLBAR_COUNT_MAX = 10;
+    private static final int TOOLBAR_COUNT_MAX = 12;
 
     /**
      * Gboard's own stock count, shown while the preference is unset.
