@@ -1,3 +1,10 @@
+# [1.1.0-dev.3](https://github.com/JZ6/Flexboard/compare/v1.1.0-dev.2...v1.1.0-dev.3) (2026-08-18)
+
+* **Gboard:** bump to 1.1.0-dev.3
+* **Gboard:** make Bigger Toolbar move the count, not the capacity
+* **Gboard:** correct what the signature bypass actually gates
+* **Gboard:** add a Select all button to the toolbar
+
 # [1.1.0-dev.2](https://github.com/JZ6/Flexboard/compare/v1.1.0-dev.1...v1.1.0-dev.2) (2026-08-18)
 
 * **Gboard:** bump to 1.1.0-dev.2
