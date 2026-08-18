@@ -174,8 +174,10 @@ select all. This is the same action without the panel.
 The button takes the first slot on the toolbar, which pushes whatever used to be last into the
 overflow menu behind the chevron. Long-press the toolbar to reorder it like any other button.
 
-It borrows the text editing panel's icon, because Gboard ships no select-all icon of its own and
-Flexboard adds no images. The label is Gboard's own "Select all".
+The icon is Material's own select-all mark — the dashed square with a filled centre. Gboard ships
+it and never draws it anywhere: its text editing panel spells "Select all" out in words rather than
+using an icon, which is why this button first borrowed the panel's icon instead. The label is
+Gboard's own "Select all". Flexboard still adds no images of its own.
 
 ## Flick keys for symbols
 

@@ -85,9 +85,14 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * way. It would start mattering the moment someone wanted them to differ.
  *
  * The label is Gboard's own **"Select all"** string, which already exists because the text-editing
- * panel uses it. The icon is the text-editing icon — Gboard ships no select-all drawable, and
- * reusing the icon of the panel this duplicates is closer than anything else available without
- * adding resources.
+ * panel uses it. The icon is Material's `select_all`, which Gboard ships and never draws — see
+ * [SELECT_ALL_ICON] for how it was found, given that 1,679 drawables have had their names stripped.
+ *
+ * Note that [SEED_ICON] and [SELECT_ALL_ICON] are now different ids and are doing different jobs.
+ * The seed is an *input to the derivation*: the value handed to the builder's icon setter in
+ * Gboard's own code, used to work out which of five `(I)V` setters the icon setter is. What the
+ * button is actually given is [SELECT_ALL_ICON]. They were briefly the same number, which made the
+ * distinction invisible; they are not any more.
  */
 @Suppress("unused")
 val selectAllPatch = bytecodePatch(
@@ -122,8 +127,23 @@ private const val SEED_CONTENT_DESCRIPTION = 0x7f141218L
 /** Gboard's own "Select all", already present because its text-editing panel shows it. */
 private const val SELECT_ALL_LABEL = "0x7f140576"
 
-/** Gboard ships no select-all drawable; this is the text-editing panel's own icon. */
-private const val SELECT_ALL_ICON = "0x7f080546"
+/**
+ * Material's own `select_all` glyph — the dashed marquee with a filled inner square.
+ *
+ * Gboard ships it and never draws it. Its own text-editing panel renders "Select all" as a **text
+ * label with no icon at all**, which is why the first version of this button borrowed the panel's
+ * icon instead: the obvious place to look genuinely has nothing to take.
+ *
+ * It was found by shape rather than by name, because aapt2 `--collapse-resource-names` leaves 1,679
+ * drawables with no names to search — every vector's `pathData` was scanned for the signature of a
+ * dashed border, ~20 two-unit hops, and exactly one drawable in the app carries the glyph.
+ *
+ * Its `fillColor` is hardcoded white and it declares no `tint`, which looks alarming and is not:
+ * [SEED_ICON] is hardcoded near-black and is what *Gboard itself* puts on the toolbar, where it
+ * stays legible on dark themes. Access-point icons are therefore tinted downstream, and since both
+ * drawables are solid single-colour shapes the source colour is replaced either way.
+ */
+private const val SELECT_ALL_ICON = "0x7f080218"
 
 /**
  * Flexboard's own access-point id. Gboard keys ordering and user customisation off this string, so

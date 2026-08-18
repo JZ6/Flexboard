@@ -131,6 +131,12 @@ EXPECTED = {
     # Gboard's own "Select all", already present for the text editing panel. Asserted because the
     # button would otherwise be labelled with whatever the id came to mean.
     'selectall_label': 0x7f140576,
+    # Material's select_all glyph, which Gboard ships and never draws -- its own text-editing panel
+    # labels the key in words and gives it no icon. Found by shape, because 1,679 drawables have had
+    # their names collapsed by aapt2, and asserted the same way: the tail of the path is the inner
+    # filled square inside the dashed marquee, which nothing else in the app draws.
+    'selectall_icon': 0x7f080218,
+    'selectall_glyph': 'M9,9h6v6L9,15L9,9z',
     'selectall_split_registers': 7,
     'selectall_split_ins': 2,
     'selectall_split_scratch': [0, 1, 2, 3, 4],
@@ -963,8 +969,28 @@ def run(dl, apk=None):
             check('selectall: the label id still reads "Select all"', label == 'Select all',
                   f'{hex(E["selectall_label"])} now reads {label!r}')
             icon = table.name(E['selectall_seed_literals'][0])
-            check('selectall: the icon id is still a drawable',
+            check('selectall: the seed icon id is still a drawable',
                   str(icon).startswith('drawable/'), f'reads {icon!r}')
+            # The icon the button is actually given, which is a different id from the seed above and
+            # has no dex anchor either -- nothing in stock Gboard ever loads it. Checking the type
+            # is not enough on its own: a bump renumbers drawables, and landing on some other
+            # drawable would still read as 'drawable/'. So the glyph is checked, by the path
+            # signature it was found by in the first place.
+            shown = table.name(E['selectall_icon'])
+            if check('selectall: the button icon id is still a drawable',
+                     str(shown).startswith('drawable/'), f'reads {shown!r}'):
+                import re as _re
+                import axml
+                zf = zipfile.ZipFile(apk)
+                src = str(table.value(E['selectall_icon']))
+                m = _re.search(r"res/[^']+\.xml", src)
+                blob = ''
+                if m:
+                    for _d, _t, at in axml.parse(zf.read(m.group(0))):
+                        blob += str(at.get('pathData', ''))
+                check('selectall: it is still the select-all glyph',
+                      E['selectall_glyph'] in blob,
+                      f'{hex(E["selectall_icon"])} no longer draws the marquee')
         except Exception as exc:
             check('selectall: the label id still reads "Select all"', False,
                   f'could not read resources from {apk}: {exc}')
