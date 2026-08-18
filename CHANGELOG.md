@@ -1,3 +1,11 @@
+# [1.1.1-dev.1](https://github.com/JZ6/Flexboard/compare/v1.1.0...v1.1.1-dev.1) (2026-08-18)
+
+* **Gboard:** bump to 1.1.1-dev.1
+* **Gboard:** tools: match stripped drawables against Material Icons by geometry
+* **Gboard:** record that the toolbar slider collapses a fold's two counts into one
+* **Gboard:** give Select all its own icon
+* **Gboard:** raise the toolbar slider's maximum to 12
+
 # [1.1.0](https://github.com/JZ6/Flexboard/compare/v1.1.0-dev.3...v1.1.0) (2026-08-18)
 
 * **Gboard:** bump to 1.1.0
