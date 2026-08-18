@@ -12,6 +12,7 @@ Everything the `docs/` findings rest on was produced with these three files.
 | `dis.py` | Full-format Dalvik disassembler on top of `dexlib`, with registers and branch targets |
 | `axml.py` | Binary XML (AXML) reader — walks elements and attributes of compiled `res/**.xml` |
 | `arsc.py` | Resource table reader — resource id to name and value, and the reverse lookup from a packed path back to its id |
+| `glyphs.py` | Matches the APK's stripped vector drawables against published Material Icons SVGs, by geometry rather than by name. |
 | `preflight.py` | Runs every patch-time assertion against a dex, so a moved binding fails here instead of on a phone |
 
 ## Setup
@@ -112,6 +113,30 @@ needle = struct.pack('<I', 0x7f14097b)
 hits = [n for n in z.namelist()
         if n.startswith('res/') and n.endswith('.xml') and needle in z.read(n)]
 ```
+
+## Find an icon when every drawable is called `0_resource_name_obfuscated`
+
+Names are stripped, so there is nothing to grep. The geometry is not stripped, and Gboard imports
+blocks of Google's own [Material Icons](https://fonts.google.com/icons) unchanged — so download the
+reference SVG and match on shape:
+
+```bash
+curl -sO https://raw.githubusercontent.com/google/material-design-icons/master/src/content/select_all/materialicons/24px.svg
+python3 glyphs.py gboard.apk 24px.svg
+#   BUNDLED  24px   0x7f080218 (res/cmc.xml)
+```
+
+The two encodings never match as text — Gboard's `M3,5h2L5,3c-1.1,0 -2,0.9 -2,2z` against
+Material's `M3 5h2V3c-1.1 0-2 .9-2 2z` — so each path is evaluated to the absolute points it
+visits, which both agree on exactly.
+
+Confirmed present this way: `content_copy` `0x7f080214`, `content_cut` `0x7f080215`,
+`content_paste` `0x7f080217`, `select_all` `0x7f080218`. Consecutive ids, because they arrived as a
+block. **Not the whole catalogue** — `undo` and `search` match nothing, so check rather than assume.
+Only 489 of the 1,679 drawables are vectors at all; the rest are gradients, shapes and ripples.
+
+Pick the legacy **Material Icons** variant on the site, not Material **Symbols**: the newer set is
+drawn to a different geometry and will not match.
 
 ## Resolve a resource id, name or packed path
 
