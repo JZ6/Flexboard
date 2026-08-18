@@ -127,27 +127,27 @@ EXPECTED = {
     # the patch -- it reads the preference with whatever Gboard computed -- but it is the number the
     # settings slider displays while unset, so it has to stay true.
     'toolbar_stock_count': 5,
-    # ---- select all button
+    # ---- text editing buttons
     # The three resource ids Gboard's text-editing access-point seed uses together. The patch finds
     # the seed by them and then reads the builder's setters out of it by the value each is handed,
     # because five setters share the signature (I)V and naming one would be a bet on R8's letters.
-    'selectall_seed_literals': [0x7f080546, 0x7f140720, 0x7f141218],
-    # Gboard's own "Select all", already present for the text editing panel. Asserted because the
-    # button would otherwise be labelled with whatever the id came to mean.
-    'selectall_label': 0x7f140576,
-    # Material's select_all glyph, which Gboard ships and never draws -- its own text-editing panel
-    # labels the key in words and gives it no icon. Found by shape, because 1,679 drawables have had
-    # their names collapsed by aapt2, and asserted the same way: the tail of the path is the inner
-    # filled square inside the dashed marquee, which nothing else in the app draws.
-    'selectall_icon': 0x7f080218,
-    'selectall_glyph': 'M9,9h6v6L9,15L9,9z',
-    'selectall_split_registers': 7,
-    'selectall_split_ins': 2,
-    'selectall_split_scratch': [0, 1, 2, 3, 4],
-    'selectall_oncreate_registers': 12,
+    'buttons_seed_literals': [0x7f080546, 0x7f140720, 0x7f141218],
+    # Every button's label and icon, with the path signature the icon was found by. The labels are
+    # Gboard's own strings, already translated; the icons are Material's, which Gboard bundles and
+    # never draws -- its text editing panel spells all three out in words with no icon at all.
+    # Neither has a dex anchor, so both need the resource table. Found with tools/apk/glyphs.py.
+    'buttons_resources': [
+        ('Select all', 0x7f140576, 0x7f080218, 'M9,9h6v6L9,15L9,9z'),
+        ('Copy', 0x7f140560, 0x7f080214, 'M19,21L8,21L8,7h11v14z'),
+        ('Paste', 0x7f140570, 0x7f080217, 'M19,20L5,20L5,4h2v3h10L17,4h2v16z'),
+    ],
+    'buttons_split_registers': 7,
+    'buttons_split_ins': 2,
+    'buttons_split_scratch': [0, 1, 2, 3, 4],
+    'buttons_oncreate_registers': 12,
     # The keycode Gboard wraps a Runnable in, and the dispatcher that runs it. Two other classes
     # test this keycode and decline it, so "something tests it" is not the check that matters.
-    'selectall_runnable_keycode': -40007,
+    'buttons_runnable_keycode': -40007,
 }
 
 # --------------------------------------------------------------------------- dex helpers
@@ -867,13 +867,13 @@ def run(dl, apk=None):
                           regs(stores[0])[1] == this_reg,
                           f'read off v{regs(stores[0])[1]}, receiver is v{this_reg}')
 
-    # ---- select all button
+    # ---- text editing buttons
     #
     # Both insertion points are derived structurally rather than named, so what these checks guard
     # is the *shape* the derivation relies on -- that each one still resolves to exactly one method.
     # A second match is as much a failure as none: the patch would pick one and give no sign.
-    seed_literals = set(E['selectall_seed_literals'])
-    keycode = E['selectall_runnable_keycode']
+    seed_literals = set(E['buttons_seed_literals'])
+    keycode = E['buttons_runnable_keycode']
     keycode_masked = keycode & 0xffffffff
     seeds, splits, runners = [], [], []
     for dex in dl:
@@ -914,18 +914,18 @@ def run(dl, apk=None):
                             or keycode in switch_keys(dex, mc)):
                         runners.append(m_name)
 
-    check('selectall: a dispatcher turns the Runnable keycode into run()', bool(runners),
+    check('buttons: a dispatcher turns the Runnable keycode into run()', bool(runners),
           f'no method both sees {hex(keycode_masked)} and calls Runnable.run()')
 
-    if check('selectall: exactly one access-point seed method', len(seeds) == 1, str(seeds)):
+    if check('buttons: exactly one access-point seed method', len(seeds) == 1, str(seeds)):
         c, ins = body(dl, seeds[0])
         # The setters are told apart by the literal handed to each, so each literal must appear
         # once. Two occurrences and the derivation picks the first, silently.
-        for want in E['selectall_seed_literals']:
+        for want in E['buttons_seed_literals']:
             n = sum(1 for _pc, mn, a in ins
                     if mn.startswith('const') and re.search(r'0x[0-9a-f]+', a)
                     and int(re.search(r'0x[0-9a-f]+', a).group(), 16) == want)
-            check(f'selectall: seed loads {hex(want)} exactly once', n == 1, f'found {n}')
+            check(f'buttons: seed loads {hex(want)} exactly once', n == 1, f'found {n}')
         # `args` is "{v0, v1}, Lowner;->name(...)ret" -- the descriptor is what follows the
         # register list, so parsing has to drop that first.
         def called(a):
@@ -939,7 +939,7 @@ def run(dl, apk=None):
                 # what the patch derives it as.
                 access_point = called(a).split('->')[0]
                 break
-        if check('selectall: the seed opens a builder', builder is not None):
+        if check('buttons: the seed opens a builder', builder is not None):
             setters = [called(a) for _pc, mn, a in ins
                        if mn.startswith('invoke') and called(a).startswith(f'{builder}->')
                        and called(a).endswith('(I)V')]
@@ -947,14 +947,14 @@ def run(dl, apk=None):
             # description apart *by which setter each literal reaches*; if all three literals
             # came to reach the same setter, counting call sites would still say three and the
             # button would be built with two of its three properties silently unset.
-            check('selectall: it drives three distinct (I)V setters',
+            check('buttons: it drives three distinct (I)V setters',
                   len(set(setters)) == 3, f'found {len(set(setters))} distinct of {len(setters)}')
             # The very ambiguity the derivation exists to route around -- if this ever drops to
             # one, naming the setter would have been safe and this machinery is over-built.
             d_b, sup_b, cd_b = find_class(dl, builder)
-            if check('selectall: the builder class is present', d_b is not None):
+            if check('buttons: the builder class is present', d_b is not None):
                 same = [m for m, _a, _o in d_b.class_methods(cd_b) if m.endswith('(I)V')]
-                check('selectall: (I)V is still ambiguous on the builder', len(same) > 1,
+                check('buttons: (I)V is still ambiguous on the builder', len(same) > 1,
                       f'only {len(same)}: naming it would now be safe')
                 # Mirrors the patch's soleBuilderMethod assertions. All four, not three -- the
                 # build method is as much a derivation as the setters, and leaving it out means a
@@ -965,21 +965,21 @@ def run(dl, apk=None):
                                   ('(Ljava/lang/String;Ljava/lang/Object;)V', 'extras setter'),
                                   (f'(){access_point}', 'build method')):
                     n = sum(1 for m, _a, _o in d_b.class_methods(cd_b) if m.endswith(sig))
-                    check(f'selectall: exactly one {what} on the builder', n == 1, f'found {n}')
+                    check(f'buttons: exactly one {what} on the builder', n == 1, f'found {n}')
 
                 # The other half of the mechanism: the action setter is what bakes the keycode the
                 # dispatcher above switches on. If it stops doing that, the button still builds
                 # and still renders, and tapping it does nothing at all.
                 action = next((m for m, _a, _o in d_b.class_methods(cd_b)
                                if m.endswith('(Ljava/lang/Runnable;)V')), None)
-                if check('selectall: the builder has a Runnable setter to inspect', action):
+                if check('buttons: the builder has a Runnable setter to inspect', action):
                     _ac, a_ins = body(dl, action)
                     lits = set()
                     for _pc, mn, a in a_ins or []:
                         m = re.search(r'#(-?0x[0-9a-f]+|-?\d+)', a)
                         if mn.startswith('const') and m:
                             lits.add(int(m.group(1), 0) & 0xffffffff)
-                    check('selectall: the action setter still bakes the Runnable keycode',
+                    check('buttons: the action setter still bakes the Runnable keycode',
                           keycode_masked in lits,
                           f'{hex(keycode_masked)} not among {sorted(hex(x) for x in lits)}')
 
@@ -990,7 +990,7 @@ def run(dl, apk=None):
     # otherwise. A bump renumbers string resources, and the button would ship labelled with
     # whatever the id came to mean.
     if apk is None:
-        check.skip('selectall: the label id still reads "Select all"',
+        check.skip('buttons: the label and icon ids still mean what they say',
                    'no APK given; pass one as the second argument to check resource ids')
     else:
         try:
@@ -998,45 +998,53 @@ def run(dl, apk=None):
 
             import arsc
             table = arsc.load(zipfile.ZipFile(apk).read('resources.arsc'))
-            label = table.value(E['selectall_label'])
-            check('selectall: the label id still reads "Select all"', label == 'Select all',
-                  f'{hex(E["selectall_label"])} now reads {label!r}')
-            icon = table.name(E['selectall_seed_literals'][0])
-            check('selectall: the seed icon id is still a drawable',
+            zf = zipfile.ZipFile(apk)
+            icon = table.name(E['buttons_seed_literals'][0])
+            check('buttons: the seed icon id is still a drawable',
                   str(icon).startswith('drawable/'), f'reads {icon!r}')
-            # The icon the button is actually given, which is a different id from the seed above and
-            # has no dex anchor either -- nothing in stock Gboard ever loads it. Checking the type
-            # is not enough on its own: a bump renumbers drawables, and landing on some other
-            # drawable would still read as 'drawable/'. So the glyph is checked, by the path
-            # signature it was found by in the first place.
-            shown = table.name(E['selectall_icon'])
-            if check('selectall: the button icon id is still a drawable',
-                     str(shown).startswith('drawable/'), f'reads {shown!r}'):
-                import re as _re
-                import axml
-                zf = zipfile.ZipFile(apk)
-                src = str(table.value(E['selectall_icon']))
-                m = _re.search(r"res/[^']+\.xml", src)
-                blob = ''
-                if m:
-                    for _d, _t, at in axml.parse(zf.read(m.group(0))):
-                        blob += str(at.get('pathData', ''))
-                check('selectall: it is still the select-all glyph',
-                      E['selectall_glyph'] in blob,
-                      f'{hex(E["selectall_icon"])} no longer draws the marquee')
+
+            import re as _re
+            import axml
+
+            def glyph(rid):
+                src = _re.search(r"res/[^']+\.xml", str(table.value(rid)))
+                if not src:
+                    return ''
+                return ''.join(str(at.get('pathData', ''))
+                               for _d, _t, at in axml.parse(zf.read(src.group(0))))
+
+            # Every button's label and icon, none of which has any anchor in the dex: nothing in
+            # stock Gboard loads either the way this patch does, so without the resource table they
+            # would sit in EXPECTED asserted by nothing. A bump renumbers resources, and the buttons
+            # would ship labelled and drawn as whatever the ids came to mean -- Copy wearing Paste's
+            # icon is exactly the kind of wrong that looks deliberate.
+            #
+            # The icon is checked by *glyph*, not by type. A renumbering would still land on
+            # something reading 'drawable/', so the path signature each was found by is the check.
+            for name, label_id, icon_id, signature in E['buttons_resources']:
+                label = table.value(label_id)
+                check(f'buttons: the {name} label still reads "{name}"',
+                      str(label).lower() == name.lower(),
+                      f'{hex(label_id)} now reads {label!r}')
+                drawable = table.name(icon_id)
+                if check(f'buttons: the {name} icon id is still a drawable',
+                         str(drawable).startswith('drawable/'), f'reads {drawable!r}'):
+                    check(f'buttons: it is still the {name} glyph',
+                          signature in glyph(icon_id),
+                          f'{hex(icon_id)} no longer draws it')
         except Exception as exc:
-            check('selectall: the label id still reads "Select all"', False,
+            check('buttons: the label id still reads "Select all"', False,
                   f'could not read resources from {apk}: {exc}')
 
-    if check('selectall: exactly one access-points split method', len(splits) == 1, str(splits)):
+    if check('buttons: exactly one access-points split method', len(splits) == 1, str(splits)):
         c, ins = body(dl, splits[0])
-        check('selectall: the split register count',
-              c['registers'] == E['selectall_split_registers'], f'got {c["registers"]}')
-        check('selectall: the split parameter words',
-              c['ins'] == E['selectall_split_ins'], f'got {c["ins"]}')
+        check('buttons: the split register count',
+              c['registers'] == E['buttons_split_registers'], f'got {c["registers"]}')
+        check('buttons: the split parameter words',
+              c['ins'] == E['buttons_split_ins'], f'got {c["ins"]}')
         free = live_free(ins, c['registers'], 0)
-        want = E['selectall_split_scratch']
-        check('selectall: the scratch registers are dead at the split entry',
+        want = E['buttons_split_scratch']
+        check('buttons: the scratch registers are dead at the split entry',
               all(r in free for r in want), f'free={free} want={want}')
         # The list parameter is substituted wholesale at entry, so it has to still be genuinely an
         # input: some path must read it before writing it.
@@ -1047,7 +1055,7 @@ def run(dl, apk=None):
         # over the real CFG answers the question that actually matters, and answers it soundly:
         # if the parameter is live at entry, every path that reads it reads what was passed in.
         p1 = c['registers'] - c['ins'] + 1
-        check('selectall: the list parameter is live at entry', p1 not in free,
+        check('buttons: the list parameter is live at entry', p1 not in free,
               f'v{p1} is dead at entry, so substituting it would reach nothing')
 
     # Read superclasses straight out of each class_def rather than resolving every class through
@@ -1059,13 +1067,13 @@ def run(dl, apk=None):
                 '<8I', dex.b, dex.cls_o + 32 * i)
             if su != 0xffffffff and dex.type(su) == 'Landroid/inputmethodservice/InputMethodService;':
                 imes.append(dex.type(ci))
-    if check('selectall: exactly one InputMethodService subclass', len(imes) == 1, str(imes)):
+    if check('buttons: exactly one InputMethodService subclass', len(imes) == 1, str(imes)):
         c, ins = body(dl, f'{imes[0]}->onCreate()V')
-        if check('selectall: it declares onCreate()V', ins is not None):
-            check('selectall: its register count',
-                  c['registers'] == E['selectall_oncreate_registers'], f'got {c["registers"]}')
+        if check('buttons: it declares onCreate()V', ins is not None):
+            check('buttons: its register count',
+                  c['registers'] == E['buttons_oncreate_registers'], f'got {c["registers"]}')
             free = live_free(ins, c['registers'], 0)
-            check('selectall: v0 is dead at onCreate entry', 0 in free, f'free={free}')
+            check('buttons: v0 is dead at onCreate entry', 0 in free, f'free={free}')
 
     # ---- forced preferences and flick symbols share this hook
     c, _ = body(dl, f'{LATIN_APP}->d({store})V')

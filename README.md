@@ -163,21 +163,23 @@ It is always on when the patch is applied. Swiping right after a delete did noth
 Gboard, so nothing is being taken away by giving it a meaning — and Gboard fills the same undo slot
 when you swipe on the backspace key, so it works there too.
 
-## Select all
+## Text editing buttons
 
-Adds a **Select all** button to the toolbar above the keyboard. One tap selects everything in the
-text field.
+Adds **Select all**, **Copy** and **Paste** buttons to the toolbar above the keyboard. One tap each,
+on whatever you are typing into.
 
-Gboard can already do this, behind its **Text editing** toolbar button — open that panel, then tap
-select all. This is the same action without the panel.
+Gboard can already do all three, behind its **Text editing** toolbar button — open that panel, then
+tap the one you want. These are the same actions without the panel.
 
-The button takes the first slot on the toolbar, which pushes whatever used to be last into the
-overflow menu behind the chevron. Long-press the toolbar to reorder it like any other button.
+They take the first three slots on the toolbar, which pushes whatever used to be last into the
+overflow menu behind the chevron. Long-press the toolbar to reorder them like any other button, or
+raise the icon count with [Bigger Toolbar](#bigger-toolbar) so nothing has to move.
 
-The icon is Material's own select-all mark — the dashed square with a filled centre. Gboard ships
-it and never draws it anywhere: its text editing panel spells "Select all" out in words rather than
-using an icon, which is why this button first borrowed the panel's icon instead. The label is
-Gboard's own "Select all". Flexboard still adds no images of its own.
+The labels are Gboard's own, so they are already translated wherever Gboard is. The icons are
+Material's — the select-all marquee, and the familiar copy and paste marks. Gboard ships all three
+and draws none of them, because its text editing panel spells the actions out in words rather than
+using icons; that is why Select all first shipped borrowing an unrelated icon. Flexboard still adds
+no images of its own.
 
 ## Flick keys for symbols
 

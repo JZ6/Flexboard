@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Do the patch and the extension still agree about the preference contract?
 
-The preference keys and their defaults exist twice: once in the Kotlin patches, which read them out
-of Gboard's store at runtime, and once in `FlexboardSettingsActivity`, which writes them. They cannot
-be shared — the Activity is compiled into the extension DEX, a separate Gradle module with no
+Some values exist twice: once in the Kotlin patches and once in the extension's Java. Preference keys
+and their defaults, because the patches read Gboard's store at runtime and `FlexboardSettingsActivity`
+writes it; and the action ordinals the patches hand `TextAction`, which maps them to framework
+context-menu ids. They cannot be shared — the extension is a separate Gradle module with no
 dependency on the patches — so both sides carry a comment pointing at the other.
 
 A comment is not a check. Change one side alone and everything still compiles, the settings screen
@@ -20,11 +21,6 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PATCHES = ROOT / "patches/src/main/kotlin"
-ACTIVITY = ROOT / (
-    "extensions/extension/src/main/java/dev/jz6/flexboard/extension/settings"
-    "/FlexboardSettingsActivity.java"
-)
-
 # (Kotlin name, Java name). The names differ where each side reads more naturally on its own terms;
 # what has to match is the value.
 PAIRS = [
@@ -46,6 +42,13 @@ PAIRS = [
     ("TOOLBAR_COUNT_UNFOLDED_KEY", "KEY_TOOLBAR_COUNT_UNFOLDED"),
     ("TOOLBAR_COUNT_MIN", "TOOLBAR_COUNT_MIN"),
     ("TOOLBAR_COUNT_MAX", "TOOLBAR_COUNT_MAX"),
+    # The ordinals the patch hands the extension's constructor. The extension maps them to
+    # android.R.id.* so the framework constants stay symbolic in the one language that can name
+    # them -- which means the number crossing the boundary is meaningless on its own, and a drift
+    # would silently wire Copy to Paste rather than failing.
+    ("TEXT_ACTION_SELECT_ALL", "SELECT_ALL"),
+    ("TEXT_ACTION_COPY", "COPY"),
+    ("TEXT_ACTION_PASTE", "PASTE"),
 ]
 
 KOTLIN_CONST = re.compile(r'internal const val (\w+) = (?:"([^"]*)"|(\d+))')
@@ -217,19 +220,33 @@ def main():
     kotlin = {}
     for path in PATCHES.rglob("*.kt"):
         kotlin.update(_collect(KOTLIN_CONST, path.read_text()))
-    java = _collect(JAVA_CONST, ACTIVITY.read_text())
-
     problems = []
+
+    # Every Java file in the extension, not just the settings screen. The screen was the only side
+    # of the contract until the toolbar buttons arrived: their action ordinals are shared with
+    # TextAction, which is not a settings class at all. Collecting one file silently reported those
+    # as undeclared.
+    java, declared_in = {}, {}
+    for source in sorted(EXTENSION_ROOT.rglob("*.java")):
+        for name, value in _collect(JAVA_CONST, source.read_text()).items():
+            if name in java and java[name] != value:
+                problems.append(
+                    f"  {name} is declared twice in the extension with different values — "
+                    f"{declared_in[name]} says {java[name]!r}, {source.name} says {value!r}"
+                )
+                continue
+            java[name], declared_in[name] = value, source.name
+
     for kt_name, java_name in PAIRS:
         kt_value, java_value = kotlin.get(kt_name), java.get(java_name)
         if kt_value is None:
             problems.append(f"  {kt_name} is not declared in any patch")
         elif java_value is None:
-            problems.append(f"  {java_name} is not declared in FlexboardSettingsActivity")
+            problems.append(f"  {java_name} is not declared anywhere in the extension")
         elif kt_value != java_value:
             problems.append(
-                f"  {kt_name} = {kt_value!r} but {java_name} = {java_value!r} — "
-                f"the patch and the settings screen disagree"
+                f"  {kt_name} = {kt_value!r} but {java_name} = {java_value!r} in "
+                f"{declared_in[java_name]} — the patch and the extension disagree"
             )
 
     _check_extension_references(problems)

@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.features.selectall
+package dev.jz6.flexboard.patches.features.textactions
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.BytecodePatchContext
@@ -12,14 +12,14 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.toDescriptor
 
 /**
- * Adds a **Select all** button to Gboard's toolbar.
+ * Adds **Select all**, **Copy** and **Paste** buttons to Gboard's toolbar.
  *
- * ## Why this is not built the way it looks like it should be
+ * ## Why these are not built the way they look like they should be
  *
- * Gboard has a select-all already, and it is unreachable from anywhere but its own panel.
- * `TEXT_EDITING_SELECT_ALL` is **-10086**, and that number appears exactly once in the whole
- * app — as an entry in the name-to-value map `Lppf;-><clinit>` builds so keyboard XML can resolve
- * `<key_code>`. Two packed-switches cover it and neither acts on it: one is a classifier
+ * Gboard has all three already, and none of them is reachable from anywhere but its own text
+ * editing panel. `TEXT_EDITING_SELECT_ALL` is **-10086**, and that number appears exactly once in
+ * the whole app — as an entry in the name-to-value map `Lppf;-><clinit>` builds so keyboard XML can
+ * resolve `<key_code>`. Two packed-switches cover it and neither acts on it: one is a classifier
  * ("is this a text-editing keycode"), the other is usage metrics. The only implementation is the
  * text-editing keyboard's own consume-event hook, which runs only while that panel is open.
  *
@@ -29,8 +29,8 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * -10086 misses it entirely.
  *
  * Undo is a misleading template here. UNDO (-10045) *is* consumed at IME level, by four separate
- * handlers, which is why Flexboard's undo works from anywhere. Select-all has no equivalent. A
- * button emitting -10086 would render, press, highlight, and do nothing.
+ * handlers, which is why Flexboard's undo works from anywhere. These have no equivalent. A button
+ * emitting -10086 would render, press, highlight, and do nothing.
  *
  * ## What is used instead
  *
@@ -42,13 +42,14 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * Two other classes test -40007 and **decline** it. Neither is the runner, and mistaking one for
  * the runner is the obvious way to get this wrong.
  *
- * So the button carries a Runnable, the Runnable lives in the extension, and it calls
- * `InputConnection.performContextMenuAction(android.R.id.selectAll)` — the same thing Gboard's own
- * panel does, reached without any of Gboard's own plumbing.
+ * So each button carries a Runnable, the Runnable lives in the extension, and it calls
+ * `InputConnection.performContextMenuAction` — the same thing Gboard's own panel does, reached
+ * without any of Gboard's own plumbing. One extension class serves all three, told apart by an
+ * ordinal; see `TextAction` for why that rather than three classes or a framework id.
  *
  * ## Why nothing is published or registered
  *
- * The obvious route is to build an access-point *notification* and register it the way Gboard's own
+ * The obvious route is to build access-point *notifications* and register them the way Gboard's own
  * providers do. That route was abandoned: the providers only store their notifications in fields,
  * and what later publishes them was never established.
  *
@@ -62,7 +63,8 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * ```
  *
  * So a patch can substitute its own list at entry and the whole notification machinery is
- * bypassed. The button is prepended, which is why it appears first.
+ * bypassed. The buttons are prepended in order, which is why they appear first and in the order
+ * listed below.
  *
  * ## Why the builder setters are derived rather than named
  *
@@ -78,27 +80,21 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * sound for the same reason `flickSymbolsPatch` pins one: [COMPATIBILITY_GBOARD] ties the bundle to
  * a single Gboard build and signature.
  *
- * One honest caveat on that. The seed hands its two string setters **the same text** — both
- * `0x7f140720` and `0x7f141218` read "Text editing" — so which is the label and which the content
- * description cannot be told apart by value, and the two names below are a guess at which is which.
- * It does not matter: both are set to "Select all" here, so the emitted result is identical either
- * way. It would start mattering the moment someone wanted them to differ.
+ * One honest caveat on that. The seed hands its two string setters **the same text** — so which is
+ * the label and which the content description cannot be told apart by value, and the two names
+ * below are a guess at which is which. It does not matter: each button sets both to the same
+ * string, so the emitted result is identical either way. It would start mattering the moment
+ * someone wanted them to differ.
  *
- * The label is Gboard's own **"Select all"** string, which already exists because the text-editing
- * panel uses it. The icon is Material's `select_all`, which Gboard ships and never draws — see
- * [SELECT_ALL_ICON] for how it was found, given that 1,679 drawables have had their names stripped.
- *
- * Note that [SEED_ICON] and [SELECT_ALL_ICON] are now different ids and are doing different jobs.
- * The seed is an *input to the derivation*: the value handed to the builder's icon setter in
- * Gboard's own code, used to work out which of five `(I)V` setters the icon setter is. What the
- * button is actually given is [SELECT_ALL_ICON]. They were briefly the same number, which made the
- * distinction invisible; they are not any more.
+ * The labels are Gboard's own, already present because its text editing panel shows them. The icons
+ * are Material's, which Gboard bundles — see [BUTTONS] for how they were found, given that every
+ * drawable name in the app has been collapsed.
  */
 @Suppress("unused")
-val selectAllPatch = bytecodePatch(
-    name = "Select All Button",
-    description = "Add a Select all button to the toolbar above the keyboard. One tap selects " +
-        "everything in the text field, without opening Gboard's text editing panel first.",
+val textActionsPatch = bytecodePatch(
+    name = "Text Editing Buttons",
+    description = "Add Select all, Copy and Paste buttons to the toolbar above the keyboard, so " +
+        "each is one tap instead of opening Gboard's text editing panel first.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -107,9 +103,52 @@ val selectAllPatch = bytecodePatch(
     execute {
         val builder = resolveAccessPointBuilder()
         publishInputMethodService()
-        prependSelectAllAccessPoint(builder)
+        prependTextActionButtons(builder)
     }
 }
+
+// -------------------------------------------------------------------------------------------
+// The buttons
+// -------------------------------------------------------------------------------------------
+
+/**
+ * Flexboard's ordinals for the three actions.
+ *
+ * **Duplicated in `TextAction`**, which maps them to the framework's context-menu ids. They cannot
+ * be shared: that class is compiled into the extension DEX, a separate Gradle module with no
+ * dependency on the patches. `check_shared_constants.py` is what keeps the two sides honest.
+ */
+internal const val TEXT_ACTION_SELECT_ALL = 0
+internal const val TEXT_ACTION_COPY = 1
+internal const val TEXT_ACTION_PASTE = 2
+
+/** One toolbar button: what it is called, what it looks like, and what it asks the extension for. */
+private data class ToolbarButton(
+    val id: String,
+    val label: String,
+    val icon: String,
+    val action: Int,
+)
+
+/**
+ * The three buttons, in the order they appear on the bar.
+ *
+ * The labels are Gboard's own strings, read out of its text editing panel's compiled layout, so
+ * they are already translated into every language Gboard ships.
+ *
+ * The icons are Material's `select_all`, `content_copy` and `content_paste`. Gboard bundles them
+ * and draws none of them — its panel spells all three out in words, with no icon at all, which is
+ * why the first version of the select-all button borrowed an unrelated one. They could not be found
+ * by name, because aapt2 `--collapse-resource-names` leaves all 1,679 drawables called
+ * `0_resource_name_obfuscated`; they were found by matching published Material SVGs against the
+ * APK's vectors geometrically, with `tools/apk/glyphs.py`. The ids are consecutive because the set
+ * arrived as a block.
+ */
+private val BUTTONS = listOf(
+    ToolbarButton("flexboard_select_all", "0x7f140576", "0x7f080218", TEXT_ACTION_SELECT_ALL),
+    ToolbarButton("flexboard_copy", "0x7f140560", "0x7f080214", TEXT_ACTION_COPY),
+    ToolbarButton("flexboard_paste", "0x7f140570", "0x7f080217", TEXT_ACTION_PASTE),
+)
 
 // -------------------------------------------------------------------------------------------
 // Anchors
@@ -119,42 +158,20 @@ val selectAllPatch = bytecodePatch(
  * The three resource ids Gboard's text-editing access-point seed uses together, and which nothing
  * else in the app uses together. Resolved with `tools/apk/arsc.py`: the drawable is the panel's
  * icon, `0x7f140720` reads "Text editing", `0x7f141218` is its content description.
+ *
+ * These are **inputs to the derivation** — the values Gboard's own code hands the setters, used to
+ * work out which of five `(I)V` setters is which. They are not what any button is given.
  */
 private const val SEED_ICON = 0x7f080546L
 private const val SEED_LABEL = 0x7f140720L
 private const val SEED_CONTENT_DESCRIPTION = 0x7f141218L
 
-/** Gboard's own "Select all", already present because its text-editing panel shows it. */
-private const val SELECT_ALL_LABEL = "0x7f140576"
-
-/**
- * Material's own `select_all` glyph — the dashed marquee with a filled inner square.
- *
- * Gboard ships it and never draws it. Its own text-editing panel renders "Select all" as a **text
- * label with no icon at all**, which is why the first version of this button borrowed the panel's
- * icon instead: the obvious place to look genuinely has nothing to take.
- *
- * It was found by shape rather than by name, because aapt2 `--collapse-resource-names` leaves 1,679
- * drawables with no names to search — every vector's `pathData` was scanned for the signature of a
- * dashed border, ~20 two-unit hops, and exactly one drawable in the app carries the glyph.
- *
- * Its `fillColor` is hardcoded white and it declares no `tint`, which looks alarming and is not:
- * [SEED_ICON] is hardcoded near-black and is what *Gboard itself* puts on the toolbar, where it
- * stays legible on dark themes. Access-point icons are therefore tinted downstream, and since both
- * drawables are solid single-colour shapes the source colour is replaced either way.
- */
-private const val SELECT_ALL_ICON = "0x7f080218"
-
-/**
- * Flexboard's own access-point id. Gboard keys ordering and user customisation off this string, so
- * it must not collide with one of Gboard's; the prefix is what guarantees that.
- */
-private const val ACCESS_POINT_ID = "flexboard_select_all"
-
-private const val EXTENSION_CLASS = "Ldev/jz6/flexboard/extension/selectall/SelectAll;"
+private const val EXTENSION_CLASS = "Ldev/jz6/flexboard/extension/textaction/TextAction;"
 
 private const val SET_SERVICE =
     "$EXTENSION_CLASS->setService(Landroid/inputmethodservice/InputMethodService;)V"
+
+private const val NEW_ACTION = "$EXTENSION_CLASS-><init>(I)V"
 
 private const val INPUT_METHOD_SERVICE = "Landroid/inputmethodservice/InputMethodService;"
 
@@ -167,9 +184,7 @@ private const val MATH_MIN = "Ljava/lang/Math;->min(II)I"
  * register layout, and R8 re-rolls register allocation on every Gboard build.
  */
 private const val SPLIT_REGISTER_COUNT = 7
-private const val SPLIT_PARAMETER_WORDS = 2
 private const val ON_CREATE_REGISTER_COUNT = 12
-private const val ON_CREATE_PARAMETER_WORDS = 1
 
 /** The builder API, every member of it derived. */
 private data class AccessPointBuilder(
@@ -301,7 +316,7 @@ private fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilder
  *
  * Derived as *the* class extending `android.inputmethodservice.InputMethodService`. There is
  * exactly one, and the assertion is what keeps that a fact — a second one appearing would mean the
- * button silently wires itself to whichever came first.
+ * buttons silently wire themselves to whichever came first.
  *
  * All of v0..v10 are dead at entry by backward liveness, so `p0` is read and nothing else is
  * touched.
@@ -310,7 +325,7 @@ private fun BytecodePatchContext.publishInputMethodService() {
     val services = classesMatching { it.superclass == INPUT_METHOD_SERVICE }
     check(services.size == 1) {
         "Expected exactly one InputMethodService subclass, found ${services.size}: " +
-            "${services.map { it.type }}. The select-all action needs an unambiguous one."
+            "${services.map { it.type }}. The text actions need an unambiguous one."
     }
 
     val onCreate = services.single().methods.singleOrNull {
@@ -332,7 +347,7 @@ private fun BytecodePatchContext.publishInputMethodService() {
 }
 
 /**
- * Prepends the button to the list the bar is built from.
+ * Prepends the buttons to the list the bar is built from.
  *
  * The target is derived by shape rather than name: the sole method taking a `List` that splits it
  * with two `subList` calls around a `Math.min`. Those are framework references, so the derivation
@@ -342,8 +357,11 @@ private fun BytecodePatchContext.publishInputMethodService() {
  * `p1` is only ever read by the stock body — a size and the two `subList` calls — so substituting
  * it at entry is safe. v0..v4 are dead there by backward liveness over the real CFG, not by a
  * forward first-touch scan, which is unsound and nearly shipped register corruption once already.
+ *
+ * Each button is inserted at its own index rather than all at zero, because repeated insertion at
+ * zero would reverse them.
  */
-private fun BytecodePatchContext.prependSelectAllAccessPoint(builder: AccessPointBuilder) {
+private fun BytecodePatchContext.prependTextActionButtons(builder: AccessPointBuilder) {
     val candidates = classesMatching { classDef ->
         classDef.methods.any { it.splitsAccessPoints() }
     }.flatMap { it.methods }.filter { it.splitsAccessPoints() }
@@ -366,29 +384,34 @@ private fun BytecodePatchContext.prependSelectAllAccessPoint(builder: AccessPoin
             "refusing to guess the register mapping"
     }
 
-    method.addInstructions(
-        0,
-        """
-            new-instance v0, Ljava/util/ArrayList;
-            invoke-direct { v0, p1 }, Ljava/util/ArrayList;-><init>(Ljava/util/Collection;)V
+    check(BUTTONS.map { it.id }.distinct().size == BUTTONS.size) {
+        "Two buttons share an access-point id: ${BUTTONS.map { it.id }}. Gboard keys ordering and " +
+            "user customisation off that string, so a collision would lose one of them."
+    }
+    check(BUTTONS.size <= MAX_NIBBLE_LITERAL) {
+        "${BUTTONS.size} buttons cannot all be indexed with a `const/4`"
+    }
 
+    val built = BUTTONS.withIndex().joinToString("\n") { (index, button) ->
+        """
             invoke-static { }, ${builder.newBuilder}
             move-result-object v1
 
-            const-string v2, "$ACCESS_POINT_ID"
+            const-string v2, "${button.id}"
             invoke-virtual { v1, v2 }, ${builder.setId}
 
-            const v2, $SELECT_ALL_ICON
+            const v2, ${button.icon}
             invoke-virtual { v1, v2 }, ${builder.setIcon}
 
-            const v2, $SELECT_ALL_LABEL
+            const v2, ${button.label}
             invoke-virtual { v1, v2 }, ${builder.setLabel}
 
-            const v2, $SELECT_ALL_LABEL
+            const v2, ${button.label}
             invoke-virtual { v1, v2 }, ${builder.setContentDescription}
 
             new-instance v2, $EXTENSION_CLASS
-            invoke-direct { v2 }, $EXTENSION_CLASS-><init>()V
+            const/4 v3, ${button.action}
+            invoke-direct { v2, v3 }, $NEW_ACTION
             invoke-virtual { v1, v2 }, ${builder.setAction}
 
             const/4 v2, 0x1
@@ -400,13 +423,24 @@ private fun BytecodePatchContext.prependSelectAllAccessPoint(builder: AccessPoin
             invoke-virtual { v1 }, ${builder.build}
             move-result-object v1
 
-            const/4 v2, 0x0
+            const/4 v2, $index
             invoke-virtual { v0, v2, v1 }, Ljava/util/ArrayList;->add(ILjava/lang/Object;)V
+        """
+    }
 
+    method.addInstructions(
+        0,
+        """
+            new-instance v0, Ljava/util/ArrayList;
+            invoke-direct { v0, p1 }, Ljava/util/ArrayList;-><init>(Ljava/util/Collection;)V
+            $built
             move-object p1, v0
         """,
     )
 }
+
+/** `const/4` carries its value in a nibble, so it can index at most eight buttons. */
+private const val MAX_NIBBLE_LITERAL = 8
 
 /** The bar-versus-overflow split, identified by what it does to its `List` parameter. */
 private fun Method.splitsAccessPoints(): Boolean {

@@ -119,10 +119,11 @@ conclusion. The bypass patch's note in this file says a conclusion is only as se
 link; this is the other half of it — a conclusion can also be wrong because a link nobody thought to
 question was already documented as broken.
 
-## Why the select-all button carries a Runnable rather than a keycode
+## Why the text editing buttons carry a Runnable rather than a keycode
 
 Every other button on Gboard's toolbar works by emitting a keycode, so the obvious build is a button
-emitting `TEXT_EDITING_SELECT_ALL`. That button would render, press, highlight, and do nothing.
+emitting `TEXT_EDITING_SELECT_ALL`. That button would render, press, highlight, and do nothing. The
+same is true of copy and paste.
 
 `TEXT_EDITING_SELECT_ALL` is -10086, and the number appears exactly **once** in the app: as an entry
 in the map that resolves `<key_code>` when Gboard parses keyboard XML. Two packed-switches cover it
@@ -137,15 +138,22 @@ none. Reasoning from undo to select-all gives the wrong answer.
 What the button uses instead is a Gboard mechanism that is genuinely global: the access-point
 builder's `Runnable` setter, which does not store a field but wraps the Runnable as key data under
 keycode **-40007** — and *that* is dispatched at IME level. So the button carries code rather than
-an instruction, and the code calls `performContextMenuAction(selectAll)` on the input connection,
-which is what Gboard's own panel does.
+an instruction, and the code calls `performContextMenuAction` on the input connection, which is what
+Gboard's own panel does.
+
+**One extension class serves all three buttons**, told apart by an ordinal the patch passes to its
+constructor. Three classes would mean three copies of the IME-service holder and three places for
+the null handling to drift, or one holder the others reach into — the same coupling with more
+indirection. The ordinal is Flexboard's own rather than `android.R.id.copy` directly, so the
+framework constants stay symbolic in the one language that can name them instead of appearing as
+`0x0102001b` in Kotlin.
 
 **Nothing is published or registered**, which is the part worth recording because a lot of work went
 into the route that is not used. Gboard's access-point providers build notification objects and
 store them in fields, and what later publishes them was never established — that question blocked
 the feature for a while. It turned out to be avoidable: the method that splits the ordered list into
 "on the bar" and "in the overflow" takes that list **as a parameter** and only reads it. Substituting
-a longer list at entry adds a button, and the whole notification machinery is bypassed.
+a longer list at entry adds buttons, and the whole notification machinery is bypassed.
 
 **The builder's setters are derived, not named.** Five of them share the signature `(I)V`. That is
 exactly the shape behind this project's worst bug — `AbstractIme->s` was the undo re-commit on

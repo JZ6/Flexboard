@@ -41,9 +41,10 @@ The list above is kept as written; this notes which of it has landed, rather tha
   a fold changes class when it opens, and overriding at entry returned before that choice. There are
   now two sliders, the second applying only while unfolded and falling back to the first.
 
-- **add select all copy paste hotkeys** — partly. *Select All Button* puts a one-tap **Select all**
-  on the toolbar. Copy, cut and paste are not built; the mechanism now exists for them, so they are
-  a repeat of the same shape rather than new research.
+- **add select all copy paste hotkeys** — *Text Editing Buttons* puts one-tap **Select all**,
+  **Copy** and **Paste** on the toolbar. Cut is not built; it is the same shape again, one entry in
+  a list. The icons turned out to be free: Gboard bundles Material's set and draws none of them, and
+  `tools/apk/glyphs.py` finds them by geometry now that every drawable name is stripped.
 
 On **Hot keys as new tool bar objects**: the toolbar slider was assumed to be a prerequisite, on the
 grounds that adding buttons only helps if there is room. That turned out to be wrong, which was
