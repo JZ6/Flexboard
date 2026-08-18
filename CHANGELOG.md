@@ -1,3 +1,8 @@
+# [1.1.1-dev.2](https://github.com/JZ6/Flexboard/compare/v1.1.1-dev.1...v1.1.1-dev.2) (2026-08-18)
+
+* **Gboard:** bump to 1.1.1-dev.2
+* **Gboard:** give a fold's two screens their own toolbar counts
+
 # [1.1.1-dev.1](https://github.com/JZ6/Flexboard/compare/v1.1.0...v1.1.1-dev.1) (2026-08-18)
 
 * **Gboard:** bump to 1.1.1-dev.1
