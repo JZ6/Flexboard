@@ -52,9 +52,6 @@ internal val forceScrubPreferencesPatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
-    // Carries GboardSettings, which does the writes.
-    extendWith("extensions/extension.mpe")
-
     execute {
         ApplyPreferenceValuesFingerprint.method.callAtAppStart(FORCE_SCRUB_PREFERENCES)
     }

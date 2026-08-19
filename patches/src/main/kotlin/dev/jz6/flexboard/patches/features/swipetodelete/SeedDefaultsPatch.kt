@@ -53,7 +53,6 @@ internal val seedDefaultsPatch = bytecodePatch(
         "settled on their own.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
-    extendWith("extensions/extension.mpe")
 
     execute {
         ApplyPreferenceValuesFingerprint.method.callAtAppStart(SEED_DEFAULTS)

@@ -12,6 +12,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import dev.jz6.flexboard.patches.features.swipetodelete.scrubTuningPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
+import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.opcodeName
@@ -72,6 +73,8 @@ val swipeToDeletePatch = bytecodePatch(
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
 
     // Widening the gate is pointless if the handler is never attached, and unusable while glide
     // typing is live on the same pointer stream.

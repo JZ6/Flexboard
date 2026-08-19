@@ -67,18 +67,6 @@ internal val scrubTuningPatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
-    // The entry that reaches the screen writing these preferences. Shipping the reader without it
-    // would leave three values nothing can ever set.
-    dependsOn(scrubSettingsScreenPatch)
-
-    // Writes the swipe length's starting value on first run, rather than letting the read's
-    // fallback stand in for it. See that patch for why the difference matters.
-    dependsOn(seedDefaultsPatch)
-
-    // Carries FlexboardSettingsActivity, which the manifest entry that patch writes names. The
-    // merge has to happen from a bytecode patch; a resource patch cannot do it.
-    extendWith("extensions/extension.mpe")
-
     execute {
         checkPreferenceStorePins()
 

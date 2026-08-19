@@ -13,6 +13,7 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
+import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldOwnerType
@@ -70,6 +71,8 @@ val swipeRightToUndoPatch = bytecodePatch(
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
 
     execute {
         // No `checkPreferenceStorePins()` here any more: this patch reads no preference, so the

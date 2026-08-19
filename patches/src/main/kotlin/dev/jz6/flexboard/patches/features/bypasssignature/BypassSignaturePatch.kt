@@ -10,6 +10,7 @@ import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
+import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.usesField
@@ -64,6 +65,8 @@ val bypassGboardSignaturePatch = bytecodePatch(
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
 
     execute {
         SignatureCheckFingerprint.method.forceSignatureChecksToPass()

@@ -8,6 +8,7 @@ import dev.jz6.flexboard.patches.shared.Constants.GBOARD_PATCHED_PACKAGE_NAME
 import dev.jz6.flexboard.patches.shared.Constants.GBOARD_SETTINGS_XML
 import dev.jz6.flexboard.patches.shared.Constants.SETTINGS_ACTIVITY_CLASS
 import dev.jz6.flexboard.patches.shared.androidAttribute
+import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.setAndroidAttribute
 import org.w3c.dom.Attr
 import org.w3c.dom.Document
@@ -39,6 +40,8 @@ val installAsGboardClonePatch = resourcePatch(
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
 
     finalize {
         document("AndroidManifest.xml").use { manifest ->

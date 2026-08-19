@@ -19,8 +19,7 @@ import dev.jz6.flexboard.patches.features.swipetodelete.PREFERENCE_STORE
 import dev.jz6.flexboard.patches.features.swipetodelete.PREFERENCE_STORE_GET
 import dev.jz6.flexboard.patches.features.swipetodelete.checkPreferenceStorePins
 import dev.jz6.flexboard.patches.features.swipetodelete.resolvePreferenceGetInt
-import dev.jz6.flexboard.patches.features.settings.scrubSettingsScreenPatch
-import dev.jz6.flexboard.patches.features.swipetodelete.seedDefaultsPatch
+import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.PACKED_INVOKE_REGISTER_LIMIT
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
@@ -192,17 +191,7 @@ val toolbarCountPatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
-    // The entry that reaches the screen writing this preference. Shipping the reader without it
-    // would leave a value nothing can ever set. Both the manifest entry and the settings row it
-    // adds are idempotent, so depending on it alongside `scrubTuningPatch` is safe.
-    dependsOn(scrubSettingsScreenPatch)
-
-    // Writes the two counts on first run. Without it this patch has no default at all: an unset
-    // preference falls through to whatever Gboard would have done.
-    dependsOn(seedDefaultsPatch)
-
-    // Carries FlexboardSettingsActivity, which the manifest entry that patch writes names.
-    extendWith("extensions/extension.mpe")
+    dependsOn(basePatch)
 
     execute {
         checkPreferenceStorePins()

@@ -38,18 +38,13 @@ import dev.jz6.flexboard.patches.shared.callAtAppStart
  * `COMPATIBILITY_GBOARD` ties the bundle to one Gboard build, and `tools/apk/preflight.py` checks
  * that each id still names the preference it is supposed to.
  */
-@Suppress("unused")
-val suggestedSettingsPatch = bytecodePatch(
-    name = "Suggested Settings",
-    description = "Turns on flick keys for symbols, touch & hold keys for numbers, and turns off " +
-        "block offensive words and word suggestions. Written once as defaults, so each can " +
-        "still be changed in Gboard's own settings.",
-    default = true,
+internal val suggestedSettingsPatch = bytecodePatch(
+    description = "Turns on flick keys for symbols, touch & hold keys for numbers, suggestion " +
+        "strip, grammar check and smart replies, and turns off block offensive words and word " +
+        "suggestions. Written once as defaults, so each can still be changed in Gboard's own " +
+        "settings.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
-
-    // Carries GboardSettings, which does the writes.
-    extendWith("extensions/extension.mpe")
 
     execute {
         ApplyPreferenceValuesFingerprint.method.callAtAppStart(DEFAULT_SUGGESTED_SETTINGS)

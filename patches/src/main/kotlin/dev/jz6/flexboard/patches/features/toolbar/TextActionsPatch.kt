@@ -9,7 +9,7 @@ import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
-import dev.jz6.flexboard.patches.features.settings.scrubSettingsScreenPatch
+import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
@@ -108,8 +108,7 @@ val toolbarButtonsPatch = bytecodePatch(
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
-    dependsOn(scrubSettingsScreenPatch)
-    extendWith("extensions/extension.mpe")
+    dependsOn(basePatch)
 
     execute {
         val builder = resolveAccessPointBuilder()
