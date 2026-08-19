@@ -91,8 +91,6 @@ EXPECTED = {
     'dispatcher_registers': 34,
     'suppressed_field': 'O',             # AbstractIme's suppression flag
     'store_singleton': 'I',              # Lqhy;->I(Context)Lqhy;
-    'store_contains': 'ak',              # contains, keyed by resource id
-    'store_write': 'T',                  # (I, Object) -> void
     'handler_context_field': 'o',
     'undo_slot_field': 'y',
     'recommit': 'Lcom/google/android/libraries/inputmethod/ime/AbstractIme;->t(Lojt;Z)V',
@@ -101,7 +99,6 @@ EXPECTED = {
     'slot_available': 'Lqyc;->d()Z',
     'slot_clear': 'Lqyc;->c()V',
     'get_int': 'Lqhy;->b(Ljava/lang/String;I)I',
-    'contains': 'Lqhy;->ak(I)Z',
     'scrub_g_registers': 13,
     'scrub_r_registers': 13,
     'engine_ctor_registers': 11,
@@ -415,8 +412,6 @@ def run(dl, apk=None):
         (f'{store}->{E["store_singleton"]}({CONTEXT}){store}', 'singleton getter'),
         (f'{store}->b(Ljava/lang/String;I)I', 'getInt by string'),
         (f'{store}->k(Ljava/lang/String;Z)Z', 'getBoolean by string'),
-        (f'{store}->{E["store_contains"]}(I)Z', 'contains by id'),
-        (f'{store}->{E["store_write"]}(ILjava/lang/Object;)V', 'write by id'),
     ):
         c, _ = body(dl, sig)
         check(f'store: {label}', c is not None, sig)
@@ -538,9 +533,6 @@ def run(dl, apk=None):
                               not_calling='Ljava/lang/Integer;->parseInt')
     check('store: getInt resolves uniquely by behaviour', len(got) == 1 and got[0] == E['get_int'],
           f'resolved {got}, expected {E["get_int"]}')
-    got = sole_with_signature(store, '(I)Z', calling='Landroid/content/SharedPreferences;->contains')
-    check('store: contains resolves uniquely by behaviour',
-          len(got) == 1 and got[0] == E['contains'], f'resolved {got}, expected {E["contains"]}')
 
     d, sup, cd = find_class(dl, LATIN_IME)
     held = [fd for fd, static in class_fields(d, cd)
