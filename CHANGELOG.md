@@ -1,3 +1,7 @@
+# [1.2.0](https://github.com/JZ6/Flexboard/compare/v1.2.0-dev.5...v1.2.0) (2026-08-19)
+
+* **Gboard:** release v1.2.0
+
 # [1.2.0-dev.5](https://github.com/JZ6/Flexboard/compare/v1.2.0-dev.4...v1.2.0-dev.5) (2026-08-19)
 
 * **Gboard:** bump to 1.2.0-dev.5
