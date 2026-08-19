@@ -1,3 +1,9 @@
+# [1.2.0-dev.4](https://github.com/JZ6/Flexboard/compare/v1.2.0-dev.3...v1.2.0-dev.4) (2026-08-19)
+
+* **Gboard:** bump to 1.2.0-dev.4
+* **Gboard:** route the signature-check register-count check through the helper too
+* **Gboard:** deduplicate patch helpers and constants
+
 # [1.2.0-dev.3](https://github.com/JZ6/Flexboard/compare/v1.2.0-dev.2...v1.2.0-dev.3) (2026-08-19)
 
 * **Gboard:** bump to 1.2.0-dev.3
