@@ -1,3 +1,8 @@
+# [1.2.0-dev.2](https://github.com/JZ6/Flexboard/compare/v1.2.0-dev.1...v1.2.0-dev.2) (2026-08-19)
+
+* **Gboard:** bump to 1.2.0-dev.2
+* **Gboard:** start at 60% swipe length, 6 toolbar icons, 12 unfolded
+
 # [1.2.0-dev.1](https://github.com/JZ6/Flexboard/compare/v1.1.1...v1.2.0-dev.1) (2026-08-19)
 
 * **Gboard:** bump to 1.2.0-dev.1
