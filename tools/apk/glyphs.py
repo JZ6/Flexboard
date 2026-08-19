@@ -97,8 +97,13 @@ def svg_points(text):
     """Reference SVGs carry a transparent 24x24 backing rect; it is not part of the glyph."""
     out = []
     for attrs, data in re.findall(r'<path\b([^>]*?)\bd="([^"]+)"', text):
-        tail = text.split(data, 1)[1][:40] if data in text else ''
-        if 'fill="none"' in attrs or 'fill="none"' in tail:
+        # `attrs` captures everything between `<path ` and `d=`. A `fill="none"` after `d=` on
+        # the same element is caught by looking up to the next `>`, not past it — the tail check
+        # used to read into the NEXT path and wrongly skipped a filled path followed by the
+        # transparent backing rect.
+        rest = text.split(data, 1)[1] if data in text else ''
+        own = rest[:rest.find('>') + 1] if '>' in rest else rest[:40]
+        if 'fill="none"' in attrs or 'fill="none"' in own:
             continue
         out += points(data)
     return out
