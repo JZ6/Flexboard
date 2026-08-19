@@ -87,7 +87,10 @@ The list above is kept as written; this notes which of it has landed, rather tha
   bundled at 35 ids; the table is in [`gboard-bindings.md`](gboard-bindings.md#material-icons-gboard-bundles).
   `undo`, `redo`, `search`, `send`, `add`, `edit` and every numbered glyph match nothing, while
   `spellcheck` and `auto_awesome` are there. The hotkey icons were picked out of that list, which is
-  also why they are shapes rather than the digits one through six.
+  also why they are shapes rather than the digits one through six. The `glyphs.py` tail check was
+  fixed — it had been bleeding into the next `<path>` element and skipping filled icons, so
+  `add`, `close`, `content_paste`, `delete`, `edit`, `mic`, `search` and `send` all reported
+  "0 points" and were silently absent from earlier audits.
 
 On **gesture down on a to select all**: not built, and deliberately not. It is the same action
 reached a different way, and the toolbar button was the cheaper half. Gboard's own long-press
