@@ -4,6 +4,8 @@ Ideas, in no particular order and with no promises. Kept verbatim as written.
 
 turn the flick down for symbols patch into a "suggested settings patch", and turn on touch hold keys for symbols, turn off dont suggest offensive words, turn off word suggestions
 
+get the whole list of icons shipped with gboard, pretty sure undo is there and used by the undo button
+
 swipe length seem to be reversed? lower value takes more swipe to swipe multiple words on the delete key
 
 what other material symbols are there, im pretty sure undo exists
