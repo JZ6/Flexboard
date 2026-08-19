@@ -311,6 +311,13 @@ private fun BytecodePatchContext.classesMatching(predicate: (ClassDef) -> Boolea
     return found
 }
 
+/** Every method in the APK for which [predicate] holds, in one pass over all classes. */
+private fun BytecodePatchContext.methodsMatching(predicate: (Method) -> Boolean): List<Method> {
+    val found = mutableListOf<Method>()
+    classDefForEach { classDef -> classDef.methods.filterTo(found, predicate) }
+    return found
+}
+
 // `instructions` is an Iterable, not a List, and an abstract method has no implementation at all.
 private fun Method.body(): List<com.android.tools.smali.dexlib2.iface.instruction.Instruction> =
     implementation?.instructions?.toList() ?: emptyList()
@@ -354,9 +361,7 @@ private fun Method.isAccessPointSeed(): Boolean {
  * description* instead would leave every hotkey named "Text editing".
  */
 private fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilder {
-    val seeds = classesMatching { classDef -> classDef.methods.any { it.isAccessPointSeed() } }
-        .flatMap { it.methods }
-        .filter { it.isAccessPointSeed() }
+    val seeds = methodsMatching { it.isAccessPointSeed() }
 
     check(seeds.size == 1) {
         "Expected exactly one access-point seed method — one using $SEED_ICON, $SEED_LABEL and " +
@@ -598,9 +603,7 @@ private fun BytecodePatchContext.publishInputMethodService() {
  * running counter, would need a register this method does not have to spare.
  */
 private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuilder) {
-    val candidates = classesMatching { classDef ->
-        classDef.methods.any { it.splitsAccessPoints() }
-    }.flatMap { it.methods }.filter { it.splitsAccessPoints() }
+    val candidates = methodsMatching { it.splitsAccessPoints() }
 
     check(candidates.size == 1) {
         "Expected exactly one access-points split method — one taking a List and splitting it " +
