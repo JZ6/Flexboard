@@ -35,7 +35,7 @@ Both keyboards stay installed, so you can switch back whenever you like.
 ## Patches
 
 <!-- PATCHES_START EXPANDED -->
-> **[v1.1.2-dev.1](https://github.com/JZ6/Flexboard/releases/tag/v1.1.2-dev.1)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;7 patches total
+> **[v1.2.0-dev.1](https://github.com/JZ6/Flexboard/releases/tag/v1.2.0-dev.1)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;7 patches total
 <details open>
 <summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;7 patches</summary>
 <br>
@@ -53,7 +53,7 @@ Both keyboards stay installed, so you can switch back whenever you like.
 | [Install as Gboard Clone](#install-as-gboard-clone) | Rename the package to dev.jz6.com.google.android.inputmethod.latin so the patched build installs alongside the official Gboard instead of replacing it. |  |
 | [Swipe Right to Undo](#swipe-right-to-undo) | Swipe right after deleting to put the words back. Uses Gboard's own undo, which already records what a delete swipe removed. |  |
 | [Swipe to Delete](#swipe-to-delete) | Swipe left anywhere on the keyboard to delete the previous word, and swipe right to restore it. Uses Gboard's own word-scrub engine, so it behaves exactly like swiping on the backspace key already does — only it can start anywhere. |  |
-| [Text Editing Buttons](#text-editing-buttons) | Add Select all, Copy and Paste buttons to the toolbar above the keyboard, so each is one tap instead of opening Gboard's text editing panel first. |  |
+| [Toolbar Buttons](#toolbar-buttons) | Add Select all, Copy and Paste buttons to the toolbar above the keyboard, so each is one tap instead of opening Gboard's text editing panel first. Adds six hotkey buttons too, each typing a string you set in Flexboard's settings — they only appear once you have filled one in. |  |
 
 </details>
 
