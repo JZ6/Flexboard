@@ -193,14 +193,34 @@ jobs:
         env:
           VERSION: ${{ steps.decide.outputs.version }}
           TAG: ${{ steps.decide.outputs.tag }}
+          PRERELEASE: ${{ steps.decide.outputs.prerelease }}
         run: |
           set -euo pipefail
 
-          PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          # Find the previous tag to scope the release notes.
+          #
+          # Skip any tag on HEAD first (re-runs after a failed release may have tagged it).
+          # Then, for a stable release, skip past pre-release tags (v1.2.0-dev.N) so the
+          # changelog covers everything since the last stable — not just since the last dev.
+          # A pre-release release just finds the nearest tag, whatever it is.
+          previous_tag() {
+            local skip=""
+            local on_head
+            on_head=$(git tag --points-at HEAD | head -1)
+            if [ -n "$on_head" ]; then skip="$on_head^"; else skip="HEAD"; fi
+            if [ "$PRERELEASE" = "false" ]; then
+              git describe --tags --abbrev=0 --exclude='*-dev.*' --exclude='*-beta.*' --exclude='*-rc.*' --exclude='*-alpha.*' --exclude='*-preview.*' "$skip" 2>/dev/null || true
+            else
+              git describe --tags --abbrev=0 "$skip" 2>/dev/null || true
+            fi
+          }
+          PREVIOUS=$(previous_tag)
           if [ -n "$PREVIOUS" ]; then
-            NOTES=$(git log --no-merges --format='- %s' "$PREVIOUS..HEAD")
+            NOTES=$(git log --no-merges --format='- %s' "$PREVIOUS..HEAD" \
+                    --invert-grep -E --grep='^chore: (release|bump)|^bump to')
           else
-            NOTES=$(git log --no-merges --format='- %s' -20)
+            NOTES=$(git log --no-merges --format='- %s' -20 \
+                    --invert-grep -E --grep='^chore: (release|bump)|^bump to')
           fi
           [ -n "$NOTES" ] || NOTES="- No changes recorded."
           DESCRIPTION=$(printf '## %s\n\n%s\n' "$VERSION" "$NOTES")
@@ -230,6 +250,7 @@ jobs:
         env:
           VERSION: ${{ steps.decide.outputs.version }}
           TAG: ${{ steps.decide.outputs.tag }}
+          PRERELEASE: ${{ steps.decide.outputs.prerelease }}
         run: |
           set -euo pipefail
 
@@ -241,7 +262,19 @@ jobs:
           # back out of patches-list.json rather than written twice.
           SCOPE=$(jq -r '[.patches[].compatiblePackages[]?.name] | map(select(. != null)) | unique | first // "Patches"' patches-list.json)
 
-          PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          # Same logic as the release-notes step — see there for why.
+          previous_tag() {
+            local skip=""
+            local on_head
+            on_head=$(git tag --points-at HEAD | head -1)
+            if [ -n "$on_head" ]; then skip="$on_head^"; else skip="HEAD"; fi
+            if [ "$PRERELEASE" = "false" ]; then
+              git describe --tags --abbrev=0 --exclude='*-dev.*' --exclude='*-beta.*' --exclude='*-rc.*' --exclude='*-alpha.*' --exclude='*-preview.*' "$skip" 2>/dev/null || true
+            else
+              git describe --tags --abbrev=0 "$skip" 2>/dev/null || true
+            fi
+          }
+          PREVIOUS=$(previous_tag)
           if [ -n "$PREVIOUS" ]; then
             HEADING="# [$VERSION](https://github.com/$GITHUB_REPOSITORY/compare/$PREVIOUS...$TAG) ($(date -u +%Y-%m-%d))"
             RANGE="$PREVIOUS..HEAD"
@@ -256,9 +289,11 @@ jobs:
           # type under its own headings rather than repeating it inline, and the parser strips
           # everything up to the scope marker anyway.
           if [ -n "$RANGE" ]; then
-            SUBJECTS=$(git log --no-merges --format='%s' "$RANGE")
+            SUBJECTS=$(git log --no-merges --format='%s' "$RANGE" \
+                       --invert-grep -E --grep='^chore: (release|bump)|^bump to')
           else
-            SUBJECTS=$(git log --no-merges --format='%s' -20)
+            SUBJECTS=$(git log --no-merges --format='%s' -20 \
+                       --invert-grep -E --grep='^chore: (release|bump)|^bump to')
           fi
           BULLETS=$(printf '%s\n' "$SUBJECTS" \
             | sed -E 's/^(feat|fix|chore|docs|perf|refactor|style|test|build|ci|bump)(\([^)]*\))?!?: //' \
