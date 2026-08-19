@@ -28,6 +28,14 @@ use graph 6 material icon for fleksy settings
 
 increased tool bar size fit more buttons
 
+ok now clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
+
+read the package rename patch from morphe, and see if any improvments can be made to ours, or should we just use theirs.
+
+Task 3 d37e6c2 + 968936b — Icon audit: undo is definitively NOT bundled (18 points, no match in 496 drawables). Fixed a bug in glyphs.py where the fill="none" tail check bled into the next <path> element, causing filled icons (add, close, content_paste, delete, edit, mic, search, send) to report "0 points" and be silently absent from earlier audits. Re-ran with the fix: 10/28 common Material icons are bundled.
+
+Task 4 — Already shipped per the roadmap. The settings screen inherits Gboard's theme (colours, Material You), uses framework-only widgets, and approximates androidx metrics. The remaining gap is structural: Gboard uses SwitchPreferenceCompat and custom slider preferences, which the extension can't use without resources. Needs device testing to identify specific visual gaps.
+
 ## Shipped
 
 The list above is kept as written; this notes which of it has landed, rather than pruning it.
