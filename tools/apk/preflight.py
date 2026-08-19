@@ -141,6 +141,27 @@ EXPECTED = {
         ('Copy', 0x7f140560, 0x7f080214, 'M19,21L8,21L8,7h11v14z'),
         ('Paste', 0x7f140570, 0x7f080217, 'M19,20L5,20L5,4h2v3h10L17,4h2v16z'),
     ],
+    # The generated builder's own words for the properties it refuses to build without. These are
+    # string literals in the dex, which is why they are worth anchoring on: R8 renames the class,
+    # the methods and the fields around them and leaves these untouched.
+    'hotkey_properties': [' icon', ' label', ' contentDescription'],
+    # Of those, the ones whose literal is a String and so can be written directly. The icon's
+    # literal is an Icon, which is why it is not here.
+    'hotkey_literal_properties': [' label', ' contentDescription'],
+    'hotkey_slots': 6,
+    # One icon per hotkey slot, asserted by glyph rather than by type -- a renumbering would still
+    # land on something reading 'drawable/'. Gboard bundles no numbered glyphs, so these are
+    # arbitrary markers and the settings screen previews each one; showing the user one shape and
+    # putting another on the bar would take away the only thing telling six buttons apart.
+    'hotkey_icons': [
+        ('star', 0x7f080239, 'M12,17.27L18.18,21l-1.64,-7.03L22,9.24l-7.19,-'),
+        ('auto_awesome', 0x7f0806fc, 'M19,9l1.25,-2.75L23,5l-2.75,-1.25L19,1l-1.25,2'),
+        ('content_cut', 0x7f080215, 'M9.64,7.64c0.23,-0.5 0.36,-1.05 0.36,-1.64 0,-'),
+        ('check_box', 0x7f08074e, 'M19,3L5,3c-1.11,0 -2,0.9 -2,2v14c0,1.1 0.89,2 '),
+        ('radio_button_unchecked', 0x7f080733,
+         'M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.4'),
+        ('share', 0x7f080219, 'M18,16.08c-0.76,0 -1.44,0.3 -1.96,0.77L8.91,12'),
+    ],
     'buttons_split_registers': 7,
     'buttons_split_ins': 2,
     'buttons_split_scratch': [0, 1, 2, 3, 4],
@@ -876,6 +897,10 @@ def run(dl, apk=None):
     keycode = E['buttons_runnable_keycode']
     keycode_masked = keycode & 0xffffffff
     seeds, splits, runners = [], [], []
+    # Every method that reads an int field, by field. Collected here because the hotkey labels rest
+    # on nothing outside one accessor reading the access point's label *resource id* -- see the
+    # check further down -- and a second sweep to answer that would double how long preflight takes.
+    int_reads = {}
     for dex in dl:
         for cls_name, _af, cls_data in dex.classes():
             if not cls_data:
@@ -896,6 +921,8 @@ def run(dl, apk=None):
                             pass
                     elif mn and mn.startswith('invoke') and txt:
                         calls.append(txt)
+                    elif mn == 'iget' and txt:
+                        int_reads.setdefault(txt, set()).add(m_name)
                 if seed_literals <= lits:
                     seeds.append(m_name)
                 if m_name.endswith('(Ljava/util/List;)V'):
@@ -930,6 +957,16 @@ def run(dl, apk=None):
         # register list, so parsing has to drop that first.
         def called(a):
             return a.split('}, ')[-1]
+
+        def field_of(a):
+            """The field descriptor an iget/iput operand text ends with."""
+            return a.rsplit(', ', 1)[-1].strip()
+
+        def literal_of(a):
+            """The `#N` an instruction carries, or None. Read off the operand rather than the
+            mnemonic: dis.py prints the arithmetic opcodes as family placeholders."""
+            m = re.search(r'#(-?0x[0-9a-f]+|-?\d+)', a)
+            return int(m.group(1), 0) if m else None
 
         builder = access_point = None
         for _pc, mn, a in ins:
@@ -983,6 +1020,186 @@ def run(dl, apk=None):
                           keycode_masked in lits,
                           f'{hex(keycode_masked)} not among {sorted(hex(x) for x in lits)}')
 
+                # ---- how the setters are told apart, and where a literal label goes
+                #
+                # The builder is generated code that refuses to build an incomplete access point
+                # and names what is missing. Each property it names is tested against one bit of a
+                # completeness mask, and exactly one (I)V setter writes that bit -- so a bit leads
+                # from a setter to a *string literal* naming what it sets, which is the one kind of
+                # anchor R8 cannot rename.
+                #
+                # Everything below mirrors resolveAccessPointBuilder step for step. It replaced a
+                # derivation that read the setters off the values Gboard's seed handed them, which
+                # could not tell the label from the content description because the seed passes
+                # both the same string. That was harmless while both were set to the same text and
+                # is not harmless now: a hotkey's label is a literal written beside the label
+                # resource id, and writing it beside the content description instead would leave
+                # every hotkey on the bar named "Text editing".
+                build = next((m for m, _a, _o in d_b.class_methods(cd_b)
+                              if m.endswith(f'(){access_point}')), None)
+                if check('buttons: the builder has a build method to inspect', build):
+                    _bc, b_ins = body(dl, build)
+                    b_ins = b_ins or []
+
+                    masks ={field_of(a) for _pc, mn, a in b_ins if mn == 'iget-byte'}
+                    if check('buttons: the builder has one completeness mask',
+                             len(masks) == 1, f'byte fields read: {sorted(masks)}'):
+                        mask = masks.pop()
+
+                        # bit -> (setter, the int field it writes). The mask write is what tells a
+                        # property setter from the builder's other (I)V methods: one of those is a
+                        # convenience that sets several properties at once, and it loads a
+                        # bit-shaped literal of its own while writing no mask at all.
+                        by_bit = {}
+                        for m, _a, _o in d_b.class_methods(cd_b):
+                            if not m.endswith('(I)V'):
+                                continue
+                            _sc, s_ins = body(dl, m)
+                            s_ins = s_ins or []
+                            if not any(mn == 'iput-byte' and field_of(a) == mask
+                                       for _pc, mn, a in s_ins):
+                                continue
+                            bits = [literal_of(a) for _pc, _mn, a in s_ins
+                                    if literal_of(a) is not None]
+                            written = [field_of(a) for _pc, mn, a in s_ins if mn == 'iput']
+                            if check(f'buttons: {m.split("->")[1]} contributes one bit and one '
+                                     f'field', len(bits) == 1 and len(written) == 1,
+                                     f'bits={bits} fields={written}'):
+                                check(f'buttons: bit {bits[0]} of the mask has one setter',
+                                      bits[0] not in by_bit,
+                                      f'{m} and {by_bit.get(bits[0], (None,))[0]} share it')
+                                by_bit[bits[0]] = (m, written[0])
+
+                        resource_fields = {}
+                        for name in E['hotkey_properties']:
+                            named = [i for i, (_pc, _mn, a) in enumerate(b_ins)
+                                     if a.endswith(repr(name))]
+                            if not check(f'buttons: the builder names the{name} property once',
+                                         len(named) == 1, f'found {len(named)}'):
+                                continue
+                            tested = next((literal_of(a) for _pc, _mn, a
+                                           in reversed(b_ins[:named[0]])
+                                           if literal_of(a) is not None), None)
+                            if check(f'buttons: a mask bit precedes the{name} property',
+                                     tested is not None):
+                                if check(f'buttons: bit {tested} for{name} has a setter',
+                                         tested in by_bit,
+                                         f'known bits {sorted(by_bit)}'):
+                                    resource_fields[name] = by_bit[tested][1]
+
+                        # The literal that pairs with a resource id. `build` reads the builder's
+                        # fields straight into the constructor's argument registers, in constructor
+                        # order, and the generated constructor takes each property as a resource id
+                        # *immediately* followed by its literal -- so the literal is the very next
+                        # field read.
+                        #
+                        # Adjacency, not "the next String somewhere after". Only some properties
+                        # carry a String literal: the icon's is an Icon, so a looser rule walks
+                        # past it and lands on the label's, reporting a field that belongs to a
+                        # different property. This check is how that was found.
+                        id_setter = next((m for m, _a, _o in d_b.class_methods(cd_b)
+                                          if m.endswith('(Ljava/lang/String;)V')), None)
+                        _ic, id_ins = body(dl, id_setter) if id_setter else (None, [])
+                        id_fields = [field_of(a) for _pc, mn, a in id_ins or []
+                                     if mn == 'iput-object']
+
+                        literals = {}
+                        for name in E['hotkey_literal_properties']:
+                            resource = resource_fields.get(name)
+                            if resource is None:
+                                continue
+                            at = next((i for i, (_pc, mn, a) in enumerate(b_ins)
+                                       if mn == 'iget' and field_of(a) == resource), None)
+                            if not check(f'buttons: build reads the{name} resource id',
+                                         at is not None, f'{resource} never read'):
+                                continue
+                            after = next(((mn, field_of(a)) for _pc, mn, a in b_ins[at + 1:]
+                                          if mn.startswith('iget')), None)
+                            if not check(f'buttons: a field follows it for{name}', after):
+                                continue
+                            if check(f'buttons: the{name} literal is a String',
+                                     after[0] == 'iget-object'
+                                     and after[1].endswith(':Ljava/lang/String;'),
+                                     f'{after[1]} follows {resource}'):
+                                check(f'buttons: the{name} literal is not the access point id',
+                                      after[1] not in id_fields,
+                                      f'{after[1]} is what the id setter writes')
+                                literals[name] = after[1]
+
+                        check('buttons: the label and content description have separate literals',
+                              len(set(literals.values())) == len(literals),
+                              f'{literals}')
+
+            # ---- the one thing a hotkey's label rests on
+            #
+            # A hotkey has no Gboard string to name it, so the patch sets the label *resource id*
+            # to zero and writes the user's snippet into the literal beside it. That is only sound
+            # because the accessor below is the only thing that reads the resource id: anything
+            # rendering from it directly would draw an empty name on every hotkey, and nothing
+            # short of a device would say so.
+            d_a, _sup_a, cd_a = find_class(dl, access_point)
+            if check('buttons: the access point class is present', d_a is not None):
+                accessors = [m for m, _a, _o in d_a.class_methods(cd_a)
+                             if m.endswith('(Landroid/content/Context;)Ljava/lang/String;')]
+                if check('buttons: exactly one label accessor on the access point',
+                         len(accessors) == 1, str(accessors)):
+                    _hc, h_ins = body(dl, accessors[0])
+                    h_ins = h_ins or []
+                    ints = [field_of(a) for _pc, mn, a in h_ins if mn == 'iget']
+                    strings = [field_of(a) for _pc, mn, a in h_ins if mn == 'iget-object']
+                    if check('buttons: the accessor reads one resource id and one String',
+                             len(ints) == 1 and len(strings) == 1,
+                             f'ints={ints} strings={strings}'):
+                        check('buttons: it falls back to the literal when the id is zero',
+                              len(h_ins) > 1 and h_ins[0][1] == 'iget'
+                              and h_ins[1][1] == 'if-eqz',
+                              f'{[mn for _pc, mn, _a in h_ins[:3]]}')
+                        readers = int_reads.get(ints[0], set())
+                        check('buttons: the accessor is among the readers of the label id',
+                              accessors[0] in readers, f'readers: {sorted(readers)}')
+                        # equals, hashCode and the builder's copy constructor also read it, and
+                        # none of them renders anything. Anything *outside* those two classes does.
+                        outside = sorted(m for m in readers
+                                         if not m.startswith(f'{access_point}->')
+                                         and not m.startswith(f'{builder}->'))
+                        check('buttons: nothing outside the access point reads the label id',
+                              not outside, f'also read by {outside}')
+
+                # ---- why a zero resource id is safe at all
+                #
+                # A hotkey hands the builder zero for its label and content description, and takes
+                # the literal instead. The label is safe because only the accessor above reads it,
+                # but the content description is *not* like that: four rendering methods read its
+                # resource id straight off the access point and pass it to Context.getString.
+                #
+                # Every one of them guards with if-eqz first, so zero means "no resource" rather
+                # than a lookup of resource 0 -- which would throw NotFoundException while the
+                # toolbar is being built, on a keyboard, from a background of nothing. Nothing else
+                # checks that, and it is the one fact standing between a hotkey and a crash loop.
+                get_string = 'Landroid/content/Context;->getString(I)Ljava/lang/String;'
+                unguarded = []
+                for field, methods in int_reads.items():
+                    if not field.startswith(f'{access_point}->'):
+                        continue
+                    for m in methods:
+                        _rc, r_ins = body(dl, m)
+                        for i, (_pc, mn, a) in enumerate(r_ins or []):
+                            if mn != 'iget' or field_of(a) != field:
+                                continue
+                            into = regs(a)[0]
+                            ahead = (r_ins or [])[i + 1:i + 4]
+                            uses = next((j for j, (_p, n, t) in enumerate(ahead)
+                                         if n.startswith('invoke') and get_string in t
+                                         and into in regs(t.split('}')[0])), None)
+                            if uses is None:
+                                continue
+                            guarded = any(n.startswith('if-eqz') and regs(t)[:1] == [into]
+                                          for _p, n, t in ahead[:uses])
+                            if not guarded:
+                                unguarded.append(f'{m} @{_pc} ({field})')
+                check('buttons: every resource id read off the access point is zero-guarded',
+                      not unguarded, f'{sorted(unguarded)} would call getString(0)')
+
     # The label id is the one fact this feature rests on that has NO anchor in the dex: unlike the
     # icon, 0x7f140576 has zero const sites, because nothing in stock Gboard loads it the way the
     # patch does. So it cannot be checked without the resource table, and until the APK argument
@@ -1030,6 +1247,22 @@ def run(dl, apk=None):
                 if check(f'buttons: the {name} icon id is still a drawable',
                          str(drawable).startswith('drawable/'), f'reads {drawable!r}'):
                     check(f'buttons: it is still the {name} glyph',
+                          signature in glyph(icon_id),
+                          f'{hex(icon_id)} no longer draws it')
+
+            # The hotkey icons have no label to go with them -- a hotkey is named by the user's own
+            # snippet -- so the glyph is the whole of what the check can be about.
+            check('hotkeys: there is an icon per slot',
+                  len(E['hotkey_icons']) == E['hotkey_slots'],
+                  f"{len(E['hotkey_icons'])} icons for {E['hotkey_slots']} slots")
+            check('hotkeys: no two slots share an icon',
+                  len({i for _n, i, _s in E['hotkey_icons']}) == len(E['hotkey_icons']),
+                  'two slots would be indistinguishable on the bar')
+            for name, icon_id, signature in E['hotkey_icons']:
+                drawable = table.name(icon_id)
+                if check(f'hotkeys: the {name} icon id is still a drawable',
+                         str(drawable).startswith('drawable/'), f'reads {drawable!r}'):
+                    check(f'hotkeys: it is still the {name} glyph',
                           signature in glyph(icon_id),
                           f'{hex(icon_id)} no longer draws it')
         except Exception as exc:

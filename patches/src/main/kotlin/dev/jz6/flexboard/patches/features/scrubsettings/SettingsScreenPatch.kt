@@ -111,7 +111,7 @@ private const val ENTRY_TITLE = "Flexboard"
  * ticked, and this row is added by every one of them — naming the sliders meant rewriting this line
  * each time a feature landed, and it was already stale once.
  */
-private const val ENTRY_SUMMARY = "Gesture and toolbar settings"
+private const val ENTRY_SUMMARY = "Gesture, toolbar and hotkey settings"
 
 /** Ignored once the intent carries a component, but it is what v0.3 shipped. */
 private const val ENTRY_ACTION = "android.intent.action.MAIN"

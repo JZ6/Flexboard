@@ -157,11 +157,42 @@ a longer list at entry adds buttons, and the whole notification machinery is byp
 
 **The builder's setters are derived, not named.** Five of them share the signature `(I)V`. That is
 exactly the shape behind this project's worst bug — `AbstractIme->s` was the undo re-commit on
-17.7.7, and on 18 a *different* method inherited `s` with the same signature. So the setters are
-read out of Gboard's own text-editing seed method, identified by the value each one is handed: the
-one given a drawable id is the icon, the two given string ids are the label and the content
-description. `preflight.py` asserts that `(I)V` is still ambiguous there — if it ever stops being,
-this machinery is over-built and can go.
+17.7.7, and on 18 a *different* method inherited `s` with the same signature. So they are told
+apart by **Gboard's own words for them**: the builder is generated code that refuses to build an
+incomplete access point and names what is missing, and each name is tested against one bit of a
+completeness mask that exactly one setter writes. A bit therefore leads from a setter to a string
+literal, and string literals are the one thing R8 does not rename. `preflight.py` asserts that
+`(I)V` is still ambiguous there — if it ever stops being, this machinery is over-built and can go.
+
+That replaced an earlier derivation which read the setters off the resource ids Gboard's own seed
+handed them. It worked, and it carried an admitted caveat: the seed passes the label and the
+content description **the same string**, so the two could not be told apart by value. Harmless
+while both were set to the same text, and not harmless once hotkeys arrived — see below.
+
+## Why a hotkey wears the user's own text as its name
+
+Six hotkey slots need six names, and there is no Gboard string that means "whatever you typed into
+slot four". Nor is there a numbered icon: matching all 2,170 published Material Icons against the
+APK found 29 bundled shapes and no digits, so the icons are arbitrary markers.
+
+The way out is that the access point carries **both** forms of its label — a resource id and a
+literal `String` — and its accessor returns the literal whenever the resource id is zero. So a
+hotkey sets the id to zero and writes the snippet into the literal.
+
+**Whether that is safe is a question about readers, and it was answered by sweeping for them.** The
+label resource id is read in exactly five places: the copy-constructor, `equals`, `hashCode`, and
+the accessor. Nothing renders from it directly, so zero cannot reach a rendering path. The content
+description is *not* like that — four rendering methods read its id straight off the access point —
+but every one of them guards with `if-eqz` before calling `getString`, so zero means "no resource"
+rather than a lookup of resource 0. Both facts are now `preflight.py` checks, because the second is
+the only thing standing between a hotkey and `NotFoundException` while the toolbar is being built.
+
+There is no builder setter for either literal; they are pass-throughs the generated `build` never
+validates, so the patch writes the fields directly. Which field is derived rather than named, from
+the order `build` reads its fields into the constructor's arguments: each property is a resource id
+**immediately** followed by its literal. Adjacency matters — the icon's literal is an `Icon`, not a
+`String`, so a looser "next String field" rule walks past it onto the label's. That is not
+hypothetical: it is what the first version of this did, and the preflight check caught it.
 
 ## Why undo is Gboard's own, not a reimplementation
 

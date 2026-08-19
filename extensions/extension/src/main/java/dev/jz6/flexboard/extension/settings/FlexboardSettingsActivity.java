@@ -2,25 +2,33 @@ package dev.jz6.flexboard.extension.settings;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.content.res.TypedArray;
 import android.graphics.Insets;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
+
+import dev.jz6.flexboard.extension.hotkey.Hotkey;
+import dev.jz6.flexboard.extension.prefs.Preferences;
 
 /**
  * Flexboard's settings screen.
@@ -51,15 +59,10 @@ import android.widget.TextView;
  * the latter case. See {@link #hasActionBar()} for why a theme with a bar does not guarantee this
  * Activity gets one.
  *
- * <p><b>It writes to Gboard's own preference file, deliberately.</b> Gboard's store
- * (<code>Lqhy;</code>) is constructed with a null name, which resolves to
- * <code>PreferenceManager.getDefaultSharedPreferences</code> — that is
- * <code>&lt;packageName&gt;_preferences</code> in <code>MODE_PRIVATE</code>, on a
- * <b>device-protected</b> context. See {@link #preferenceContext()} — that last part is not a
- * detail but a different file on disk, and getting it wrong is why every slider on this screen did
- * nothing at all before <code>v0.1.0-dev.7</code>. Deriving the name from
- * {@link #getPackageName()} is what keeps it correct after the package-rename patch, since both
- * sides resolve the same running package.
+ * <p><b>It writes to Gboard's own preference file, deliberately</b>, so the bytecode patches can
+ * read every value back with Gboard's own accessor. Which file that is turns out to be the subtle
+ * part — it is not this Activity's — and the reasoning lives in {@link Preferences}, which the
+ * keyboard-side hotkey actions share.
  *
  * <p>The keys must match the ones the bytecode patches read. They are duplicated as literals in
  * <code>ScrubTuningPatch.kt</code> and <code>ToolbarCountPatch.kt</code>, because a patch-added
@@ -132,10 +135,46 @@ public final class FlexboardSettingsActivity extends Activity {
      */
     private static final int TOOLBAR_COUNT_DEFAULT = 5;
 
+    /** Must match HOTKEY_SLOT_COUNT in TextActionsPatch.kt. */
+    private static final int HOTKEY_SLOT_COUNT = 6;
+
+    /**
+     * The icon each hotkey slot wears on the toolbar, drawn here beside the field that fills it.
+     *
+     * <p>These are Gboard's own drawable ids, and they resolve because this Activity is merged into
+     * Gboard's APK rather than shipped as its own app — {@code getResources()} is Gboard's. Nothing
+     * numbered is available (Gboard bundles 29 Material shapes and none of them is a digit), so the
+     * icons are arbitrary markers and the preview is what makes them learnable: the user picks the
+     * star while looking at the star.
+     *
+     * <p>Must match HOTKEY_ICON_1 through HOTKEY_ICON_6 in TextActionsPatch.kt.
+     */
+    private static final int HOTKEY_ICON_1 = 0x7f080239;
+
+    private static final int HOTKEY_ICON_2 = 0x7f0806fc;
+    private static final int HOTKEY_ICON_3 = 0x7f080215;
+    private static final int HOTKEY_ICON_4 = 0x7f08074e;
+    private static final int HOTKEY_ICON_5 = 0x7f080733;
+    private static final int HOTKEY_ICON_6 = 0x7f080219;
+
+    private static final int[] HOTKEY_ICONS = {
+        HOTKEY_ICON_1, HOTKEY_ICON_2, HOTKEY_ICON_3, HOTKEY_ICON_4, HOTKEY_ICON_5, HOTKEY_ICON_6,
+    };
+
     private static final String TITLE = "Flexboard";
     private static final String SUBTITLE = "Swipe anywhere to delete the previous word.";
     private static final String SECTION = "Swipe to delete";
     private static final String SECTION_TOOLBAR = "Toolbar";
+    private static final String SECTION_HOTKEYS = "Hotkeys";
+
+    private static final String HOTKEYS_SUMMARY =
+            "Buttons that type a string you choose. Fill one in and its icon appears on the "
+                    + "toolbar; clear it and the button goes away again. The icon is how you tell "
+                    + "them apart, so the one shown here is the one you will be tapping.";
+
+    private static final String HOTKEY_TITLE = "Hotkey";
+
+    private static final String HOTKEY_HINT = "Empty — no button";
 
     private static final String TAKES_EFFECT =
             "Changes apply the next time the keyboard is opened.";
@@ -189,6 +228,9 @@ public final class FlexboardSettingsActivity extends Activity {
     /** Only used when the theme gives no action bar to put the title in. */
     private static final int HEADING_SP = 28;
 
+    /** Matches the 24dp Material icons are drawn at, which is what these are. */
+    private static final int ICON_DP = 24;
+
 
     /** Renders the stored int as the value shown beside a row's title. */
     private interface Label {
@@ -206,10 +248,7 @@ public final class FlexboardSettingsActivity extends Activity {
         super.onCreate(savedInstanceState);
         setTitle(TITLE);
 
-        preferences =
-                preferenceContext()
-                        .getSharedPreferences(
-                                getPackageName() + "_preferences", Context.MODE_PRIVATE);
+        preferences = Preferences.of(this);
 
         boolean night =
                 (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
@@ -302,6 +341,18 @@ public final class FlexboardSettingsActivity extends Activity {
                 TOOLBAR_COUNT_MAX,
                 TOOLBAR_COUNT_DEFAULT,
                 value -> Integer.toString(value));
+
+        addSectionHeader(column, SECTION_HOTKEYS);
+
+        TextView hotkeys = new TextView(this);
+        hotkeys.setText(HOTKEYS_SUMMARY);
+        hotkeys.setTextColor(colorSummary);
+        hotkeys.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
+        column.addView(hotkeys, marginTop(dp(LOOSE_DP)));
+
+        for (int slot = 1; slot <= HOTKEY_SLOT_COUNT; slot++) {
+            addHotkeyField(column, slot, HOTKEY_ICONS[slot - 1]);
+        }
 
         TextView footnote = new TextView(this);
         footnote.setText(TAKES_EFFECT);
@@ -547,46 +598,101 @@ public final class FlexboardSettingsActivity extends Activity {
         parent.addView(bar, marginTop(dp(LOOSE_DP)));
     }
 
+    /**
+     * One hotkey row: the slot's toolbar icon, its name, and the string it types.
+     *
+     * <p><b>The icon is the point of the row.</b> Six hotkeys are six identical buttons on the bar
+     * unless the user can remember which shape does what, and the reliable moment to learn that is
+     * while typing the string. So the row shows the actual drawable the button will wear, loaded
+     * out of the host APK by id.
+     *
+     * <p>Written on every keystroke rather than on focus loss, matching the sliders: the value is
+     * already stored if the screen is dismissed mid-edit, and the keyboard rereads it either way.
+     */
+    private void addHotkeyField(LinearLayout parent, final int slot, int iconResource) {
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        Drawable glyph = drawable(iconResource);
+        if (glyph != null) {
+            ImageView icon = new ImageView(this);
+            icon.setImageDrawable(glyph);
+            LinearLayout.LayoutParams iconParams =
+                    new LinearLayout.LayoutParams(dp(ICON_DP), dp(ICON_DP));
+            iconParams.rightMargin = dp(LOOSE_DP + TIGHT_DP);
+            titleRow.addView(icon, iconParams);
+        }
+
+        TextView titleView = new TextView(this);
+        titleView.setText(HOTKEY_TITLE + " " + slot);
+        titleView.setTextColor(colorTitle);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, TITLE_SP);
+        titleRow.addView(
+                titleView,
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        parent.addView(titleRow, marginTop(dp(ROW_TOP_DP)));
+
+        final String key = Hotkey.keyFor(slot);
+        final EditText field = new EditText(this);
+        field.setText(preferences.getString(key, ""));
+        field.setHint(HOTKEY_HINT);
+        field.setTextColor(colorTitle);
+        field.setHintTextColor(colorSummary);
+        field.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
+        // Multi-line, because a signature or an address is a perfectly reasonable thing to want on
+        // a button. Only the first line becomes the button's name; the whole of it gets typed.
+        field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        field.setBackgroundTintList(ColorStateList.valueOf(colorAccent));
+        field.addTextChangedListener(
+                new TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(
+                            CharSequence text, int start, int count, int after) {}
+
+                    @Override
+                    public void onTextChanged(CharSequence text, int start, int before, int count) {}
+
+                    @Override
+                    public void afterTextChanged(Editable text) {
+                        preferences.edit().putString(key, text.toString()).apply();
+                    }
+                });
+        parent.addView(field, marginTop(dp(TIGHT_DP)));
+    }
+
+    /**
+     * One of Gboard's own drawables, or {@code null} if that id no longer names one.
+     *
+     * <p>The ids are pinned to a single Gboard build, the same way the buttons themselves are, and
+     * {@code tools/apk/preflight.py} fails the build when one stops drawing the expected glyph. If
+     * one slips through anyway, a hotkey row should lose its picture rather than the settings
+     * screen losing its ability to open.
+     *
+     * <p><b>Mutated before tinting.</b> These drawables are Gboard's, shared by constant state with
+     * wherever else Gboard draws them, so tinting the original would recolour them across the app.
+     */
+    private Drawable drawable(int id) {
+        try {
+            Drawable glyph = getResources().getDrawable(id, getTheme());
+            if (glyph == null) {
+                return null;
+            }
+            glyph = glyph.mutate();
+            glyph.setTint(colorTitle);
+            return glyph;
+        } catch (RuntimeException notFound) {
+            return null;
+        }
+    }
+
     private LinearLayout.LayoutParams marginTop(int margin) {
         LinearLayout.LayoutParams params =
                 new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.topMargin = margin;
         return params;
-    }
-
-    /**
-     * The context whose SharedPreferences Gboard's store actually reads.
-     *
-     * <p><b>Not this Activity's.</b> Getting this wrong is why the sliders did nothing at all until
-     * `v0.1.0-dev.7`: the file name was right and the file was the wrong one. `Lqhy;-><init>` does
-     * this before asking for the default preferences:
-     *
-     * <pre>
-     *   v5 = context.getApplicationContext()
-     *   if (!v5.isDeviceProtectedStorage()) v5 = v5.createDeviceProtectedStorageContext()
-     *   PreferenceManager.getDefaultSharedPreferences(v5)
-     * </pre>
-     *
-     * A device-protected context stores under {@code /data/user_de/…}, while an ordinary Activity
-     * context stores under {@code /data/user/…} — same {@code <packageName>_preferences} name, two
-     * unrelated files. Gboard needs the keyboard to work before the device is unlocked, which is
-     * why it keeps its preferences in direct-boot storage.
-     *
-     * <p>Mirrored line for line rather than paraphrased, including the {@code getApplicationContext}
-     * call, so the two sides cannot drift. There is no version guard because there is nothing to
-     * guard against: both methods are API 24 and Gboard's manifest declares {@code minSdkVersion}
-     * 26, so they are below the floor this code can ever run on. A guard would also be worse than
-     * useless — falling back would silently return to reading the wrong file.
-     */
-    @SuppressLint("NewApi")
-    private Context preferenceContext() {
-        Context context = getApplicationContext();
-        if (context.isDeviceProtectedStorage()) {
-            return context;
-        }
-        Context deviceProtected = context.createDeviceProtectedStorageContext();
-        return deviceProtected != null ? deviceProtected : context;
     }
 
     /**

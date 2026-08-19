@@ -22,6 +22,7 @@ import dev.jz6.flexboard.patches.features.scrubdelete.resolvePreferenceGetInt
 import dev.jz6.flexboard.patches.features.scrubsettings.scrubSettingsScreenPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
+import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
@@ -737,6 +738,3 @@ private fun MutableMethod.raiseCapacityFromPreference(context: BytecodePatchCont
  * something else.
  */
 private const val FLAG_ACCESSOR = "Lnxp;->g()Ljava/lang/Object;"
-
-private fun Instruction.fieldReferenceOrNull(): FieldReference? =
-    (this as? ReferenceInstruction)?.reference as? FieldReference

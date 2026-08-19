@@ -1,6 +1,7 @@
 package dev.jz6.flexboard.patches.features.textactions
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.bytecodePatch
 import com.android.tools.smali.dexlib2.iface.ClassDef
@@ -8,7 +9,12 @@ import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import dev.jz6.flexboard.patches.features.scrubsettings.scrubSettingsScreenPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.fieldDescriptor
+import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
+import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.stringOrNull
 import dev.jz6.flexboard.patches.shared.toDescriptor
 
 /**
@@ -73,37 +79,41 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * and a different method inherited `s` — same signature, silently wrong behaviour. Naming a letter
  * here would be the same bet.
  *
- * Instead they are read out of Gboard's own text-editing seed method, which is located by the three
- * resource ids it uses together, and which calls the setters in a known order with known values:
- * the one handed a `0x7f08…` drawable is the icon setter, and the two handed `0x7f14…` strings are
- * the label and the content description. Resource ids are build-specific, and pinning them is
- * sound for the same reason `flickSymbolsPatch` pins one: [COMPATIBILITY_GBOARD] ties the bundle to
- * a single Gboard build and signature.
- *
- * One honest caveat on that. The seed hands its two string setters **the same text** — so which is
- * the label and which the content description cannot be told apart by value, and the two names
- * below are a guess at which is which. It does not matter: each button sets both to the same
- * string, so the emitted result is identical either way. It would start mattering the moment
- * someone wanted them to differ.
+ * They are told apart by **Gboard's own words for them**. The builder is generated code that
+ * refuses to build an incomplete access point, and the refusal names what is missing — `" icon"`,
+ * `" label"`, `" contentDescription"` — each tested against one bit of a completeness mask that
+ * exactly one setter writes. String literals are the one thing R8 leaves alone, so a bit leads
+ * from a setter to a name. [resolveAccessPointBuilder] does the walk.
  *
  * The labels are Gboard's own, already present because its text editing panel shows them. The icons
  * are Material's, which Gboard bundles — see [BUTTONS] for how they were found, given that every
  * drawable name in the app has been collapsed.
+ *
+ * ## Hotkeys
+ *
+ * The same button, with `commitText` in place of a context-menu id and nothing known at patch
+ * time: the text is the user's, and so is whether the button exists at all. So six slots are
+ * emitted, each guarded on the extension reporting that slot occupied, and each labelled with the
+ * user's own snippet rather than a Gboard string — see [HOTKEY_ICONS] and
+ * [AccessPointBuilder.labelField].
  */
 @Suppress("unused")
-val textActionsPatch = bytecodePatch(
-    name = "Text Editing Buttons",
+val toolbarButtonsPatch = bytecodePatch(
+    name = "Toolbar Buttons",
     description = "Add Select all, Copy and Paste buttons to the toolbar above the keyboard, so " +
-        "each is one tap instead of opening Gboard's text editing panel first.",
+        "each is one tap instead of opening Gboard's text editing panel first. Adds six hotkey " +
+        "buttons too, each typing a string you set in Flexboard's settings — they only appear " +
+        "once you have filled one in.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
+    dependsOn(scrubSettingsScreenPatch)
     extendWith("extensions/extension.mpe")
 
     execute {
         val builder = resolveAccessPointBuilder()
         publishInputMethodService()
-        prependTextActionButtons(builder)
+        prependToolbarButtons(builder)
     }
 }
 
@@ -150,6 +160,52 @@ private val BUTTONS = listOf(
     ToolbarButton("flexboard_paste", "0x7f140570", "0x7f080217", TEXT_ACTION_PASTE),
 )
 
+/**
+ * How many hotkey slots exist.
+ *
+ * Fixed, because the emitted code is fixed: a button is built by a block of bytecode, and blocks
+ * cannot be added at run time. Six is a compromise between a bar that can hold them and a settings
+ * screen nobody scrolls. Slots are numbered from one, matching what the settings screen calls them.
+ *
+ * **Duplicated in `FlexboardSettingsActivity`** and held in step by `check_shared_constants.py`.
+ */
+internal const val HOTKEY_SLOT_COUNT = 6
+
+/**
+ * The icon each slot wears, and the whole of what tells six otherwise identical buttons apart on
+ * the bar.
+ *
+ * **Gboard bundles no numbered glyphs**, so these are arbitrary markers rather than "1" through
+ * "6": every published Material icon was matched against the APK's vector drawables, and of 2,170
+ * only 29 shapes are present — the full table is in `docs/gboard-bindings.md`. These six are the
+ * most distinct of those, and `content_cut` is genuinely spare rather than borrowed, since Gboard
+ * bundles the scissors and draws them nowhere.
+ *
+ * Arbitrary markers are learnable because the settings screen renders each one beside the field
+ * that fills it, so the star is chosen while looking at the star.
+ *
+ * **Duplicated in `FlexboardSettingsActivity`**, which needs the same ids to draw those previews.
+ */
+internal const val HOTKEY_ICON_1 = "0x7f080239" // star
+
+internal const val HOTKEY_ICON_2 = "0x7f0806fc" // auto_awesome
+internal const val HOTKEY_ICON_3 = "0x7f080215" // content_cut
+internal const val HOTKEY_ICON_4 = "0x7f08074e" // check_box
+internal const val HOTKEY_ICON_5 = "0x7f080733" // radio_button_unchecked
+internal const val HOTKEY_ICON_6 = "0x7f080219" // share
+
+private val HOTKEY_ICONS = listOf(
+    HOTKEY_ICON_1,
+    HOTKEY_ICON_2,
+    HOTKEY_ICON_3,
+    HOTKEY_ICON_4,
+    HOTKEY_ICON_5,
+    HOTKEY_ICON_6,
+)
+
+/** The access-point id for a slot. Gboard keys ordering and user customisation off this string. */
+private fun hotkeyId(slot: Int) = "flexboard_hotkey_$slot"
+
 // -------------------------------------------------------------------------------------------
 // Anchors
 // -------------------------------------------------------------------------------------------
@@ -168,10 +224,22 @@ private const val SEED_CONTENT_DESCRIPTION = 0x7f141218L
 
 private const val EXTENSION_CLASS = "Ldev/jz6/flexboard/extension/textaction/TextAction;"
 
+private const val IME_SERVICE_CLASS = "Ldev/jz6/flexboard/extension/ime/ImeService;"
+
 private const val SET_SERVICE =
-    "$EXTENSION_CLASS->setService(Landroid/inputmethodservice/InputMethodService;)V"
+    "$IME_SERVICE_CLASS->setService(Landroid/inputmethodservice/InputMethodService;)V"
 
 private const val NEW_ACTION = "$EXTENSION_CLASS-><init>(I)V"
+
+private const val HOTKEY_CLASS = "Ldev/jz6/flexboard/extension/hotkey/Hotkey;"
+
+private const val NEW_HOTKEY = "$HOTKEY_CLASS-><init>(I)V"
+
+/**
+ * Asked once per slot while the bar is being built. A null answer means the slot is empty, and the
+ * emitted block branches past the entire button — which is how hotkeys stay invisible until used.
+ */
+private const val HOTKEY_LABEL_AT = "$HOTKEY_CLASS->labelAt(I)Ljava/lang/String;"
 
 private const val INPUT_METHOD_SERVICE = "Landroid/inputmethodservice/InputMethodService;"
 
@@ -196,6 +264,39 @@ private data class AccessPointBuilder(
     val setAction: String,
     val putExtra: String,
     val build: String,
+    /**
+     * Where a **literal** label goes, for a button whose name is not a Gboard string.
+     *
+     * The access point carries both a label resource id and a label `String`, and its accessor
+     * returns the `String` whenever the resource id is zero. There is no builder setter for the
+     * `String` — it is a pass-through the generated `build` never validates — so it is written
+     * directly, into a field derived rather than named. Only hotkeys use this; the three text
+     * actions have real Gboard strings and set the resource id instead.
+     */
+    val labelField: String,
+    val contentDescriptionField: String,
+)
+
+/**
+ * The generated builder's own names for the properties it refuses to build without.
+ *
+ * These are **string literals in Gboard's dex**, which is what makes them worth anchoring on: R8
+ * renames the class, the methods and the fields around them and leaves these untouched. See
+ * [resolveProperties].
+ */
+private const val PROPERTY_ICON = " icon"
+
+private const val PROPERTY_LABEL = " label"
+private const val PROPERTY_CONTENT_DESCRIPTION = " contentDescription"
+
+private val PROPERTIES = listOf(PROPERTY_ICON, PROPERTY_LABEL, PROPERTY_CONTENT_DESCRIPTION)
+
+/** One of the builder's resource-id setters, and what it writes. */
+private data class BuilderProperty(
+    val setter: String,
+    val bit: Long,
+    /** The `int` field holding the resource id, which the literal field sits beside. */
+    val resourceField: String,
 )
 
 // -------------------------------------------------------------------------------------------
@@ -219,39 +320,54 @@ private fun Method.literals(): List<Long> =
 private fun Method.calledDescriptors(): List<String> =
     body().mapNotNull { ((it as? ReferenceInstruction)?.reference as? MethodReference)?.toString() }
 
+/** The text-editing access point, which is the template every button here is built from. */
+private fun Method.isAccessPointSeed(): Boolean {
+    val literals = literals()
+    return SEED_ICON in literals && SEED_LABEL in literals && SEED_CONTENT_DESCRIPTION in literals
+}
+
 /**
- * Reads the builder API out of Gboard's text-editing seed method.
+ * Reads the builder API out of Gboard's own code.
  *
- * The seed is located by the three resource ids it uses together, then each setter is identified by
- * the value it is handed rather than by its name — see the class KDoc for why naming them would be
- * a bet on R8's letter assignment.
+ * The seed method — located by the three resource ids it uses together — supplies the factory that
+ * opens a builder, and with it the builder's type. Everything else comes off the builder itself.
+ *
+ * **The setters are identified by Gboard's own words for them.** The builder is generated code, and
+ * its `build` method refuses to build an incomplete access point by naming what is missing:
+ *
+ * ```
+ * iget-byte    v2, v0, ->q:B          # the completeness mask
+ * and-int/lit8 v2, v2, #2             # this property's bit
+ * if-nez       v2, -> ...
+ * const-string v2, " label"           # ...and its name
+ * ```
+ *
+ * Every resource-id setter ORs one bit into that same mask, so a setter's bit leads to a string
+ * literal naming what it sets. That is as strong an anchor as this project has: R8 renames classes,
+ * methods and fields, and does not touch string literals.
+ *
+ * It replaces an earlier derivation that identified each setter by the resource id Gboard's seed
+ * happened to hand it. That worked, but could not tell the label from the content description —
+ * the seed passes both the same string — and said so in a caveat. It matters now: a hotkey's label
+ * is a literal written beside the label resource id, and writing it beside the *content
+ * description* instead would leave every hotkey named "Text editing".
  */
 private fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilder {
-    val seeds = classesMatching { classDef ->
-        classDef.methods.any { method ->
-            val literals = method.literals()
-            SEED_ICON in literals &&
-                SEED_LABEL in literals &&
-                SEED_CONTENT_DESCRIPTION in literals
-        }
-    }.flatMap { it.methods }.filter { method ->
-        val literals = method.literals()
-        SEED_ICON in literals &&
-            SEED_LABEL in literals &&
-            SEED_CONTENT_DESCRIPTION in literals
-    }
+    val seeds = classesMatching { classDef -> classDef.methods.any { it.isAccessPointSeed() } }
+        .flatMap { it.methods }
+        .filter { it.isAccessPointSeed() }
 
     check(seeds.size == 1) {
         "Expected exactly one access-point seed method — one using $SEED_ICON, $SEED_LABEL and " +
             "$SEED_CONTENT_DESCRIPTION together — but found ${seeds.size}: " +
             "${seeds.map { it.toDescriptor() }}. Gboard no longer builds the text editing access " +
-            "point the way this derivation assumes, and the setters below cannot be told apart " +
-            "without it."
+            "point the way this derivation assumes."
     }
 
     val seed = seeds.single()
-    val instructions = seed.implementation?.instructions?.toList()
-        ?: error("${seed.toDescriptor()} has no implementation")
+    val instructions = seed.body().ifEmpty {
+        error("${seed.toDescriptor()} has no implementation")
+    }
 
     // The static that opens the builder, and with it the builder's own type.
     val factory = instructions.firstNotNullOfOrNull { instruction ->
@@ -260,51 +376,169 @@ private fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilder
     } ?: error("${seed.toDescriptor()} opens with no zero-argument builder factory")
 
     val builderType = factory.returnType
+    val builderClass = classDefByOrNull(builderType)
+        ?: error("$builderType is not in the APK, so the access-point builder cannot be resolved")
 
-    // Each `(I)V` setter is identified by the constant loaded immediately before its call.
-    fun setterFor(literal: Long): String {
-        val matches = instructions.withIndex().mapNotNull { (index, instruction) ->
-            if ((instruction as? WideLiteralInstruction)?.wideLiteral != literal) return@mapNotNull null
-            instructions.drop(index + 1).firstNotNullOfOrNull { following ->
-                val reference =
-                    (following as? ReferenceInstruction)?.reference as? MethodReference
-                reference?.takeIf {
-                    it.definingClass == builderType &&
-                        it.parameterTypes.map(Any::toString) == listOf("I") &&
-                        it.returnType == "V"
-                }
-            }
-        }
-        check(matches.size == 1) {
-            "Expected exactly one builder setter taking ${literal.toString(16)} in " +
-                "${seed.toDescriptor()}, found ${matches.size}"
-        }
-        return matches.single().let { "${it.definingClass}->${it.name}(I)V" }
-    }
-
-    fun soleBuilderMethod(signature: String, what: String): String {
-        val definition = classDefByOrNull(builderType)
-            ?: error("$builderType is not in the APK, so its $what cannot be resolved")
-        val matches = definition.methods.filter {
+    fun soleBuilderMethod(signature: String, what: String): Method {
+        val matches = builderClass.methods.filter {
             "(${it.parameterTypes.joinToString("")})${it.returnType}" == signature
         }
         check(matches.size == 1) {
             "Expected exactly one $what on $builderType — a method with signature $signature — " +
                 "but found ${matches.size}: ${matches.map { it.name }}"
         }
-        return matches.single().toDescriptor()
+        return matches.single()
+    }
+
+    val build = soleBuilderMethod("()${factory.definingClass}", "build method")
+    val buildBody = build.body()
+
+    val masks = buildBody.filter { it.opcodeName() == "IGET_BYTE" }
+        .map { it.fieldDescriptor() }
+        .distinct()
+    check(masks.size == 1) {
+        "Expected exactly one byte field read in ${build.toDescriptor()} — the generated " +
+            "completeness mask — but found ${masks.size}: $masks"
+    }
+
+    val properties = build.resolveProperties(masks.single(), builderClass)
+    fun property(name: String) = properties[name]
+        ?: error("${build.toDescriptor()} never names a$name property")
+
+    val setId = soleBuilderMethod("(Ljava/lang/String;)V", "id setter")
+    val idFields = setId.body().filter { it.opcodeName() == "IPUT_OBJECT" }.map { it.fieldDescriptor() }
+    check(idFields.size == 1) {
+        "Expected the id setter ${setId.toDescriptor()} to write exactly one field, found $idFields"
+    }
+
+    /**
+     * The `String` field carrying a literal value for [property].
+     *
+     * `build` reads the builder's fields straight into the constructor's argument registers, in
+     * constructor order, and the generated constructor takes each property as a resource id
+     * **immediately** followed by its literal. So the literal is the very next field read.
+     *
+     * Adjacency, not "the next String somewhere after" — which is a distinction with teeth. Not
+     * every property's literal is a `String`: the icon's is an `android.graphics.drawable.Icon`,
+     * so a looser rule applied to the icon walks straight past it and lands on the *label's*
+     * literal, reporting a field that belongs to a different property. That is exactly what a
+     * preflight check caught here, and the strict rule fails loudly instead.
+     */
+    fun literalFieldFor(name: String, property: BuilderProperty): String {
+        val index = buildBody.indexOfFirst {
+            it.opcodeName() == "IGET" && it.fieldDescriptor() == property.resourceField
+        }
+        check(index >= 0) {
+            "${build.toDescriptor()} never reads ${property.resourceField}, so the literal that " +
+                "pairs with the$name property cannot be located"
+        }
+        val literal = buildBody.drop(index + 1).firstOrNull { it.fieldReferenceOrNull() != null }
+            ?: error(
+                "No field is read after ${property.resourceField} in ${build.toDescriptor()}, so " +
+                    "the$name property has no literal to write"
+            )
+        val descriptor = literal.fieldDescriptor()
+        check(
+            literal.opcodeName() == "IGET_OBJECT" &&
+                literal.fieldReferenceOrNull()?.type == "Ljava/lang/String;",
+        ) {
+            "The field read straight after ${property.resourceField} in ${build.toDescriptor()} " +
+                "is $descriptor, which is not a String — the constructor's argument order is not " +
+                "what this assumes"
+        }
+        check(descriptor != idFields.single()) {
+            "The literal derived for the$name property is $descriptor, which is the access " +
+                "point's id — the constructor's argument order is not what this assumes"
+        }
+        return descriptor
+    }
+
+    val label = property(PROPERTY_LABEL)
+    val contentDescription = property(PROPERTY_CONTENT_DESCRIPTION)
+    val labelField = literalFieldFor(PROPERTY_LABEL, label)
+    val contentDescriptionField =
+        literalFieldFor(PROPERTY_CONTENT_DESCRIPTION, contentDescription)
+    check(labelField != contentDescriptionField) {
+        "The label and content description resolved to the same literal field ($labelField), so " +
+            "one of the two resource-id fields is not being read where this expects it"
     }
 
     return AccessPointBuilder(
         newBuilder = "${factory.definingClass}->${factory.name}()$builderType",
-        setId = soleBuilderMethod("(Ljava/lang/String;)V", "id setter"),
-        setIcon = setterFor(SEED_ICON),
-        setLabel = setterFor(SEED_LABEL),
-        setContentDescription = setterFor(SEED_CONTENT_DESCRIPTION),
-        setAction = soleBuilderMethod("(Ljava/lang/Runnable;)V", "Runnable action setter"),
-        putExtra = soleBuilderMethod("(Ljava/lang/String;Ljava/lang/Object;)V", "extras setter"),
-        build = soleBuilderMethod("()${factory.definingClass}", "build method"),
+        setId = setId.toDescriptor(),
+        setIcon = property(PROPERTY_ICON).setter,
+        setLabel = label.setter,
+        setContentDescription = contentDescription.setter,
+        setAction = soleBuilderMethod("(Ljava/lang/Runnable;)V", "Runnable action setter")
+            .toDescriptor(),
+        putExtra = soleBuilderMethod("(Ljava/lang/String;Ljava/lang/Object;)V", "extras setter")
+            .toDescriptor(),
+        build = build.toDescriptor(),
+        labelField = labelField,
+        contentDescriptionField = contentDescriptionField,
     )
+}
+
+/**
+ * Each property the builder names, mapped to the setter that satisfies it.
+ *
+ * Two halves meeting at the completeness mask: every `(I)V` setter that writes the mask contributes
+ * exactly one bit, and every property the build method names is tested against exactly one bit.
+ *
+ * The mask write is what distinguishes a setter from the builder's other `(I)V` methods — one of
+ * them is a convenience that sets several properties at once, and it loads a bit-shaped literal of
+ * its own while writing no mask at all.
+ */
+private fun Method.resolveProperties(
+    maskField: String,
+    builderClass: ClassDef,
+): Map<String, BuilderProperty> {
+    val byBit = mutableMapOf<Long, BuilderProperty>()
+    builderClass.methods.forEach { method ->
+        if (method.parameterTypes.map(Any::toString) != listOf("I")) return@forEach
+        if (method.returnType != "V") return@forEach
+
+        val body = method.body()
+        val writesMask = body.any {
+            it.opcodeName() == "IPUT_BYTE" && it.fieldDescriptor() == maskField
+        }
+        if (!writesMask) return@forEach
+
+        val bits = body.filterIsInstance<WideLiteralInstruction>().map { it.wideLiteral }
+        check(bits.size == 1) {
+            "Expected ${method.toDescriptor()} to contribute exactly one bit to $maskField, " +
+                "found ${bits.size}: $bits"
+        }
+        val written = body.filter { it.opcodeName() == "IPUT" }.map { it.fieldDescriptor() }
+        check(written.size == 1) {
+            "Expected ${method.toDescriptor()} to write exactly one int field, found $written"
+        }
+
+        val previous = byBit.put(
+            bits.single(),
+            BuilderProperty(method.toDescriptor(), bits.single(), written.single()),
+        )
+        check(previous == null) {
+            "${method.toDescriptor()} and ${previous?.setter} both set bit ${bits.single()} of " +
+                "$maskField, so neither can be told from the other"
+        }
+    }
+
+    val body = body()
+    return PROPERTIES.associateWith { name ->
+        val named = body.withIndex().filter { (_, instruction) -> instruction.stringOrNull() == name }
+        check(named.size == 1) {
+            "Expected ${toDescriptor()} to name the$name property exactly once among the " +
+                "properties it refuses to build without, found ${named.size}"
+        }
+        val tested = body.take(named.single().index).lastOrNull { it is WideLiteralInstruction }
+            ?: error("No mask literal precedes the$name string in ${toDescriptor()}")
+        val bit = (tested as WideLiteralInstruction).wideLiteral
+        byBit[bit] ?: error(
+            "The$name property is tested against bit $bit of $maskField, which no setter on " +
+                "${builderClass.type} sets"
+        )
+    }
 }
 
 // -------------------------------------------------------------------------------------------
@@ -360,8 +594,14 @@ private fun BytecodePatchContext.publishInputMethodService() {
  *
  * Each button is inserted at its own index rather than all at zero, because repeated insertion at
  * zero would reverse them.
+ *
+ * The hotkeys follow, and go in the other way round: every one of them inserts at the same index,
+ * just past the text actions, in **reverse** slot order. That is what lets a slot be skipped
+ * without arithmetic — a fixed index means present slots close up behind the text actions however
+ * many are empty, and reversing the emission order puts slot 1 leftmost again. The alternative, a
+ * running counter, would need a register this method does not have to spare.
  */
-private fun BytecodePatchContext.prependTextActionButtons(builder: AccessPointBuilder) {
+private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuilder) {
     val candidates = classesMatching { classDef ->
         classDef.methods.any { it.splitsAccessPoints() }
     }.flatMap { it.methods }.filter { it.splitsAccessPoints() }
@@ -384,10 +624,18 @@ private fun BytecodePatchContext.prependTextActionButtons(builder: AccessPointBu
             "refusing to guess the register mapping"
     }
 
-    check(BUTTONS.map { it.id }.distinct().size == BUTTONS.size) {
-        "Two buttons share an access-point id: ${BUTTONS.map { it.id }}. Gboard keys ordering and " +
-            "user customisation off that string, so a collision would lose one of them."
+    val ids = BUTTONS.map { it.id } + (1..HOTKEY_SLOT_COUNT).map(::hotkeyId)
+    check(ids.distinct().size == ids.size) {
+        "Two buttons share an access-point id: $ids. Gboard keys ordering and user customisation " +
+            "off that string, so a collision would lose one of them."
     }
+    check(HOTKEY_ICONS.size == HOTKEY_SLOT_COUNT) {
+        "${HOTKEY_ICONS.size} hotkey icons for $HOTKEY_SLOT_COUNT slots"
+    }
+
+    // Every index emitted below is a `const/4`: the text actions take 0 upwards, and the hotkeys
+    // all share the one just past them. Nine buttons therefore need no wider literal than three
+    // did — only a tenth *text action* would.
     check(BUTTONS.size <= MAX_NIBBLE_LITERAL) {
         "${BUTTONS.size} buttons cannot all be indexed with a `const/4`"
     }
@@ -428,12 +676,56 @@ private fun BytecodePatchContext.prependTextActionButtons(builder: AccessPointBu
         """
     }
 
-    method.addInstructions(
+    val hotkeys = (HOTKEY_SLOT_COUNT downTo 1).joinToString("\n") { slot ->
+        val absent = "flexboard_hotkey_${slot}_absent"
+        """
+            const/4 v2, $slot
+            invoke-static { v2 }, $HOTKEY_LABEL_AT
+            move-result-object v2
+            if-eqz v2, :$absent
+
+            invoke-static { }, ${builder.newBuilder}
+            move-result-object v1
+
+            const-string v3, "${hotkeyId(slot)}"
+            invoke-virtual { v1, v3 }, ${builder.setId}
+
+            const v3, ${HOTKEY_ICONS[slot - 1]}
+            invoke-virtual { v1, v3 }, ${builder.setIcon}
+
+            const/4 v3, 0x0
+            invoke-virtual { v1, v3 }, ${builder.setLabel}
+            invoke-virtual { v1, v3 }, ${builder.setContentDescription}
+            iput-object v2, v1, ${builder.labelField}
+            iput-object v2, v1, ${builder.contentDescriptionField}
+
+            new-instance v3, $HOTKEY_CLASS
+            const/4 v4, $slot
+            invoke-direct { v3, v4 }, $NEW_HOTKEY
+            invoke-virtual { v1, v3 }, ${builder.setAction}
+
+            const/4 v3, 0x1
+            invoke-static { v3 }, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
+            move-result-object v3
+            const-string v4, "closeAction"
+            invoke-virtual { v1, v4, v3 }, ${builder.putExtra}
+
+            invoke-virtual { v1 }, ${builder.build}
+            move-result-object v1
+
+            const/4 v3, ${BUTTONS.size}
+            invoke-virtual { v0, v3, v1 }, Ljava/util/ArrayList;->add(ILjava/lang/Object;)V
+            :$absent
+        """
+    }
+
+    method.addInstructionsWithLabels(
         0,
         """
             new-instance v0, Ljava/util/ArrayList;
             invoke-direct { v0, p1 }, Ljava/util/ArrayList;-><init>(Ljava/util/Collection;)V
             $built
+            $hotkeys
             move-object p1, v0
         """,
     )

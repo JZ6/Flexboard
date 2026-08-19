@@ -151,6 +151,51 @@ Preference ids: `0x7f1409af` = `access_points_count_on_bar`, `0x7f140a43` =
 `foldable_access_points_count_on_bar`. Neither appears in any settings XML — they are written from
 code only.
 
+### The access point and its builder
+
+| | |
+|---|---|
+| `Lmic;` | One toolbar button. 19-argument constructor, always built through the builder. |
+| `Lmhx;` | The builder. `Lmic;->c()Lmhx;` is the static factory; `Lmhx;->a()Lmic;` builds. |
+| `Lmhx;->q(Ljava/lang/Runnable;)V` | The "run arbitrary code on tap" setter — it stores no field, and wraps the `Runnable` as key data with keycode **-40007**, dispatched at IME level by `Lmln;->m(Lnur;)Z`. This is what every Flexboard button is built on. |
+| `Lmhx;->q:B` | The AutoValue completeness mask. `a()` refuses to build unless it reads `0x3f`, and names what is missing — `" icon"`, `" label"`, `" contentDescription"`, `" additionalContentDescription"`, `" a11yClickActionLabel"`, `" id"` — each tested against one bit. |
+
+**That mask is how the five `(I)V` setters are told apart.** Each ORs exactly one bit, so a bit
+leads from a setter to a string literal naming what it sets, and string literals survive R8. On
+18.0.3 the mapping is `i`→`0x1` icon, `j`→`0x2` label, `h`→`0x4` content description, `g`→`0x8`
+additional content description, `d`→`0x10` a11y click label, `l(String)`→`0x20` id. **Derive it;
+do not copy that row.** `k(I)V` also has signature `(I)V` and is not a property setter at all — it
+is a convenience that marks the point disabled — which is why the mask write, not the signature, is
+the test.
+
+**Every property is a resource id and a literal, side by side.** The constructor takes them in
+pairs, and `a()` reads the builder's fields into the argument registers in that order:
+
+| Constructor argument | Builder field | Access point field |
+|---|---|---|
+| 1 id `String` | `r` | — |
+| 2 icon resource id | `s` | `c:I` |
+| 3 icon literal `Icon` | `c` | `d:Landroid/graphics/drawable/Icon;` |
+| 4 label resource id | `t` | `e:I` |
+| 5 label literal `String` | `d` | `f:Ljava/lang/String;` |
+| 6 content description resource id | `u` | `g:I` |
+| 7 content description literal `String` | `e` | `h:Ljava/lang/String;` |
+
+The builder exposes setters only for the resource ids. The literals are pass-throughs `a()` never
+validates, so a patch writing one writes the field.
+
+**Which of the two wins, and what a zero id means.** `Lmic;->h(Landroid/content/Context;)String`
+returns `getString(e)` when `e != 0` and the literal `f` otherwise — and that accessor, `equals`,
+`hashCode` and `Lmhx;-><init>(Lmic;)V` are its **only** readers, so a zero label id cannot reach a
+rendering path. The content description is different: `Lmhe;->x`, `Lmhf;->f`, `Lmmv;->d` and
+`Lmxy;->y` all read `g:I` directly — but each guards with `if-eqz` before `getString`, so zero is
+"no resource" rather than a lookup of resource 0. Both facts are asserted by
+[`../tools/apk/preflight.py`](../tools/apk/README.md); the second is what keeps a literal-labelled
+button from throwing `NotFoundException` while the bar is being built.
+
+`Lmic;->b(Landroid/content/Context;)Drawable` is the same shape for the icon: the literal `Icon` if
+there is one, otherwise `null`, with the resource-id path elsewhere.
+
 How the capacity is computed, and the shape the second of the patch's two insertions anchors on.
 Worth reading with the row above in mind: this is the number that shipped patched in `1.1.0-dev.1`
 with nothing to show for it, because the table already said `Lmjv;->a` can only lower the count and

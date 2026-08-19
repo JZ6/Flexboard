@@ -49,10 +49,25 @@ PAIRS = [
     ("TEXT_ACTION_SELECT_ALL", "SELECT_ALL"),
     ("TEXT_ACTION_COPY", "COPY"),
     ("TEXT_ACTION_PASTE", "PASTE"),
+    # How many hotkey slots exist, and the drawable each one wears. The count decides how many
+    # blocks the patch emits and how many rows the screen draws; the icons are what the patch puts
+    # on the button and what the screen previews beside the field that fills it. A drifted icon
+    # would show the user one shape and put another on the toolbar -- the single thing that makes
+    # six otherwise identical buttons tellable apart, quietly wrong.
+    ("HOTKEY_SLOT_COUNT", "HOTKEY_SLOT_COUNT"),
+    ("HOTKEY_ICON_1", "HOTKEY_ICON_1"),
+    ("HOTKEY_ICON_2", "HOTKEY_ICON_2"),
+    ("HOTKEY_ICON_3", "HOTKEY_ICON_3"),
+    ("HOTKEY_ICON_4", "HOTKEY_ICON_4"),
+    ("HOTKEY_ICON_5", "HOTKEY_ICON_5"),
+    ("HOTKEY_ICON_6", "HOTKEY_ICON_6"),
 ]
 
-KOTLIN_CONST = re.compile(r'internal const val (\w+) = (?:"([^"]*)"|(\d+))')
-JAVA_CONST = re.compile(r'private static final (?:String|int) (\w+) = (?:"([^"]*)"|(\d+));')
+# Hex is accepted because resource ids are written that way on both sides -- and on the Kotlin side
+# they are *strings*, since a patch emits them into smali as text rather than using them as numbers.
+NUMBER = r"0[xX][0-9a-fA-F]+|\d+"
+KOTLIN_CONST = re.compile(rf'internal const val (\w+) = (?:"([^"]*)"|({NUMBER}))')
+JAVA_CONST = re.compile(rf'private static final (?:String|int) (\w+) = (?:"([^"]*)"|({NUMBER}));')
 
 
 def _collect(pattern, text):
@@ -60,6 +75,19 @@ def _collect(pattern, text):
         m.group(1): m.group(2) if m.group(2) is not None else m.group(3)
         for m in pattern.finditer(text)
     }
+
+
+def _normalised(value):
+    """Two spellings of one number compare equal; everything else compares as written.
+
+    `0x7f080239` on one side and `2130903609` on the other are the same resource id, and a check
+    that called them different would be noise. Preference keys and other strings fall through
+    unchanged, because `int` refuses them.
+    """
+    try:
+        return str(int(value, 0))
+    except (TypeError, ValueError):
+        return value
 
 
 EXTENSION_ROOT = ROOT / "extensions/extension/src/main/java"
@@ -243,7 +271,7 @@ def main():
             problems.append(f"  {kt_name} is not declared in any patch")
         elif java_value is None:
             problems.append(f"  {java_name} is not declared anywhere in the extension")
-        elif kt_value != java_value:
+        elif _normalised(kt_value) != _normalised(java_value):
             problems.append(
                 f"  {kt_name} = {kt_value!r} but {java_name} = {java_value!r} in "
                 f"{declared_in[java_name]} — the patch and the extension disagree"

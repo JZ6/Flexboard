@@ -99,14 +99,18 @@ the swipe-anywhere gesture; the backspace key keeps Gboard's own behaviour, see 
 | **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
 
 The screen also carries **Icons on the toolbar** and **Icons when unfolded**, which belong to the
-Bigger Toolbar patch and are described [further down](#bigger-toolbar).
+Bigger Toolbar patch and are described [further down](#bigger-toolbar), and six **Hotkeys** fields
+belonging to [Toolbar Buttons](#toolbar-buttons).
 
 Every value is read out of Gboard's own preference store, so there is no separate settings app and
 nothing to keep in sync. Swipe length already ships at Gboard's own distance; setting the other two
 to 10 and 200 ms puts those back as well, and why they do not start there is in
 [`docs/design.md`](docs/design.md).
 
-Changes are not instant: a new setting is picked up the next time the keyboard is opened.
+Changes are not instant: a new setting is picked up the next time the keyboard is opened. Hotkeys
+are half an exception — *editing* a snippet takes effect immediately, because the text is read when
+the button is tapped, but its name on the toolbar and whether the button exists at all are decided
+when the bar is built.
 
 The screen shows every section whether or not you ticked the patch it belongs to — it is one merged
 class and cannot tell which patches you chose. A slider for a patch you did not apply moves and
@@ -163,10 +167,12 @@ It is always on when the patch is applied. Swiping right after a delete did noth
 Gboard, so nothing is being taken away by giving it a meaning — and Gboard fills the same undo slot
 when you swipe on the backspace key, so it works there too.
 
-## Text editing buttons
+## Toolbar buttons
 
-Adds **Select all**, **Copy** and **Paste** buttons to the toolbar above the keyboard. One tap each,
-on whatever you are typing into.
+Adds **Select all**, **Copy** and **Paste** buttons to the toolbar above the keyboard, and six
+**hotkeys** that type a string you choose. One tap each, on whatever you are typing into.
+
+### Select all, copy and paste
 
 Gboard can already do all three, behind its **Text editing** toolbar button — open that panel, then
 tap the one you want. These are the same actions without the panel.
@@ -180,6 +186,28 @@ Material's — the select-all marquee, and the familiar copy and paste marks. Gb
 and draws none of them, because its text editing panel spells the actions out in words rather than
 using icons; that is why Select all first shipped borrowing an unrelated icon. Flexboard still adds
 no images of its own.
+
+### Hotkeys
+
+Six more buttons, each typing a string you set under **Hotkeys** in Flexboard's settings — an email
+address, a signature, "brb", whatever you type often enough to resent typing.
+
+**A slot you have not filled in makes no button.** Fresh out of the box there are no hotkeys at all;
+fill one in and its icon appears on the toolbar, clear the field and the button goes away again.
+That is the on/off switch, and it is per-button.
+
+Each button is named by your own text, so they are easy to tell apart when you long-press to
+reorder the toolbar. On the bar itself there is only room for the icon, and here the icons are
+arbitrary — a star, a sparkle, scissors, a ticked box, a ring, a share mark. They have to be:
+Gboard bundles 29 Material shapes and not one of them is a digit, and Flexboard ships no images of
+its own. So the settings screen draws each slot's real icon beside the field that fills it, which
+is the moment you actually need to know which is which.
+
+Long text is fine. The whole of it gets typed; only the first line, cut short, becomes the name.
+
+**Nine buttons is more than the bar holds.** With the three text actions plus a few hotkeys,
+whatever used to sit at the end of your toolbar moves into the overflow menu behind the chevron.
+Raise the icon count with [Bigger Toolbar](#bigger-toolbar) and they all fit.
 
 ## Flick keys for symbols
 

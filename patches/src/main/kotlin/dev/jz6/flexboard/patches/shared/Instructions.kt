@@ -6,6 +6,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import com.android.tools.smali.dexlib2.iface.reference.StringReference
 
 /**
  * Small shape predicates shared by the scrub patches.
@@ -35,6 +36,25 @@ internal fun Instruction.usesField(descriptor: String): Boolean =
 internal fun Instruction.fieldDescriptor(): String =
     ((this as? ReferenceInstruction)?.reference as? FieldReference)?.toString()
         ?: error("Not a field access: `${opcode.name}`")
+
+/**
+ * The field this instruction accesses, or `null` when it accesses none.
+ *
+ * The nullable counterpart to [fieldDescriptor], for filtering a body by what a field *is* — its
+ * type or its defining class — rather than by what it is called.
+ */
+internal fun Instruction.fieldReferenceOrNull(): FieldReference? =
+    (this as? ReferenceInstruction)?.reference as? FieldReference
+
+/**
+ * The string this instruction loads, or `null` when it loads none.
+ *
+ * String literals are the one thing R8 does not rename, which makes them the strongest anchors in
+ * this project — Gboard's own log formats and its generated builders' "missing required properties"
+ * text both survive verbatim into the shipped dex.
+ */
+internal fun Instruction.stringOrNull(): String? =
+    ((this as? ReferenceInstruction)?.reference as? StringReference)?.string
 
 /** True when this instruction invokes exactly the given method descriptor. */
 internal fun Instruction.callsMethod(descriptor: String): Boolean =

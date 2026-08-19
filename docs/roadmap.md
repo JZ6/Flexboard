@@ -4,6 +4,10 @@ Ideas, in no particular order and with no promises. Kept verbatim as written.
 
 turn the flick down for symbols patch into a "suggested settings patch", and turn on touch hold keys for symbols, turn off dont suggest offensive words, turn off word suggestions
 
+set new defaults, swipe length 60%, icons on the toolbar 6, icons when unfolded 12
+
+what other material symbols are there, im pretty sure undo exists
+
 update settings to match rest of gboard
 
 some settings disabled like grammer check and ai writing tools, rambler mode etc
@@ -46,12 +50,26 @@ The list above is kept as written; this notes which of it has landed, rather tha
   a list. The icons turned out to be free: Gboard bundles Material's set and draws none of them, and
   `tools/apk/glyphs.py` finds them by geometry now that every drawable name is stripped.
 
-On **Hot keys as new tool bar objects**: the toolbar slider was assumed to be a prerequisite, on the
-grounds that adding buttons only helps if there is room. That turned out to be wrong, which was
-lucky at the time, because the slider did not work. A new button is prepended to the ordered list
-the bar is built from, so it takes the first slot and pushes whatever used to be last into the
-overflow panel — no extra room needed. With the slider working the two now compose properly: raise
-the count and the button costs nothing that used to be visible.
+- **Hot keys as new tool bar objects** — six slots under **Hotkeys** in Flexboard's settings, each
+  typing whatever string you put in it. A slot you have not filled in builds no button at all, so
+  they cost nothing until used and clearing a field removes the button again. The label on each is
+  your own text: the access point carries a label *resource id* and a label *String*, and returns
+  the String whenever the id is zero — and a sweep found nothing outside one accessor reading that
+  id, so setting it to zero cannot break a rendering path.
+
+  The toolbar slider was assumed to be a prerequisite, on the grounds that adding buttons only
+  helps if there is room. That turned out to be wrong, which was lucky at the time, because the
+  slider did not work. A new button is prepended to the ordered list the bar is built from, so it
+  takes the first slot and pushes whatever used to be last into the overflow panel — no extra room
+  needed. With the slider working the two now compose properly: raise the count and the button
+  costs nothing that used to be visible.
+
+- **what other material symbols are there, im pretty sure undo exists** — it does not. All 2,170
+  published Material Icons were matched against the APK's 496 vector drawables, and 29 shapes are
+  bundled at 35 ids; the table is in [`gboard-bindings.md`](gboard-bindings.md#material-icons-gboard-bundles).
+  `undo`, `redo`, `search`, `send`, `add`, `edit` and every numbered glyph match nothing, while
+  `spellcheck` and `auto_awesome` are there. The hotkey icons were picked out of that list, which is
+  also why they are shapes rather than the digits one through six.
 
 On **gesture down on a to select all**: not built, and deliberately not. It is the same action
 reached a different way, and the toolbar button was the cheaper half. Gboard's own long-press
