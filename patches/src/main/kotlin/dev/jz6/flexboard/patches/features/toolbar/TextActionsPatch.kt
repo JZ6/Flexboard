@@ -169,7 +169,7 @@ private val BUTTONS = listOf(
  *
  * **Duplicated in `FlexboardSettingsActivity`** and held in step by `check_shared_constants.py`.
  */
-internal const val HOTKEY_SLOT_COUNT = 6
+internal const val HOTKEY_SLOT_COUNT = 12
 
 /**
  * The icon each slot wears, and the whole of what tells six otherwise identical buttons apart on
@@ -194,6 +194,13 @@ internal const val HOTKEY_ICON_4 = "0x7f08074e" // check_box
 internal const val HOTKEY_ICON_5 = "0x7f080733" // radio_button_unchecked
 internal const val HOTKEY_ICON_6 = "0x7f080219" // share
 
+internal const val HOTKEY_ICON_7 = "0x7f080239" // star (reused)
+internal const val HOTKEY_ICON_8 = "0x7f0806fc" // auto_awesome (reused)
+internal const val HOTKEY_ICON_9 = "0x7f080215" // content_cut (reused)
+internal const val HOTKEY_ICON_10 = "0x7f08074e" // check_box (reused)
+internal const val HOTKEY_ICON_11 = "0x7f080733" // radio_button_unchecked (reused)
+internal const val HOTKEY_ICON_12 = "0x7f080219" // share (reused)
+
 private val HOTKEY_ICONS = listOf(
     HOTKEY_ICON_1,
     HOTKEY_ICON_2,
@@ -201,6 +208,12 @@ private val HOTKEY_ICONS = listOf(
     HOTKEY_ICON_4,
     HOTKEY_ICON_5,
     HOTKEY_ICON_6,
+    HOTKEY_ICON_7,
+    HOTKEY_ICON_8,
+    HOTKEY_ICON_9,
+    HOTKEY_ICON_10,
+    HOTKEY_ICON_11,
+    HOTKEY_ICON_12,
 )
 
 /** The access-point id for a slot. Gboard keys ordering and user customisation off this string. */
@@ -240,6 +253,8 @@ private const val NEW_HOTKEY = "$HOTKEY_CLASS-><init>(I)V"
  * emitted block branches past the entire button — which is how hotkeys stay invisible until used.
  */
 private const val HOTKEY_LABEL_AT = "$HOTKEY_CLASS->labelAt(I)Ljava/lang/String;"
+
+private const val HOTKEY_ICON_AT = "$HOTKEY_CLASS->iconAt(II)I"
 
 private const val INPUT_METHOD_SERVICE = "Landroid/inputmethodservice/InputMethodService;"
 
@@ -671,8 +686,9 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
 
     val hotkeys = (HOTKEY_SLOT_COUNT downTo 1).joinToString("\n") { slot ->
         val absent = "flexboard_hotkey_${slot}_absent"
+        val constSlot = if (slot <= MAX_CONST_4_VALUE) "const/4" else "const/16"
         """
-            const/4 v2, $slot
+            $constSlot v2, $slot
             invoke-static { v2 }, $HOTKEY_LABEL_AT
             move-result-object v2
             if-eqz v2, :$absent
@@ -684,6 +700,9 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
             invoke-virtual { v1, v3 }, ${builder.setId}
 
             const v3, ${HOTKEY_ICONS[slot - 1]}
+            $constSlot v4, $slot
+            invoke-static { v4, v3 }, $HOTKEY_ICON_AT
+            move-result v3
             invoke-virtual { v1, v3 }, ${builder.setIcon}
 
             const/4 v3, 0x0
@@ -693,7 +712,7 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
             iput-object v2, v1, ${builder.contentDescriptionField}
 
             new-instance v3, $HOTKEY_CLASS
-            const/4 v4, $slot
+            $constSlot v4, $slot
             invoke-direct { v3, v4 }, $NEW_HOTKEY
             invoke-virtual { v1, v3 }, ${builder.setAction}
 
@@ -726,6 +745,9 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
 
 /** `const/4` carries its value in a nibble, so it can index at most eight buttons. */
 private const val MAX_NIBBLE_LITERAL = 8
+
+/** `const/4` encodes a 4-bit signed value, so it holds at most 7. Slots 8+ use `const/16`. */
+private const val MAX_CONST_4_VALUE = 7
 
 /** The bar-versus-overflow split, identified by what it does to its `List` parameter. */
 private fun Method.splitsAccessPoints(): Boolean {

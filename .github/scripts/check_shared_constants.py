@@ -61,6 +61,12 @@ PAIRS = [
     ("HOTKEY_ICON_4", "HOTKEY_ICON_4"),
     ("HOTKEY_ICON_5", "HOTKEY_ICON_5"),
     ("HOTKEY_ICON_6", "HOTKEY_ICON_6"),
+    ("HOTKEY_ICON_7", "HOTKEY_ICON_7"),
+    ("HOTKEY_ICON_8", "HOTKEY_ICON_8"),
+    ("HOTKEY_ICON_9", "HOTKEY_ICON_9"),
+    ("HOTKEY_ICON_10", "HOTKEY_ICON_10"),
+    ("HOTKEY_ICON_11", "HOTKEY_ICON_11"),
+    ("HOTKEY_ICON_12", "HOTKEY_ICON_12"),
 ]
 
 # Hex is accepted because resource ids are written that way on both sides -- and on the Kotlin side

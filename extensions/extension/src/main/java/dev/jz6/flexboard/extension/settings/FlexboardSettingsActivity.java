@@ -1,6 +1,7 @@
 package dev.jz6.flexboard.extension.settings;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
@@ -21,6 +22,7 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.widget.EditText;
+import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -151,7 +153,7 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final int TOOLBAR_COUNT_UNFOLDED_DEFAULT = 12;
 
     /** Must match HOTKEY_SLOT_COUNT in TextActionsPatch.kt. */
-    private static final int HOTKEY_SLOT_COUNT = 6;
+    private static final int HOTKEY_SLOT_COUNT = 12;
 
     /**
      * The icon each hotkey slot wears on the toolbar, drawn here beside the field that fills it.
@@ -172,8 +174,16 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final int HOTKEY_ICON_5 = 0x7f080733;
     private static final int HOTKEY_ICON_6 = 0x7f080219;
 
+    private static final int HOTKEY_ICON_7 = 0x7f080239;
+    private static final int HOTKEY_ICON_8 = 0x7f0806fc;
+    private static final int HOTKEY_ICON_9 = 0x7f080215;
+    private static final int HOTKEY_ICON_10 = 0x7f08074e;
+    private static final int HOTKEY_ICON_11 = 0x7f080733;
+    private static final int HOTKEY_ICON_12 = 0x7f080219;
+
     private static final int[] HOTKEY_ICONS = {
         HOTKEY_ICON_1, HOTKEY_ICON_2, HOTKEY_ICON_3, HOTKEY_ICON_4, HOTKEY_ICON_5, HOTKEY_ICON_6,
+        HOTKEY_ICON_7, HOTKEY_ICON_8, HOTKEY_ICON_9, HOTKEY_ICON_10, HOTKEY_ICON_11, HOTKEY_ICON_12,
     };
 
     private static final String TITLE = "Flexboard";
@@ -190,6 +200,36 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final String HOTKEY_TITLE = "Hotkey";
 
     private static final String HOTKEY_HINT = "Empty — no button";
+
+    /**
+     * The custom drawables bundled by Flexboard, available for the user to pick per slot.
+     * Each name corresponds to a vector drawable written into the APK at patch time.
+     */
+    private static final String[] HOTKEY_ICON_CHOICES = {
+        "flexboard_hotkey_icon_1", // alternate_email
+        "flexboard_hotkey_icon_2", // password
+        "flexboard_hotkey_icon_3", // phone_enabled
+        "flexboard_hotkey_icon_4", // local_post_office
+        "flexboard_hotkey_icon_5", // home_pin
+        "flexboard_hotkey_icon_6", // work
+        "flexboard_hotkey_icon_7", // favorite
+        "flexboard_hotkey_icon_8", // kid_star
+        "flexboard_hotkey_icon_9", // credit_card
+        "flexboard_hotkey_icon_10", // hexagon
+        "flexboard_hotkey_icon_11", // hive
+        "flexboard_hotkey_icon_12", // sports_soccer
+        "flexboard_icon_snowflake", // snowflake
+        "flexboard_icon_token", // token
+        "flexboard_icon_counter_1", // 1
+        "flexboard_icon_counter_2", // 2
+        "flexboard_icon_counter_3", // 3
+        "flexboard_icon_counter_4", // 4
+        "flexboard_icon_counter_5", // 5
+        "flexboard_icon_counter_6", // 6
+        "flexboard_icon_counter_7", // 7
+        "flexboard_icon_counter_8", // 8
+        "flexboard_icon_counter_9", // 9
+    };
 
     private static final String TAKES_EFFECT =
             "Changes apply the next time the keyboard is opened.";
@@ -630,15 +670,20 @@ public final class FlexboardSettingsActivity extends Activity {
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        Drawable glyph = drawable(iconResource);
+        final ImageView iconView = new ImageView(this);
+        int currentIcon = Hotkey.iconAt(slot, iconResource);
+        Drawable glyph = drawable(currentIcon);
         if (glyph != null) {
-            ImageView icon = new ImageView(this);
-            icon.setImageDrawable(glyph);
-            LinearLayout.LayoutParams iconParams =
-                    new LinearLayout.LayoutParams(dp(ICON_DP), dp(ICON_DP));
-            iconParams.rightMargin = dp(LOOSE_DP + TIGHT_DP);
-            titleRow.addView(icon, iconParams);
+            iconView.setImageDrawable(glyph);
         }
+        LinearLayout.LayoutParams iconParams =
+                new LinearLayout.LayoutParams(dp(ICON_DP), dp(ICON_DP));
+        iconParams.rightMargin = dp(LOOSE_DP + TIGHT_DP);
+        iconView.setLayoutParams(iconParams);
+        iconView.setClickable(true);
+        iconView.setFocusable(true);
+        iconView.setOnClickListener(v -> showIconPicker(slot, iconResource, iconView));
+        titleRow.addView(iconView);
 
         TextView titleView = new TextView(this);
         titleView.setText(HOTKEY_TITLE + " " + slot);
@@ -676,6 +721,74 @@ public final class FlexboardSettingsActivity extends Activity {
                     }
                 });
         parent.addView(field, marginTop(dp(TIGHT_DP)));
+    }
+
+    /**
+     * A grid of bundled icons the user can pick for a hotkey slot.
+     *
+     * <p>Tapping an icon writes its drawable resource name to
+     * {@code flexboard_hotkey_<slot>_icon} in preferences and updates the preview immediately.
+     * {@link Hotkey#iconAt(int, int)} reads that preference at toolbar-build time, so the new
+     * icon appears the next time the keyboard opens.
+     */
+    private void showIconPicker(int slot, int defaultResId, ImageView preview) {
+        GridLayout grid = new GridLayout(this);
+        grid.setColumnCount(4);
+
+        String currentName = preferences.getString("flexboard_hotkey_" + slot + "_icon", null);
+
+        for (String name : HOTKEY_ICON_CHOICES) {
+            int resId = getResources().getIdentifier(name, "drawable", getPackageName());
+            if (resId == 0) continue;
+            Drawable glyph = drawable(resId);
+            if (glyph == null) continue;
+
+            ImageView item = new ImageView(this);
+            item.setImageDrawable(glyph);
+            int size = dp(48);
+            GridLayout.LayoutParams params = new GridLayout.LayoutParams();
+            params.width = size;
+            params.height = size;
+            params.setMargins(dp(8), dp(8), dp(8), dp(8));
+            item.setLayoutParams(params);
+            item.setClickable(true);
+            item.setFocusable(true);
+            if (name.equals(currentName)) {
+                item.setAlpha(0.5f);
+            }
+            grid.addView(item);
+        }
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Choose an icon")
+                .setView(grid)
+                .setNegativeButton("Reset to default", (d, which) -> {
+                    preferences.edit().remove("flexboard_hotkey_" + slot + "_icon").apply();
+                    Drawable def = drawable(defaultResId);
+                    if (def != null) {
+                        preview.setImageDrawable(def);
+                    }
+                })
+                .setNeutralButton("Cancel", null)
+                .create();
+
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            ImageView item = (ImageView) grid.getChildAt(i);
+            final String iconName = HOTKEY_ICON_CHOICES[i];
+            final int iconResId = getResources().getIdentifier(
+                    iconName, "drawable", getPackageName());
+            item.setOnClickListener(v -> {
+                preferences.edit()
+                        .putString("flexboard_hotkey_" + slot + "_icon", iconName).apply();
+                Drawable picked = drawable(iconResId);
+                if (picked != null) {
+                    preview.setImageDrawable(picked);
+                }
+                dialog.dismiss();
+            });
+        }
+
+        dialog.show();
     }
 
     /**

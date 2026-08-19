@@ -1,5 +1,6 @@
 package dev.jz6.flexboard.patches.features.settings
 
+import app.morphe.patcher.patch.ResourcePatchContext
 import app.morphe.patcher.patch.resourcePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.Constants.GBOARD_PACKAGE_NAME
@@ -81,11 +82,27 @@ internal val scrubSettingsScreenPatch = resourcePatch(
 
         // Write the Flexboard settings icon as a new drawable resource. aapt2 assigns it an id
         // during recompilation, and the preference XML references it by name.
-        val iconXml = {}.javaClass.classLoader
-            ?.getResourceAsStream("drawable/flexboard_settings_icon.xml")
-            ?.bufferedReader()?.use { it.readText() }
-            ?: error("flexboard_settings_icon.xml not found in patch resources")
-        get("res/drawable/flexboard_settings_icon.xml", true).writeText(iconXml)
+        writeDrawableResource("flexboard_settings_icon.xml")
+
+        // Write custom hotkey icon drawables. These are resolved by name at runtime via
+        // getIdentifier, so the patch does not need to know the resource IDs aapt2 assigns.
+        writeDrawableResource("flexboard_hotkey_icon_1.xml")
+        writeDrawableResource("flexboard_hotkey_icon_2.xml")
+        writeDrawableResource("flexboard_hotkey_icon_3.xml")
+        writeDrawableResource("flexboard_hotkey_icon_4.xml")
+        writeDrawableResource("flexboard_hotkey_icon_5.xml")
+        writeDrawableResource("flexboard_hotkey_icon_6.xml")
+        writeDrawableResource("flexboard_hotkey_icon_7.xml")
+        writeDrawableResource("flexboard_hotkey_icon_8.xml")
+        writeDrawableResource("flexboard_hotkey_icon_9.xml")
+        writeDrawableResource("flexboard_hotkey_icon_10.xml")
+        writeDrawableResource("flexboard_hotkey_icon_11.xml")
+        writeDrawableResource("flexboard_hotkey_icon_12.xml")
+        writeDrawableResource("flexboard_icon_snowflake.xml")
+        writeDrawableResource("flexboard_icon_token.xml")
+        for (n in 1..9) {
+            writeDrawableResource("flexboard_icon_counter_$n.xml")
+        }
 
         document(GBOARD_SETTINGS_XML).use { settings ->
             settings.addFlexboardEntry(packageName)
@@ -94,6 +111,22 @@ internal val scrubSettingsScreenPatch = resourcePatch(
 }
 
 private const val PREFERENCE_SCREEN_TAG = "PreferenceScreen"
+
+/**
+ * Writes a vector drawable from `patches/src/main/resources/drawable/` into the APK's
+ * `res/drawable/` so aapt2 compiles it and assigns it a resource ID.
+ *
+ * The drawable is then resolved by name at runtime via `getIdentifier`, so neither the patch
+ * nor the extension needs to know the ID aapt2 assigned — only the name.
+ */
+context(context: ResourcePatchContext)
+private fun writeDrawableResource(name: String) {
+    val xml = {}.javaClass.classLoader
+        ?.getResourceAsStream("drawable/$name")
+        ?.bufferedReader()?.use { it.readText() }
+        ?: error("$name not found in patch resources")
+    context.get("res/drawable/$name", true).writeText(xml)
+}
 private const val PREFERENCE_CATEGORY_TAG = "androidx.preference.PreferenceCategory"
 private const val FOOTER_PREFERENCE_TAG = "com.android.settingslib.widget.FooterPreference"
 /**

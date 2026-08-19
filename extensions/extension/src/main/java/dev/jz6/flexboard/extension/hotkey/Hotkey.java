@@ -1,5 +1,6 @@
 package dev.jz6.flexboard.extension.hotkey;
 
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.view.inputmethod.InputConnection;
 
@@ -37,6 +38,55 @@ public final class Hotkey implements Runnable {
     }
 
     private static final String KEY_PREFIX = "flexboard_hotkey_";
+
+    /** Preference key for a slot's custom icon drawable resource name. */
+    private static String iconKey(int slot) {
+        return KEY_PREFIX + slot + "_icon";
+    }
+
+    /**
+     * The resource id for a slot's icon, resolved at toolbar-build time.
+     *
+     * <p>Each slot has a default — a Gboard-bundled drawable whose id the patch passes as
+     * {@code defaultResId}. A slot may override it with a Flexboard-bundled drawable by storing
+     * the drawable's resource name in preferences (key: {@code flexboard_hotkey_<slot>_icon}).
+     * Slot 1 defaults to {@code flexboard_hotkey_icon_1} when no preference is set.
+     *
+     * <p>The name is resolved via {@link android.content.res.Resources#getIdentifier}, which is
+     * why the drawable is written into the APK at patch time — aapt2 compiles it and enters it in
+     * the resource table under that name.
+     */
+    public static int iconAt(int slot, int defaultResId) {
+        SharedPreferences preferences = ImeService.preferences();
+        Context context = ImeService.get();
+        if (preferences == null || context == null) {
+            return defaultResId;
+        }
+        String name = preferences.getString(iconKey(slot), null);
+        if (name == null) {
+            name = switch (slot) {
+                case 1 -> "flexboard_hotkey_icon_1";
+                case 2 -> "flexboard_hotkey_icon_2";
+                case 3 -> "flexboard_hotkey_icon_3";
+                case 4 -> "flexboard_hotkey_icon_4";
+                case 5 -> "flexboard_hotkey_icon_5";
+                case 6 -> "flexboard_hotkey_icon_6";
+                case 7 -> "flexboard_hotkey_icon_7";
+                case 8 -> "flexboard_hotkey_icon_8";
+                case 9 -> "flexboard_hotkey_icon_9";
+                case 10 -> "flexboard_hotkey_icon_10";
+                case 11 -> "flexboard_hotkey_icon_11";
+                case 12 -> "flexboard_hotkey_icon_12";
+                default -> null;
+            };
+            if (name == null) {
+                return defaultResId;
+            }
+        }
+        int resId = context.getResources().getIdentifier(
+                name, "drawable", context.getPackageName());
+        return resId != 0 ? resId : defaultResId;
+    }
 
     /**
      * How much of the snippet becomes the button's name.
