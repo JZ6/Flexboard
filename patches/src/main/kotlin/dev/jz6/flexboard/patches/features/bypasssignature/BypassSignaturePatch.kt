@@ -9,6 +9,7 @@ import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.usesField
@@ -107,11 +108,7 @@ private const val EXPECTED_REGISTER_COUNT = 8
 private const val MAX_CONST_4_REGISTER = 15
 
 private fun MutableMethod.forceSignatureChecksToPass() {
-    val registerCount = implementation?.registerCount
-        ?: error("$SIGNATURE_CHECK has no implementation")
-    check(registerCount == EXPECTED_REGISTER_COUNT) {
-        "$SIGNATURE_CHECK has $registerCount registers, expected $EXPECTED_REGISTER_COUNT"
-    }
+    assertRegisterCount(EXPECTED_REGISTER_COUNT, SIGNATURE_CHECK)
     check(instructions.count { it.callsMethod(DIGEST_METHOD) } == 1) {
         "Expected exactly one digest call in $SIGNATURE_CHECK"
     }
