@@ -4,7 +4,7 @@ Ideas, in no particular order and with no promises. Kept verbatim as written.
 
 turn the flick down for symbols patch into a "suggested settings patch", and turn on touch hold keys for symbols, turn off dont suggest offensive words, turn off word suggestions
 
-set new defaults, swipe length 60%, icons on the toolbar 6, icons when unfolded 12
+swipe length seem to be reversed? lower value takes more swipe to swipe multiple words on the delete key
 
 what other material symbols are there, im pretty sure undo exists
 
