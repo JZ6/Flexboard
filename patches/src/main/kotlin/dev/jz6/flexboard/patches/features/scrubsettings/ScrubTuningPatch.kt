@@ -381,33 +381,7 @@ private fun MutableMethod.capWordCount(
     // text and parses it. Emitting that one would compile, verify and quietly parse a
     // preference that was never written as a string.
     val getInt = context.resolvePreferenceGetInt()
-    val registerCount = assertRegisterCount(
-        DISPATCH_REGISTER_COUNT,
-        "$SCRUB_MOTION_EVENT_HANDLER->r",
-    )
-    // `this`, whose type is simply the method's own class. Unlike the two constructors above, the
-    // Context here is not an argument — it is read out of a field, so both halves need checking:
-    // that this register can legally read that field, and that what comes back is a Context.
-    val handler = TypedRegister(registerCount - DISPATCH_PARAMETER_WORDS, definingClass)
-    val thisRegister = handler.register
-
-    // Resolved by walking up, because the handler *inherits* this field rather than declaring it —
-    // it lives on AbstractMotionEventHandler, one hop above. Emitting the declaring class's own
-    // spelling keeps what is written provable against what was looked up.
-    val handlerContext = context.resolveHandlerContext()
-    val resolvedHandlerContext =
-        "${handlerContext.definingClass}->${handlerContext.name}:${handlerContext.type}"
-
-    context.checkAssignable(
-        handler,
-        handlerContext.definingClass,
-        "`this` in $SCRUB_MOTION_EVENT_HANDLER->r",
-    )
-    context.checkAssignable(
-        handlerContext.type,
-        ANDROID_CONTEXT,
-        "The value of $resolvedHandlerContext, which $PREFERENCE_STORE_GET is handed",
-    )
+    val (thisRegister, resolvedHandlerContext) = resolveDispatchEntry(context)
 
     // Boxing the payload is what identifies the count register beyond doubt.
     val boxIndex = instructions.indexOfSoleCall(INTEGER_VALUE_OF, "$SCRUB_MOTION_EVENT_HANDLER->r")
@@ -563,27 +537,7 @@ private fun MutableMethod.useStockDistanceFromBackspace(
     startKey: StartKeyChain,
 ) {
     val getInt = context.resolvePreferenceGetInt()
-    val registerCount = assertRegisterCount(
-        DISPATCH_REGISTER_COUNT,
-        "$SCRUB_MOTION_EVENT_HANDLER->r",
-    )
-
-    val handler = TypedRegister(registerCount - DISPATCH_PARAMETER_WORDS, definingClass)
-    val thisRegister = handler.register
-
-    val handlerContext = context.resolveHandlerContext()
-    val resolvedHandlerContext =
-        "${handlerContext.definingClass}->${handlerContext.name}:${handlerContext.type}"
-    context.checkAssignable(
-        handler,
-        handlerContext.definingClass,
-        "`this` in $SCRUB_MOTION_EVENT_HANDLER->r",
-    )
-    context.checkAssignable(
-        handlerContext.type,
-        ANDROID_CONTEXT,
-        "The value of $resolvedHandlerContext, which $PREFERENCE_STORE_GET is handed",
-    )
+    val (thisRegister, resolvedHandlerContext) = resolveDispatchEntry(context)
 
     // `Math.abs` is the one unambiguous landmark in the walk; the delta is simply what it is
     // handed. Walking back to where that register was last written finds the subtraction, which is
@@ -648,3 +602,35 @@ private fun BytecodePatchContext.resolveHandlerContext() =
                 "`$HANDLER_CONTEXT_FIELD_NAME` — the handler's Context has moved, and " +
                 "$PREFERENCE_STORE_GET would be handed something else",
         )
+
+/**
+ * The handler register and its resolved Context field, established once for both dispatch-site
+ * edits in `r()`.
+ *
+ * Asserts the register count, derives `this` from it, resolves the inherited Context field, and
+ * checks assignability both ways — the same six steps [capWordCount] and
+ * [useStockDistanceFromBackspace] used to carry inline. Returns the `this` register and the
+ * resolved Context field descriptor so each caller can emit against them without duplicating the
+ * proof.
+ */
+private fun MutableMethod.resolveDispatchEntry(context: BytecodePatchContext): Pair<Int, String> {
+    val registerCount = assertRegisterCount(
+        DISPATCH_REGISTER_COUNT,
+        "$SCRUB_MOTION_EVENT_HANDLER->r",
+    )
+    val handler = TypedRegister(registerCount - DISPATCH_PARAMETER_WORDS, definingClass)
+    val handlerContext = context.resolveHandlerContext()
+    val resolvedHandlerContext =
+        "${handlerContext.definingClass}->${handlerContext.name}:${handlerContext.type}"
+    context.checkAssignable(
+        handler,
+        handlerContext.definingClass,
+        "`this` in $SCRUB_MOTION_EVENT_HANDLER->r",
+    )
+    context.checkAssignable(
+        handlerContext.type,
+        ANDROID_CONTEXT,
+        "The value of $resolvedHandlerContext, which $PREFERENCE_STORE_GET is handed",
+    )
+    return Pair(handler.register, resolvedHandlerContext)
+}
