@@ -107,6 +107,18 @@ EXPECTED = {
     'engine_ctor_registers': 11,
     'apply_preferences_registers': 13,
     'apply_preferences_ins': 2,
+    # Gboard preference ids and the keys they name. A key *is* the string resource's value --
+    # `Lqhy;` resolves an id through PreferenceKeyCache, which is Resources.getString behind a
+    # cache -- so the extension writes these by calling getString(id) itself.
+    #
+    # These were pinned in Kotlin for several releases with nothing checking them: a renumbering
+    # would have silently written a preference nobody meant, and the swipe gesture would have
+    # stopped attaching with no diagnostic anywhere.
+    'gboard_preference_keys': [
+        (0x7f140a1f, 'enable_scrub_delete'),
+        (0x7f140a05, 'enable_gesture_input'),
+        (0x7f140a01, 'pref_enable_flick_symbols'),
+    ],
     'sigcheck_registers': 8,
     'sigcheck_returns': [6, 4, 3],
     'undo_scratch': [2, 3],
@@ -1334,6 +1346,24 @@ def run(dl, apk=None):
         check('prefs: p0 is addressable by a packed invoke',
               receiver < PACKED_INVOKE_REGISTER_LIMIT,
               f'p0 is v{receiver}; the seed would need move-object/from16 first')
+
+    # The three Gboard preferences the extension writes, by the id it resolves each key from.
+    if apk is None:
+        check.skip('prefs: the preference ids still name the right settings',
+                   'no APK given; pass one as the second argument to check resource ids')
+    else:
+        try:
+            import zipfile
+
+            import arsc
+            table = arsc.load(zipfile.ZipFile(apk).read('resources.arsc'))
+            for rid, key in E['gboard_preference_keys']:
+                value = table.value(rid)
+                check(f'prefs: {hex(rid)} still names {key}', str(value) == key,
+                      f'reads {value!r}')
+        except Exception as exc:
+            check('prefs: the preference ids still name the right settings', False,
+                  f'could not read resources from {apk}: {exc}')
 
     # ---- bypass signature
     sig_cls = B['sigcheck']

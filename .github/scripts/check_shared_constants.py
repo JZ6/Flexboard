@@ -114,6 +114,24 @@ EMITTED_CALL = re.compile(
     rf"({EXTENSION_TYPE})->(<init>|\w+)\(([^)]*)\)(\[*(?:L[\w/$;]+;|[VZBSCIJFD]))"
 )
 
+# Calls emitted by a shared helper rather than written out at the use site.
+#
+# `shared/AppStart.kt` emits `invoke-static { p0 }, $descriptor` for whatever descriptor it is
+# handed, so three patches now name an extension member without any `invoke-` beside it. The
+# pattern above cannot see those, and the "silently stopped checking anything" guard below is what
+# noticed -- the check would otherwise have gone quiet on three of its five call sites.
+#
+# Each entry maps a helper to the opcode it emits, which is the part that has to be known rather
+# than inferred: a helper hardcoding invoke-static against a member someone later made non-static
+# is exactly the failure this file exists to catch.
+HELPER_CALLS = {"callAtAppStart": "static"}
+
+HELPER_CALL = re.compile(rf"\b({'|'.join(HELPER_CALLS)})\(\s*([A-Z_][A-Z0-9_]*)\s*\)")
+
+MEMBER = re.compile(
+    rf"^({EXTENSION_TYPE})->(<init>|\w+)\(([^)]*)\)(\[*(?:L[\w/$;]+;|[VZBSCIJFD]))$"
+)
+
 
 def _expand(text):
     """Substitute Kotlin string constants into the source, to a fixpoint."""
@@ -206,8 +224,30 @@ def _check_extension_references(problems):
                 source, LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", source.read_text()))
             )
 
+        # A helper's call site names the member through a constant, so resolve it back to the same
+        # shape the pattern above produces. `text` is already expanded to a fixpoint, so the
+        # declarations in it carry their final values.
+        constants = dict(CONST_STRING.findall(text))
+        emitted = list(EMITTED_CALL.findall(text))
+        for helper, name in HELPER_CALL.findall(text):
+            descriptor = constants.get(name)
+            if descriptor is None:
+                problems.append(
+                    f"  {path.name} calls {helper}({name}), but {name} is not a string constant "
+                    f"in that file, so what it emits cannot be checked"
+                )
+                continue
+            match = MEMBER.match(descriptor)
+            if match is None:
+                problems.append(
+                    f"  {path.name} calls {helper}({name}), whose value {descriptor!r} is not a "
+                    f"complete extension member descriptor"
+                )
+                continue
+            emitted.append((HELPER_CALLS[helper], *match.groups()))
+
         checked = 0
-        for opcode, descriptor, member, parameters, returns in EMITTED_CALL.findall(text):
+        for opcode, descriptor, member, parameters, returns in emitted:
             if descriptor not in sources:
                 continue
             source, body = sources[descriptor]

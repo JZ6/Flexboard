@@ -50,6 +50,27 @@ reach a setter on Gboard's store at all. It hands `Defaults` a `Context` and sto
 smali would have meant deriving a string-keyed setter and reusing the `getInt` whose two
 same-signature siblings on that class are a documented trap, for an identical result.
 
+### The same mistake was already in two other patches
+
+`forceScrubPreferencesPatch` and `flickSymbolsPatch` write **Gboard's** own settings at startup, and
+both did it in bytecode through the store's id-keyed accessors. That looked unavoidable, because a
+Gboard preference is addressed by resource id rather than by name.
+
+It is not: `Lqhy;` resolves an id through `PreferenceKeyCache`, which is `Resources.getString`
+behind a map. So a preference key is a string resource's value, and both patches are now the same
+one-instruction handoff — `getString(id)` for the key, `SharedPreferences` for the write.
+
+What that deleted is the point. The id-keyed `contains` had to be *derived*, because its signature
+is shared with a sibling that answers "is it currently true?" rather than "has the user ever set
+this?" — and for flick keys, a write-once default, that difference is between behaving as a default
+and forcing the setting back on at every start. The framework's `contains` has no sibling. Two
+derivations, two register-liveness arguments and one silently-wrong failure mode, all gone, and the
+resource ids picked up a preflight check they never had.
+
+The general shape, worth applying to anything added later: **before deriving an accessor on an
+obfuscated class, ask whether the extension could do it against a framework API instead.** It can
+whenever the data is reachable from a `Context`, which for anything preference-shaped it is.
+
 The toolbar counts had no starting value at all before this: an unset preference fell through to
 whatever Gboard computed, and the 5 the settings screen showed was only ever displayed. That is why
 `README.md` no longer says leaving the slider alone changes nothing.

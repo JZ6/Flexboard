@@ -1,14 +1,9 @@
 package dev.jz6.flexboard.patches.features.flicksymbols
 
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
-import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
-import app.morphe.patcher.util.smali.ExternalLabel
-import dev.jz6.flexboard.patches.features.scrubdelete.ApplyPreferenceValuesFingerprint
-import dev.jz6.flexboard.patches.features.scrubdelete.PreferenceStoreWriteFingerprint
-import dev.jz6.flexboard.patches.features.scrubdelete.resolvePreferenceContains
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.ApplyPreferenceValuesFingerprint
+import dev.jz6.flexboard.patches.shared.callAtAppStart
 
 /**
  * Turns on Gboard's own **"Flick keys to enter symbols"** — pull down on a key to enter the symbol
@@ -31,9 +26,14 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
  * ## Set once, not forced
  *
  * Unlike `forceScrubPreferencesPatch`, which rewrites its preferences on every start because the
- * swipe gesture cannot work otherwise, this one writes only when the key has never been set —
- * `Lqhy;->ak(I)Z` is `SharedPreferences.contains` keyed by resource id. So it behaves as a genuine
- * default: on out of the box, and it stays off if the user turns it off.
+ * swipe gesture cannot work otherwise, this one writes only when the key has never been set. So it
+ * behaves as a genuine default: on out of the box, and it stays off if the user turns it off.
+ *
+ * That test used to be Gboard's own id-keyed `contains`, derived at patch time because its
+ * signature is shared with a sibling answering *"is it currently true?"* rather than *"has the user
+ * ever set this?"* — a moved letter would have turned this into something that forced flick keys
+ * back on at every start. It is now `SharedPreferences.contains` in the extension, which has no
+ * sibling. See [GboardSettings][dev.jz6.flexboard.extension.prefs.GboardSettings].
  *
  * ## The greyed row
  *
@@ -57,79 +57,16 @@ val flickSymbolsPatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
+    // Carries GboardSettings, which does the write.
+    extendWith("extensions/extension.mpe")
+
     execute {
-        // Resolving the setter is the assertion that it still exists. An emitted invoke to a
-        // missing method assembles happily and only fails on the device, with no diagnostic.
-        val setter = PreferenceStoreWriteFingerprint.method
-        val setterDescriptor = "${setter.definingClass}->${setter.name}(ILjava/lang/Object;)V"
-
-        ApplyPreferenceValuesFingerprint.method.defaultFlickSymbolsOn(
-            setterDescriptor,
-            resolvePreferenceContains(),
-        )
+        ApplyPreferenceValuesFingerprint.method.callAtAppStart(DEFAULT_FLICK_SYMBOLS_ON)
     }
 }
 
-/**
- * Resource ids are build-specific and nothing at patch time can confirm one still means what it
- * meant. `COMPATIBILITY_GBOARD` pinning the bundle to a single Gboard build is what makes this safe
- * to hardcode; it was resolved from the resource table with `tools/apk/arsc.py`, and its label
- * (`0x7f140c14`) reads "Flick keys to enter symbols".
- */
-private const val FLICK_SYMBOLS_PREFERENCE = "0x7f140a01"
+private const val GBOARD_SETTINGS = "Ldev/jz6/flexboard/extension/prefs/GboardSettings;"
 
-/** `SharedPreferences.contains`, keyed by resource id rather than by the resolved string. */
-// The id-keyed `contains` is resolved at patch time rather than named here: its signature is
-// shared with a sibling that resolves the id to a key and delegates to a boolean *getter*, so a
-// swapped letter would silently turn "has the user ever set this?" into "is it currently true?".
-// See resolvePreferenceContains in scrubdelete/Fingerprints.kt.
+private const val DEFAULT_FLICK_SYMBOLS_ON =
+    "$GBOARD_SETTINGS->defaultFlickSymbolsOn(Landroid/content/Context;)V"
 
-private const val APPLY_PREFERENCES_REGISTER_COUNT = 13
-
-private const val ALREADY_SET_LABEL = "flexboard_flick_symbols_already_set"
-
-/**
- * Injected at the head of `LatinApp.applyPreferenceValues`, which runs at Application start with
- * the preference store as its parameter — before any keyboard is built, so the value is in place by
- * the time `LatinGestureMotionEventHandler` reads it.
- *
- * v0..v2 are dead at method entry: the stock body writes v0 at offset 0, v1 at 14 and v2 at 16,
- * each before any read. So the branch leaving v1 an int on one edge and a `Boolean` on the other is
- * harmless — nothing reads it before it is overwritten.
- *
- * The store is copied out of its parameter register with `move-object/from16`, whose 16-bit source
- * field can address it wherever it lands; an `invoke` could not, and emitting `pN` into one is what
- * produced an unappliable bundle once before. See `docs/register-encoding.md`.
- */
-private fun MutableMethod.defaultFlickSymbolsOn(
-    setterDescriptor: String,
-    preferenceContains: String,
-) {
-    val registerCount = implementation?.registerCount
-        ?: error("LatinApp->d(Lqhy;)V has no implementation")
-    check(registerCount == APPLY_PREFERENCES_REGISTER_COUNT) {
-        "LatinApp->d(Lqhy;)V has $registerCount registers, " +
-            "expected $APPLY_PREFERENCES_REGISTER_COUNT — refusing to guess register mapping"
-    }
-    check(parameterTypes.map(Any::toString) == listOf("Lqhy;")) {
-        "LatinApp->d takes $parameterTypes, expected a single Lqhy;"
-    }
-
-    val resume = instructions.first()
-
-    addInstructionsWithLabels(
-        0,
-        """
-            move-object/from16 v2, p1
-            const v0, $FLICK_SYMBOLS_PREFERENCE
-            invoke-virtual { v2, v0 }, $preferenceContains
-            move-result v1
-            if-nez v1, :$ALREADY_SET_LABEL
-            const/4 v1, 0x1
-            invoke-static { v1 }, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
-            move-result-object v1
-            invoke-virtual { v2, v0, v1 }, $setterDescriptor
-        """,
-        ExternalLabel(ALREADY_SET_LABEL, resume),
-    )
-}

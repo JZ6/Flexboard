@@ -93,22 +93,16 @@ internal fun BytecodePatchContext.resolvePreferenceGetInt(): String =
         "the string-keyed getInt",
     )
 
-/**
- * The id-keyed `contains`, resolved rather than named.
- *
- * **Its signature is not unique either.** Two methods take `(I)` and return `Z`; this is the one
- * that actually asks `SharedPreferences.contains`, while the other resolves the id to a key and
- * delegates to a boolean *getter*. Confusing them would turn "has the user ever set this?" into
- * "is it currently true?", which for a write-once default is the difference between setting it once
- * and setting it on every start.
- */
-internal fun BytecodePatchContext.resolvePreferenceContains(): String =
-    soleMethodCalling(
-        PREFERENCE_STORE,
-        "(I)Z",
-        SHARED_PREFERENCES_CONTAINS,
-        "the id-keyed contains",
-    )
+// There was a `resolvePreferenceContains` here, for the store's id-keyed `contains`, and it needed
+// resolving rather than naming because two methods take `(I)` and return `Z` — the other resolves
+// the id to a key and delegates to a boolean *getter*, so confusing them turns "has the user ever
+// set this?" into "is it currently true?". For flick keys, the one thing that used it, that is the
+// difference between a default and something forced back on at every start.
+//
+// It is gone because nothing writes a Gboard preference from bytecode any more. A preference key is
+// just a string resource's value, and the file is an ordinary SharedPreferences, so the extension
+// does it in Java against `SharedPreferences.contains`, which has no sibling to be confused with.
+// See `GboardSettings` and `shared/AppStart.kt`.
 
 /** Asserts the store descriptors that are safe to pin are still present. */
 internal fun BytecodePatchContext.checkPreferenceStorePins() {

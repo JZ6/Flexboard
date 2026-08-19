@@ -39,8 +39,8 @@ bodies — not by guessing that the alphabet shifted.
 | Event dispatcher | `LatinIme->d(Lnbj;)Z` | `LatinIme->q(Lnur;)Z` |
 | Suppression flag | `AbstractIme->N:Z` | **`AbstractIme->O:Z`** |
 | Store singleton | `Lpnp;->N(Context)` | `Lqhy;->I(Context)` |
-| Preference writer | `Lpnp;->aa(I,Object)V` | `Lqhy;->T(I,Object)V` |
-| `contains` by id | `Lpnp;->ar(I)Z` | `Lqhy;->ak(I)Z` |
+| Preference writer | `Lpnp;->aa(I,Object)V` | `Lqhy;->T(I,Object)V` — *no longer used, see below* |
+| `contains` by id | `Lpnp;->ar(I)Z` | `Lqhy;->ak(I)Z` — *no longer used, see below* |
 | Word-count getter | `La;->W(Lnbj;)I` | `La;->X(Lnur;)I` |
 
 Unchanged across the move, and worth knowing because they carry most of the load:
@@ -74,8 +74,25 @@ Still pinned, and safely so — each was checked to be **signature-unique** on i
 makes it vanish rather than letting the letter survive on the wrong member. `checkPreferenceStorePins`
 and the existence helpers in `shared/Resolve.kt` assert they are still there:
 
-`Lqhy;->I(Context)`, `Lqhy;->k(String,Z)Z`, `Lqhy;->T(I,Object)V`, `LatinIme->y`, and the slot's
-`a()Lj$/util/Optional;`.
+`Lqhy;->I(Context)`, `Lqhy;->k(String,Z)Z`, `LatinIme->y`, and the slot's `a()Lj$/util/Optional;`.
+
+### Nothing writes a preference through the store any more
+
+`Lqhy;->T(I,Object)V` and `Lqhy;->ak(I)Z` were how the two startup patches wrote Gboard's own
+settings, and the second needed *deriving* rather than naming: two methods take `(I)` and return
+`Z`, and the other resolves the id to a key and delegates to a boolean **getter**, so a moved letter
+would turn "has the user ever set this?" into "is it currently true?".
+
+All of that was avoidable. `Lqhy;->T` resolves its id through `Lqht;` — `PreferenceKeyCache`, whose
+`a(I)` is `Resources.getString` behind a `ConcurrentHashMap` — so **a Gboard preference key is just
+a string resource's value**, and the file beneath is an ordinary `SharedPreferences`. The extension
+opens the same file already, to store what the settings screen writes.
+
+So the patches now hand the extension a `Context` at Application start and it writes in Java, with
+`getString(id)` for the key and the framework's own `contains`. Two derivations gone, one of them a
+documented silently-wrong trap, and `SharedPreferences.contains` has no sibling to confuse it with.
+The resource ids are still pinned — and now checked, which they never were while they lived in
+Kotlin. See `shared/AppStart.kt` and the extension's `GboardSettings`.
 
 The rule to apply to anything added later: **if a member has a same-signature sibling, derive it; if
 it does not, assert it exists.** Which applies is a fact about the APK, so check before choosing.

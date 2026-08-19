@@ -1,9 +1,9 @@
 package dev.jz6.flexboard.patches.features.scrubsettings
 
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.bytecodePatch
-import dev.jz6.flexboard.patches.features.scrubdelete.ApplyPreferenceValuesFingerprint
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.ApplyPreferenceValuesFingerprint
+import dev.jz6.flexboard.patches.shared.callAtAppStart
 
 /**
  * Writes Flexboard's starting values into Gboard's preference file on the first run.
@@ -56,41 +56,9 @@ internal val seedDefaultsPatch = bytecodePatch(
     extendWith("extensions/extension.mpe")
 
     execute {
-        ApplyPreferenceValuesFingerprint.method.apply {
-            val registerCount = implementation?.registerCount
-                ?: error("$APPLY_PREFERENCES has no implementation")
-            check(registerCount == APPLY_PREFERENCES_REGISTER_COUNT) {
-                "$APPLY_PREFERENCES has $registerCount registers, expected " +
-                    "$APPLY_PREFERENCES_REGISTER_COUNT — refusing to guess the register mapping"
-            }
-            check(parameterTypes.map(Any::toString) == listOf(PREFERENCE_STORE)) {
-                "$APPLY_PREFERENCES takes $parameterTypes, expected a single $PREFERENCE_STORE"
-            }
-
-            // p0 is `this`, and it has to be reachable by a 35c invoke's four-bit register field.
-            val receiver = registerCount - APPLY_PREFERENCES_PARAMETER_WORDS
-            check(receiver < PACKED_INVOKE_REGISTER_LIMIT) {
-                "p0 of $APPLY_PREFERENCES is v$receiver, which a 35c invoke cannot address; the " +
-                    "argument would have to be copied out with move-object/from16 first"
-            }
-
-            addInstructions(0, "invoke-static { p0 }, $SEED_DEFAULTS")
-        }
+        ApplyPreferenceValuesFingerprint.method.callAtAppStart(SEED_DEFAULTS)
     }
 }
-
-private const val APPLY_PREFERENCES =
-    "Lcom/google/android/apps/inputmethod/latin/LatinApp;->d(Lqhy;)V"
-
-private const val PREFERENCE_STORE = "Lqhy;"
-
-private const val APPLY_PREFERENCES_REGISTER_COUNT = 13
-
-/** `this` plus the store. */
-private const val APPLY_PREFERENCES_PARAMETER_WORDS = 2
-
-/** A `35c` invoke encodes each register in a nibble. */
-private const val PACKED_INVOKE_REGISTER_LIMIT = 16
 
 private const val SEED_DEFAULTS =
     "Ldev/jz6/flexboard/extension/prefs/Defaults;->seed(Landroid/content/Context;)V"
