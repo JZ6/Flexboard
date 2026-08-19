@@ -1,3 +1,8 @@
+# [1.1.2-dev.1](https://github.com/JZ6/Flexboard/compare/v1.1.1-dev.2...v1.1.2-dev.1) (2026-08-19)
+
+* **Gboard:** bump to 1.1.2-dev.1
+* **Gboard:** add Copy and Paste buttons beside Select all
+
 # [1.1.1](https://github.com/JZ6/Flexboard/compare/v1.1.1-dev.2...v1.1.1) (2026-08-19)
 
 * **Gboard:** bump to 1.1.1
