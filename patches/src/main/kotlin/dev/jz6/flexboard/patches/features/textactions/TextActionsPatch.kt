@@ -11,6 +11,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.features.scrubsettings.scrubSettingsScreenPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
 import dev.jz6.flexboard.patches.shared.opcodeName
@@ -570,12 +571,7 @@ private fun BytecodePatchContext.publishInputMethodService() {
         it.toDescriptor() == onCreate.toDescriptor()
     }
 
-    val registerCount = method.implementation?.registerCount
-        ?: error("${onCreate.toDescriptor()} has no implementation")
-    check(registerCount == ON_CREATE_REGISTER_COUNT) {
-        "${onCreate.toDescriptor()} has $registerCount registers, expected " +
-            "$ON_CREATE_REGISTER_COUNT — refusing to guess the register mapping"
-    }
+    method.assertRegisterCount(ON_CREATE_REGISTER_COUNT, onCreate.toDescriptor())
 
     method.addInstructions(0, "invoke-static { p0 }, $SET_SERVICE")
 }
@@ -617,12 +613,7 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
         it.toDescriptor() == split.toDescriptor()
     }
 
-    val registerCount = method.implementation?.registerCount
-        ?: error("${split.toDescriptor()} has no implementation")
-    check(registerCount == SPLIT_REGISTER_COUNT) {
-        "${split.toDescriptor()} has $registerCount registers, expected $SPLIT_REGISTER_COUNT — " +
-            "refusing to guess the register mapping"
-    }
+    method.assertRegisterCount(SPLIT_REGISTER_COUNT, split.toDescriptor())
 
     val ids = BUTTONS.map { it.id } + (1..HOTKEY_SLOT_COUNT).map(::hotkeyId)
     check(ids.distinct().size == ids.size) {

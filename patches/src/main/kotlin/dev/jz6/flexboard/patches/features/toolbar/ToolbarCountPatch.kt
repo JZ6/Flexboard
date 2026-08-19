@@ -22,6 +22,8 @@ import dev.jz6.flexboard.patches.features.scrubdelete.resolvePreferenceGetInt
 import dev.jz6.flexboard.patches.features.scrubsettings.scrubSettingsScreenPatch
 import dev.jz6.flexboard.patches.features.scrubsettings.seedDefaultsPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.PACKED_INVOKE_REGISTER_LIMIT
+import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
@@ -29,6 +31,7 @@ import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.toDescriptor
+import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
 /**
  * Makes the number of icons on Gboard's toolbar adjustable.
@@ -298,9 +301,6 @@ private const val STOCK_COUNT_LABEL = "flexboard_stock_count"
  */
 private const val MAIN_COUNT_LABEL = "flexboard_main_count"
 
-/** A `35c` invoke addresses its registers in 4-bit nibbles, so v15 is the highest usable one. */
-private const val PACKED_INVOKE_REGISTER_LIMIT = 16
-
 // -------------------------------------------------------------------------------------------
 // The count
 // -------------------------------------------------------------------------------------------
@@ -389,12 +389,10 @@ private fun BytecodePatchContext.resolveDefinedCountOnBar(): MutableMethod {
         "$descriptor is static, so it has no receiver to read the preference store off"
     }
 
-    val registerCount = method.implementation?.registerCount
-        ?: error("$descriptor has no implementation")
-    check(registerCount == DEFINED_COUNT_REGISTER_COUNT) {
-        "$descriptor has $registerCount registers, expected $DEFINED_COUNT_REGISTER_COUNT — " +
-            "refusing to guess which registers are free"
-    }
+    val registerCount = method.assertRegisterCount(
+        DEFINED_COUNT_REGISTER_COUNT,
+        descriptor,
+    )
 
     // `this` and one int parameter, so the capacity is the last register. Asserted above by the
     // signature the candidate was selected on, and by the register count here.
@@ -461,12 +459,10 @@ private fun MutableMethod.overrideCountFromPreference(context: BytecodePatchCont
     // was never written as a string.
     val getInt = context.resolvePreferenceGetInt()
 
-    val registerCount = implementation?.registerCount
-        ?: error("${toDescriptor()} has no implementation")
-    check(registerCount == DEFINED_COUNT_REGISTER_COUNT) {
-        "${toDescriptor()} has $registerCount registers, expected " +
-            "$DEFINED_COUNT_REGISTER_COUNT — refusing to guess which registers are free"
-    }
+    val registerCount = assertRegisterCount(
+        DEFINED_COUNT_REGISTER_COUNT,
+        toDescriptor(),
+    )
     check(registerCount - DEFINED_COUNT_PARAMETER_WORDS == DEFINED_COUNT_SCRATCH_REGISTERS.size) {
         "${toDescriptor()} has ${registerCount - DEFINED_COUNT_PARAMETER_WORDS} local registers, " +
             "and the insertion needs exactly ${DEFINED_COUNT_SCRATCH_REGISTERS.size}"
@@ -674,12 +670,10 @@ internal object AccessPointsBarConstructorFingerprint : Fingerprint(
 private fun MutableMethod.raiseCapacityFromPreference(context: BytecodePatchContext) {
     val getInt = context.resolvePreferenceGetInt()
 
-    val registerCount = implementation?.registerCount
-        ?: error("$ACCESS_POINTS_BAR-><init> has no implementation")
-    check(registerCount == BAR_CONSTRUCTOR_REGISTER_COUNT) {
-        "$ACCESS_POINTS_BAR-><init> has $registerCount registers, expected " +
-            "$BAR_CONSTRUCTOR_REGISTER_COUNT — refusing to guess which registers are free"
-    }
+    val registerCount = assertRegisterCount(
+        BAR_CONSTRUCTOR_REGISTER_COUNT,
+        "$ACCESS_POINTS_BAR-><init>",
+    )
 
     // The Context is the constructor's own first parameter, so unlike the scrub patches there is no
     // field to resolve and nothing to prove assignable: the signature the fingerprint matched on
@@ -707,17 +701,11 @@ private fun MutableMethod.raiseCapacityFromPreference(context: BytecodePatchCont
         ?: error("The capacity write in $ACCESS_POINTS_BAR-><init> is not a two-register `iput`")
 
     val (store, scratch) = TOOLBAR_SCRATCH_REGISTERS
-    check(TOOLBAR_SCRATCH_REGISTERS.distinct().size == TOOLBAR_SCRATCH_REGISTERS.size) {
-        "Scratch registers $TOOLBAR_SCRATCH_REGISTERS are not distinct"
-    }
-    check(capacityRegister !in TOOLBAR_SCRATCH_REGISTERS &&
-        contextRegister !in TOOLBAR_SCRATCH_REGISTERS) {
-        "Scratch registers $TOOLBAR_SCRATCH_REGISTERS collide with the capacity " +
-            "(v$capacityRegister) or the Context (v$contextRegister) in $ACCESS_POINTS_BAR-><init>"
-    }
-    check(TOOLBAR_SCRATCH_REGISTERS.all { it < PACKED_INVOKE_REGISTER_LIMIT }) {
-        "Scratch registers $TOOLBAR_SCRATCH_REGISTERS do not all fit a 35c invoke's nibbles"
-    }
+    validateScratchRegisters(
+        TOOLBAR_SCRATCH_REGISTERS,
+        listOf(capacityRegister, contextRegister),
+        "$ACCESS_POINTS_BAR-><init>",
+    )
 
     addInstructionsWithLabels(
         capacityIndex,

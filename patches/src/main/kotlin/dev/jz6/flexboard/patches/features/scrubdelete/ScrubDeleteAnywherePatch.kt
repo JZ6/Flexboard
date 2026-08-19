@@ -11,6 +11,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import dev.jz6.flexboard.patches.features.scrubsettings.scrubTuningPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.opcodeName
@@ -211,12 +212,7 @@ private fun MutableMethod.writeWildcardStartKey() {
  * down. See the rule at the end of `docs/motion-event-handlers.md`.
  */
 private fun MutableMethod.acceptWildcardStartKey() {
-    val registerCount = implementation?.registerCount
-        ?: error("$SCRUB_MOTION_EVENT_HANDLER->g has no implementation")
-    check(registerCount == SCRUB_HANDLE_REGISTER_COUNT) {
-        "$SCRUB_MOTION_EVENT_HANDLER->g has $registerCount registers, " +
-            "expected $SCRUB_HANDLE_REGISTER_COUNT — refusing to guess register mapping"
-    }
+    assertRegisterCount(SCRUB_HANDLE_REGISTER_COUNT, "$SCRUB_MOTION_EVENT_HANDLER->g")
 
     // Matched on the *gate's* shape — a read of the field immediately tested by `if-ne` — rather
     // than on being the only read in the method. [trackAcrossFullKeyboard] adds a second read of
@@ -331,12 +327,7 @@ private fun MutableMethod.acceptWildcardStartKey() {
  * method and pass 62 — keep their one-key corridor.
  */
 private fun MutableMethod.trackAcrossFullKeyboard() {
-    val registerCount = implementation?.registerCount
-        ?: error("$SCRUB_MOTION_EVENT_HANDLER->g has no implementation")
-    check(registerCount == SCRUB_HANDLE_REGISTER_COUNT) {
-        "$SCRUB_MOTION_EVENT_HANDLER->g has $registerCount registers, " +
-            "expected $SCRUB_HANDLE_REGISTER_COUNT — refusing to guess register mapping"
-    }
+    assertRegisterCount(SCRUB_HANDLE_REGISTER_COUNT, "$SCRUB_MOTION_EVENT_HANDLER->g")
 
     val body = instructions
 

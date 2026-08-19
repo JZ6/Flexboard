@@ -28,7 +28,9 @@ import dev.jz6.flexboard.patches.features.scrubdelete.ScrubDispatchFingerprint
 import dev.jz6.flexboard.patches.features.scrubdelete.ScrubEngineConstructorFingerprint
 import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.PACKED_INVOKE_REGISTER_LIMIT
 import dev.jz6.flexboard.patches.shared.TypedRegister
+import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.checkAssignable
 import dev.jz6.flexboard.patches.shared.findInstanceField
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
@@ -36,6 +38,7 @@ import dev.jz6.flexboard.patches.shared.invokeParameterType
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
 /**
  * Makes the scrub engine's feel adjustable from Gboard's own settings.
@@ -190,12 +193,7 @@ private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
     // text and parses it. Emitting that one would compile, verify and quietly parse a
     // preference that was never written as a string.
     val getInt = context.resolvePreferenceGetInt()
-    val registerCount = implementation?.registerCount
-        ?: error("$THREE_ARGUMENT_ENGINE_CONSTRUCTOR has no implementation")
-    check(registerCount == ENGINE_CONSTRUCTOR_REGISTER_COUNT) {
-        "The three-argument engine constructor has $registerCount registers, expected " +
-            "$ENGINE_CONSTRUCTOR_REGISTER_COUNT — refusing to guess which register is free"
-    }
+    assertRegisterCount(ENGINE_CONSTRUCTOR_REGISTER_COUNT, THREE_ARGUMENT_ENGINE_CONSTRUCTOR)
 
     val forwardIndex = instructions.indexOfSoleCall(
         FOUR_ARGUMENT_ENGINE_CONSTRUCTOR,
@@ -280,12 +278,10 @@ private fun MutableMethod.scaleStepTable(context: BytecodePatchContext) {
     // text and parses it. Emitting that one would compile, verify and quietly parse a
     // preference that was never written as a string.
     val getInt = context.resolvePreferenceGetInt()
-    val registerCount = implementation?.registerCount
-        ?: error("$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init> has no implementation")
-    check(registerCount == DELETE_CONSTRUCTOR_REGISTER_COUNT) {
-        "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init> has $registerCount registers, expected " +
-            "$DELETE_CONSTRUCTOR_REGISTER_COUNT — refusing to guess which registers are free"
-    }
+    val registerCount = assertRegisterCount(
+        DELETE_CONSTRUCTOR_REGISTER_COUNT,
+        "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>",
+    )
 
     val superIndex = instructions.indexOfSoleCall(
         THREE_ARGUMENT_ENGINE_CONSTRUCTOR,
@@ -400,12 +396,10 @@ private fun MutableMethod.capWordCount(
     // text and parses it. Emitting that one would compile, verify and quietly parse a
     // preference that was never written as a string.
     val getInt = context.resolvePreferenceGetInt()
-    val registerCount = implementation?.registerCount
-        ?: error("$SCRUB_MOTION_EVENT_HANDLER->r has no implementation")
-    check(registerCount == DISPATCH_REGISTER_COUNT) {
-        "$SCRUB_MOTION_EVENT_HANDLER->r has $registerCount registers, expected " +
-            "$DISPATCH_REGISTER_COUNT — refusing to guess which registers are free"
-    }
+    val registerCount = assertRegisterCount(
+        DISPATCH_REGISTER_COUNT,
+        "$SCRUB_MOTION_EVENT_HANDLER->r",
+    )
     // `this`, whose type is simply the method's own class. Unlike the two constructors above, the
     // Context here is not an argument — it is read out of a field, so both halves need checking:
     // that this register can legally read that field, and that what comes back is a Context.
@@ -415,12 +409,7 @@ private fun MutableMethod.capWordCount(
     // Resolved by walking up, because the handler *inherits* this field rather than declaring it —
     // it lives on AbstractMotionEventHandler, one hop above. Emitting the declaring class's own
     // spelling keeps what is written provable against what was looked up.
-    val handlerContext = context.findInstanceField(HANDLER_CONTEXT_OWNER, HANDLER_CONTEXT_FIELD_NAME)
-        ?: error(
-            "Neither $HANDLER_CONTEXT_OWNER nor anything above it declares a " +
-                "`$HANDLER_CONTEXT_FIELD_NAME` field — the handler's Context has moved, and " +
-                "$PREFERENCE_STORE_GET would be handed something else",
-        )
+    val handlerContext = context.resolveHandlerContext()
     val resolvedHandlerContext =
         "${handlerContext.definingClass}->${handlerContext.name}:${handlerContext.type}"
 
@@ -464,16 +453,11 @@ private fun MutableMethod.capWordCount(
     // On 17.7.7 the same three roles sat in v4, v6 and v8; the fourth constructor argument is what
     // shifted them. They were re-read out of the v18 method rather than shifted by hand.
     val (store, key, limit) = CLAMP_SCRATCH_REGISTERS
-    check(setOf(store, key, limit).size == CLAMP_SCRATCH_REGISTERS.size) {
-        "Scratch registers $CLAMP_SCRATCH_REGISTERS are not distinct"
-    }
-    check(countRegister !in CLAMP_SCRATCH_REGISTERS && thisRegister !in CLAMP_SCRATCH_REGISTERS) {
-        "Scratch registers $CLAMP_SCRATCH_REGISTERS collide with the count (v$countRegister) or " +
-            "`this` (v$thisRegister) in $SCRUB_MOTION_EVENT_HANDLER->r"
-    }
-    check(CLAMP_SCRATCH_REGISTERS.all { it < PACKED_INVOKE_REGISTER_LIMIT }) {
-        "Scratch registers $CLAMP_SCRATCH_REGISTERS do not all fit a 35c invoke's nibbles"
-    }
+    validateScratchRegisters(
+        CLAMP_SCRATCH_REGISTERS,
+        listOf(countRegister, thisRegister),
+        "$SCRUB_MOTION_EVENT_HANDLER->r",
+    )
 
     // Descending, so inserting at one site cannot shift the index of the other.
     producers.sortedDescending().forEachIndexed { ordinal, producerIndex ->
@@ -558,9 +542,6 @@ private const val MATH_ABS_FLOAT = "Ljava/lang/Math;->abs(F)F"
 private const val STOCK_DISTANCE_LABEL = "flexboard_stock_distance"
 private const val SCALE_DELTA_LABEL = "flexboard_scale_delta"
 
-/** A `35c` invoke addresses its registers in 4-bit nibbles, so v15 is the highest usable one. */
-private const val PACKED_INVOKE_REGISTER_LIMIT = 16
-
 /**
  * Gives a swipe that started on the backspace key Gboard's own distance per word, undoing
  * [scaleStepTable] for that one case.
@@ -597,21 +578,15 @@ private fun MutableMethod.useStockDistanceFromBackspace(
     startKey: StartKeyChain,
 ) {
     val getInt = context.resolvePreferenceGetInt()
-    val registerCount = implementation?.registerCount
-        ?: error("$SCRUB_MOTION_EVENT_HANDLER->r has no implementation")
-    check(registerCount == DISPATCH_REGISTER_COUNT) {
-        "$SCRUB_MOTION_EVENT_HANDLER->r has $registerCount registers, expected " +
-            "$DISPATCH_REGISTER_COUNT — refusing to guess which registers are free"
-    }
+    val registerCount = assertRegisterCount(
+        DISPATCH_REGISTER_COUNT,
+        "$SCRUB_MOTION_EVENT_HANDLER->r",
+    )
 
     val handler = TypedRegister(registerCount - DISPATCH_PARAMETER_WORDS, definingClass)
     val thisRegister = handler.register
 
-    val handlerContext = context.findInstanceField(HANDLER_CONTEXT_OWNER, HANDLER_CONTEXT_FIELD_NAME)
-        ?: error(
-            "Neither $HANDLER_CONTEXT_OWNER nor anything above it declares a " +
-                "`$HANDLER_CONTEXT_FIELD_NAME` field — the handler's Context has moved",
-        )
+    val handlerContext = context.resolveHandlerContext()
     val resolvedHandlerContext =
         "${handlerContext.definingClass}->${handlerContext.name}:${handlerContext.type}"
     context.checkAssignable(
@@ -643,17 +618,11 @@ private fun MutableMethod.useStockDistanceFromBackspace(
     }
 
     val (store, key, fallback) = DISTANCE_SCRATCH_REGISTERS
-    check(DISTANCE_SCRATCH_REGISTERS.distinct().size == DISTANCE_SCRATCH_REGISTERS.size) {
-        "Scratch registers $DISTANCE_SCRATCH_REGISTERS are not distinct"
-    }
-    check(deltaRegister !in DISTANCE_SCRATCH_REGISTERS &&
-        thisRegister !in DISTANCE_SCRATCH_REGISTERS) {
-        "Scratch registers $DISTANCE_SCRATCH_REGISTERS collide with the magnitude " +
-            "(v$deltaRegister) or `this` (v$thisRegister) in $SCRUB_MOTION_EVENT_HANDLER->r"
-    }
-    check(DISTANCE_SCRATCH_REGISTERS.all { it < PACKED_INVOKE_REGISTER_LIMIT }) {
-        "Scratch registers $DISTANCE_SCRATCH_REGISTERS do not all fit a 35c invoke's nibbles"
-    }
+    validateScratchRegisters(
+        DISTANCE_SCRATCH_REGISTERS,
+        listOf(deltaRegister, thisRegister),
+        "$SCRUB_MOTION_EVENT_HANDLER->r",
+    )
 
     val resume = instructions[subtractIndex + 1]
 
@@ -678,3 +647,19 @@ private fun MutableMethod.useStockDistanceFromBackspace(
         ExternalLabel(STOCK_DISTANCE_LABEL, resume),
     )
 }
+
+/**
+ * Resolves the handler's inherited `Context` field, failing the patch when it has moved.
+ *
+ * Both [capWordCount] and [useStockDistanceFromBackspace] resolve the same field and run the same
+ * assignability checks against it, so this is the one place the "Context has moved" error is
+ * spelled. The longer message is kept: it names [PREFERENCE_STORE_GET], which is what actually
+ * receives the wrong value when this field is absent, and makes the failure easier to trace.
+ */
+private fun BytecodePatchContext.resolveHandlerContext() =
+    findInstanceField(HANDLER_CONTEXT_OWNER, HANDLER_CONTEXT_FIELD_NAME)
+        ?: error(
+            "Neither $HANDLER_CONTEXT_OWNER nor anything above it declares " +
+                "`$HANDLER_CONTEXT_FIELD_NAME` — the handler's Context has moved, and " +
+                "$PREFERENCE_STORE_GET would be handed something else",
+        )

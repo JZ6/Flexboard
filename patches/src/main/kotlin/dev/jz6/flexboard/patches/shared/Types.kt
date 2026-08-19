@@ -1,6 +1,7 @@
 package dev.jz6.flexboard.patches.shared
 
 import app.morphe.patcher.patch.BytecodePatchContext
+import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import com.android.tools.smali.dexlib2.iface.Field
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -51,6 +52,9 @@ private const val OBJECT_TYPE = "Ljava/lang/Object;"
 
 /** The one target these patches check against, so far. */
 internal const val ANDROID_CONTEXT = "Landroid/content/Context;"
+
+/** A `35c` invoke encodes each register in a 4-bit nibble, so v15 is the highest usable one. */
+internal const val PACKED_INVOKE_REGISTER_LIMIT = 16
 
 /**
  * A register together with the type it is *proven* to hold, carried as one value.
@@ -117,6 +121,59 @@ internal fun BytecodePatchContext.checkAssignable(
     target: String,
     what: String,
 ) = checkAssignable(register.type, target, "$what (v${register.register})")
+
+/**
+ * The register count this method was compiled with, failing loudly when it is not [expected].
+ *
+ * The register mapping for an injection is derived from the count — which slot `this` lands in, how
+ * many locals sit above it — so a count that does not match what was assumed either picks the wrong
+ * register or silently does nothing. Failing the patch turns that into a refused build rather than
+ * a broken keyboard; `0.0.1-dev.1` shipped one because nothing checked.
+ *
+ * [what] names the method and is interpolated straight into the failure, so it should read as a
+ * diagnosis. Returns the count so callers can chain `val n = method.assertRegisterCount(…)` and
+ * keep the assertion next to the value it pinned.
+ */
+internal fun MutableMethod.assertRegisterCount(expected: Int, what: String): Int {
+    val actual = implementation?.registerCount
+        ?: error("$what has no implementation")
+    check(actual == expected) {
+        "$what has $actual registers, expected $expected — refusing to guess the register mapping"
+    }
+    return actual
+}
+
+/**
+ * Fails the patch when the chosen [scratch] registers for an injection are unsafe.
+ *
+ * Three independent things worth catching, all of which have shipped a broken build when unchecked:
+ *
+ *  - **Duplicates** — a list that names the same slot twice would silently let one emission
+ *    overwrite another. Distinct-check first, before anything else, so a collision is not
+ *    misread as a collision with [avoid].
+ *  - **Collisions with [avoid]** — `this`, the receiver, or any value the body still needs after
+ *    the injection. Clobbering one of those is the bug `0.0.1-dev.1` hit by passing `this` as a
+ *    `Context`.
+ *  - **Out of nibble range** — a `35c` invoke encodes each register in 4 bits, so v15 is the
+ *    highest it can address. Emitting `invoke-static { v16, … }` would assemble and fail to verify.
+ *
+ * [what] names the method and lands in every failure message.
+ */
+internal fun validateScratchRegisters(
+    scratch: List<Int>,
+    avoid: List<Int>,
+    what: String,
+) {
+    check(scratch.distinct().size == scratch.size) {
+        "Scratch registers $scratch are not distinct in $what"
+    }
+    check(scratch.intersect(avoid.toSet()).isEmpty()) {
+        "Scratch registers $scratch collide with $avoid in $what"
+    }
+    check(scratch.all { it < PACKED_INVOKE_REGISTER_LIMIT }) {
+        "Scratch registers $scratch do not all fit a 35c invoke's nibbles in $what"
+    }
+}
 
 /**
  * Instance field [name] on [type] or any class above it, resolved the way the runtime resolves a

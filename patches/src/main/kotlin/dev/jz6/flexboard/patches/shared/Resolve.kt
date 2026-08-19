@@ -57,6 +57,11 @@ internal fun BytecodePatchContext.checkFieldExists(descriptor: String, what: Str
 internal fun Method.toDescriptor(): String =
     "$definingClass->$name(${parameterTypes.joinToString("")})$returnType"
 
+/** The descriptor of a [MethodReference] — the same shape as [Method.toDescriptor], for the other
+ *  receiver type. */
+internal fun MethodReference.descriptor(): String =
+    "$definingClass->$name(${parameterTypes.joinToString("")})$returnType"
+
 /** Every method this class declares whose parameters and return type match. */
 private fun BytecodePatchContext.methodsWithSignature(
     owner: String,

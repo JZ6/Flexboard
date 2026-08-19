@@ -7,12 +7,11 @@ import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import com.android.tools.smali.dexlib2.AccessFlags
-import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
-import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
-import com.android.tools.smali.dexlib2.iface.reference.FieldReference
-import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.callsMethod
+import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.usesField
 
 /**
  * Forces Gboard's own signature check to pass.
@@ -120,7 +119,7 @@ private fun MutableMethod.forceSignatureChecksToPass() {
         "Expected exactly one digest comparison in $SIGNATURE_CHECK"
     }
     EXPECTED_FIELDS.forEach { descriptor ->
-        check(instructions.count { it.readsField(descriptor) } == 1) {
+        check(instructions.count { it.usesField(descriptor) } == 1) {
             "Expected exactly one read of $descriptor in $SIGNATURE_CHECK"
         }
     }
@@ -144,12 +143,3 @@ private fun MutableMethod.forceSignatureChecksToPass() {
         addInstruction(index + 1, "return v$register")
     }
 }
-
-private fun Instruction.opcodeName(): String =
-    opcode.name.uppercase().replace('-', '_').replace('/', '_')
-
-private fun Instruction.callsMethod(descriptor: String): Boolean =
-    ((this as? ReferenceInstruction)?.reference as? MethodReference)?.toString() == descriptor
-
-private fun Instruction.readsField(descriptor: String): Boolean =
-    ((this as? ReferenceInstruction)?.reference as? FieldReference)?.toString() == descriptor

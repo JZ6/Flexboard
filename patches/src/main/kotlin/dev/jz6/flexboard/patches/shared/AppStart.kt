@@ -53,12 +53,10 @@ object ApplyPreferenceValuesFingerprint : Fingerprint(
  * resolving the fingerprint has a patch context to do it with.
  */
 internal fun MutableMethod.callAtAppStart(descriptor: String) {
-    val registerCount = implementation?.registerCount
-        ?: error("$APPLY_PREFERENCES has no implementation")
-    check(registerCount == APPLY_PREFERENCES_REGISTER_COUNT) {
-        "$APPLY_PREFERENCES has $registerCount registers, expected " +
-            "$APPLY_PREFERENCES_REGISTER_COUNT — refusing to guess the register mapping"
-    }
+    val registerCount = assertRegisterCount(
+        APPLY_PREFERENCES_REGISTER_COUNT,
+        APPLY_PREFERENCES,
+    )
     check(parameterTypes.map(Any::toString) == listOf(PREFERENCE_STORE_TYPE)) {
         "$APPLY_PREFERENCES takes $parameterTypes, expected a single $PREFERENCE_STORE_TYPE — p0 " +
             "is only known to be a Context because of what this method's signature says"
@@ -82,6 +80,3 @@ private const val APPLY_PREFERENCES_REGISTER_COUNT = 13
 
 /** `this` plus the store. */
 private const val APPLY_PREFERENCES_PARAMETER_WORDS = 2
-
-/** A `35c` invoke encodes each register in a nibble. */
-private const val PACKED_INVOKE_REGISTER_LIMIT = 16

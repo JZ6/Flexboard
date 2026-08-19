@@ -14,16 +14,14 @@ import java.net.URLClassLoader
 import java.util.jar.Manifest
 
 fun main() {
-    val patchFiles = setOf(
-        File("build/libs/").listFiles { file ->
-            val fileName = file.name
-            !fileName.contains("javadoc") &&
-                    !fileName.contains("sources") &&
-                    fileName.endsWith(".mpp")
-        }!!.first()
-    )
-    val loadedPatches = loadPatchesFromJar(patchFiles)
-    val patchClassLoader = URLClassLoader(patchFiles.map { it.toURI().toURL() }.toTypedArray())
+    val patchFile = File("build/libs/").listFiles { file ->
+        val fileName = file.name
+        !fileName.contains("javadoc") &&
+                !fileName.contains("sources") &&
+                fileName.endsWith(".mpp")
+    }!!.first()
+    val loadedPatches = loadPatchesFromJar(setOf(patchFile))
+    val patchClassLoader = URLClassLoader(setOf(patchFile).map { it.toURI().toURL() }.toTypedArray())
     val manifest = patchClassLoader.getResources("META-INF/MANIFEST.MF")
 
     while (manifest.hasMoreElements()) {

@@ -1,6 +1,7 @@
 package dev.jz6.flexboard.patches.features.packagerename
 
 import app.morphe.patcher.patch.resourcePatch
+import dev.jz6.flexboard.patches.shared.ANDROID_NS
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.Constants.GBOARD_PACKAGE_NAME
 import dev.jz6.flexboard.patches.shared.Constants.GBOARD_PATCHED_PACKAGE_NAME
@@ -166,8 +167,6 @@ private val RENAME_MAPPINGS = listOf(
     androidMapping("provider", "authorities", "$GBOARD_PACKAGE_NAME.wdb"),
     androidMapping("provider", "authorities", "$GBOARD_PACKAGE_NAME.mlkitinitprovider"),
 )
-
-private const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
 
 /** Derived rather than written out, so it cannot drift from the rename itself. */
 private val DOUBLE_PREFIX =

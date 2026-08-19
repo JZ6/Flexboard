@@ -12,6 +12,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.TypedRegister
+import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldOwnerType
@@ -240,12 +241,7 @@ private inline fun IntProgression.firstNonNullOf(
 ): String = firstNotNullOfOrNull(transform) ?: error("$onMissing in $LATIN_IME->q")
 
 private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
-    val registerCount = implementation?.registerCount
-        ?: error("$LATIN_IME->q has no implementation")
-    check(registerCount == HANDLE_EVENT_REGISTER_COUNT) {
-        "$LATIN_IME->q has $registerCount registers, expected $HANDLE_EVENT_REGISTER_COUNT — " +
-            "refusing to guess which registers are free in a method this size"
-    }
+    assertRegisterCount(HANDLE_EVENT_REGISTER_COUNT, "$LATIN_IME->q")
 
     // Read out of Gboard's own undo handler rather than pinned. Four of these share a signature
     // with siblings on the same class, so a written-down letter is exactly what fails silently.
