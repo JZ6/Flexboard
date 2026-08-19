@@ -1,3 +1,9 @@
+# [1.2.0-dev.3](https://github.com/JZ6/Flexboard/compare/v1.2.0-dev.2...v1.2.0-dev.3) (2026-08-19)
+
+* **Gboard:** bump to 1.2.0-dev.3
+* **Gboard:** note the swipe length may be inverted on the delete key
+* **Gboard:** write Gboard's own preferences from Java too
+
 # [1.2.0-dev.2](https://github.com/JZ6/Flexboard/compare/v1.2.0-dev.1...v1.2.0-dev.2) (2026-08-19)
 
 * **Gboard:** bump to 1.2.0-dev.2
