@@ -188,6 +188,7 @@ val toolbarCountPatch = bytecodePatch(
     name = "Bigger Toolbar",
     description = "Makes the number of icons on the toolbar above the keyboard adjustable, from " +
         "Gboard's own settings. Anything past the limit stays in the overflow menu.",
+    default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 

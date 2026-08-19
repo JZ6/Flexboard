@@ -4,6 +4,8 @@ Ideas, in no particular order and with no promises. Kept verbatim as written.
 
 show list of all patches, internal and user configurable
 
+how can we best clean up and reorganize the patches
+
 swipe length seem to be reversed? lower value takes more swipe to swipe multiple words on the delete key
 
 update settings to match rest of gboard

@@ -57,6 +57,24 @@ public final class GboardSettings {
     /** `show_suggestions` — off means no word suggestions above the keyboard. */
     private static final int SHOW_SUGGESTIONS = 0x7f140b6f;
 
+    /** `show_suggestion_strip` — the strip itself, which carries feature buttons. On by default. */
+    private static final int SHOW_SUGGESTION_STRIP = 0x7f140b6e;
+
+    /** `pref_key_enable_grammar_checker` — underlines grammatical errors in blue. */
+    private static final int ENABLE_GRAMMAR_CHECKER = 0x7f140a07;
+
+    /** `enable_smart_reply` — shows reply suggestions in supported apps. */
+    private static final int ENABLE_SMART_REPLY = 0x7f140a28;
+
+    /** `access_points_count_on_bar` — the number of icons on the toolbar. */
+    private static final int ACCESS_POINTS_COUNT_ON_BAR = 0x7f1409af;
+
+    /** `foldable_access_points_count_on_bar` — the count for the unfolded inner screen. */
+    private static final int FOLDABLE_ACCESS_POINTS_COUNT_ON_BAR = 0x7f140a43;
+
+    /** The toolbar icon count written as a default. */
+    private static final int GBOARD_TOOLBAR_COUNT_DEFAULT = 15;
+
     private GboardSettings() {}
 
     /**
@@ -94,7 +112,13 @@ public final class GboardSettings {
      *       carries {@code dependency="enable_secondary_digits"} in Gboard's preference XML.
      *   <li><b>Block offensive words</b> off — stops Gboard from suppressing words it considers
      *       offensive from its suggestions.
-     *   <li><b>Word suggestions</b> off — removes the suggestion strip above the keyboard.
+     *   <li><b>Word suggestions</b> off — removes word suggestions from the strip, but the strip
+     *       itself stays so feature buttons (grammar check, proofread, etc.) still render.
+     *   <li><b>Suggestion strip</b> on — the strip that carries both suggestions and feature
+     *       buttons. Explicitly on so that turning word suggestions off does not take the strip
+     *       and everything that rides on it with it.
+     *   <li><b>Grammar check</b> on — underlines grammatical errors in blue.
+     *   <li><b>Smart replies</b> on — shows reply suggestions in supported apps.
      * </ul>
      */
     public static void defaultSuggestedSettings(Context context) {
@@ -120,6 +144,46 @@ public final class GboardSettings {
         key = context.getString(SHOW_SUGGESTIONS);
         if (!preferences.contains(key)) {
             editor.putBoolean(key, false);
+            wrote = true;
+        }
+        key = context.getString(SHOW_SUGGESTION_STRIP);
+        if (!preferences.contains(key)) {
+            editor.putBoolean(key, true);
+            wrote = true;
+        }
+        key = context.getString(ENABLE_GRAMMAR_CHECKER);
+        if (!preferences.contains(key)) {
+            editor.putBoolean(key, true);
+            wrote = true;
+        }
+        key = context.getString(ENABLE_SMART_REPLY);
+        if (!preferences.contains(key)) {
+            editor.putBoolean(key, true);
+            wrote = true;
+        }
+
+        if (wrote) {
+            editor.apply();
+        }
+    }
+
+    /**
+     * Seeds the toolbar icon count preference. Called by the base patch, always — the
+     * {@code toolbarCountPatch} reads this preference and needs a value to be present.
+     */
+    public static void seedToolbarCount(Context context) {
+        SharedPreferences preferences = Preferences.of(context);
+        SharedPreferences.Editor editor = preferences.edit();
+        boolean wrote = false;
+
+        String key = context.getString(ACCESS_POINTS_COUNT_ON_BAR);
+        if (!preferences.contains(key)) {
+            editor.putInt(key, GBOARD_TOOLBAR_COUNT_DEFAULT);
+            wrote = true;
+        }
+        key = context.getString(FOLDABLE_ACCESS_POINTS_COUNT_ON_BAR);
+        if (!preferences.contains(key)) {
+            editor.putInt(key, GBOARD_TOOLBAR_COUNT_DEFAULT);
             wrote = true;
         }
 

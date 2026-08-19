@@ -20,14 +20,19 @@ import org.w3c.dom.NodeList
  * Renames the application package so a patched build installs beside the official Gboard rather
  * than replacing it. Both keyboards stay available in the keyboard picker.
  *
- * Fifteen manifest values embed the package name — the root `package`, two permissions, two
- * phenotype registration keys, a deeplink host, a receiver permission and eight provider
- * authorities. Every one has to move together: a provider authority left on the original value
- * collides with the installed official Gboard and the install fails outright.
+ * Thirteen manifest values embed the package name — the root `package`, two permissions, a
+ * deeplink host, a receiver permission and eight provider authorities. Every one has to move
+ * together: a provider authority left on the original value collides with the installed official
+ * Gboard and the install fails outright.
+ *
+ * Notably absent from the rename are the two Phenotype registration meta-data keys. Gboard queries
+ * Phenotype via a content URI built from `AllFlags.STATICMENDELPACKAGENAME`, a `static final String`
+ * baked in as the original package name at compile time. The manifest registration must match that
+ * value or GMS cannot resolve the flags, so those two entries stay on the original package name.
  *
  * So this is deliberately strict. Each value is expected exactly once, and after rewriting the
  * known ones it sweeps the whole manifest for anything else still mentioning the package. A Gboard
- * update that adds a sixteenth authority therefore fails the patch rather than shipping a
+ * update that adds a fourteenth authority therefore fails the patch rather than shipping a
  * half-renamed app.
  *
  * Idempotent: an already-renamed manifest is validated and left alone rather than double-prefixed.
@@ -148,16 +153,6 @@ private val RENAME_MAPPINGS = listOf(
         "permission",
         "name",
         "$GBOARD_PACKAGE_NAME.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
-    ),
-    androidMapping(
-        "meta-data",
-        "name",
-        "com.google.android.gms.phenotype.registration.binarypb:$GBOARD_PACKAGE_NAME",
-    ),
-    androidMapping(
-        "meta-data",
-        "name",
-        "com.google.android.gms.phenotype.registration.xml:$GBOARD_PACKAGE_NAME",
     ),
     androidMapping("data", "host", "deeplink.$GBOARD_PACKAGE_NAME"),
     androidMapping("receiver", "permission", "$GBOARD_PACKAGE_NAME.pixelbundle.RECEIVER"),
