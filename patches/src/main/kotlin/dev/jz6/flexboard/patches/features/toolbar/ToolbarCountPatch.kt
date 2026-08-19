@@ -454,9 +454,6 @@ private fun BytecodePatchContext.resolveDefinedCountOnBar(): MutableMethod {
  * scratch registers do depend on it.
  */
 private fun MutableMethod.overrideCountFromPreference(context: BytecodePatchContext) {
-    // Resolved, not named: the store has a second (String, I)I method that reads the value as text
-    // and parses it. Emitting that one would compile, verify and quietly parse a preference that
-    // was never written as a string.
     val getInt = context.resolvePreferenceGetInt()
 
     val registerCount = assertRegisterCount(

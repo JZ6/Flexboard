@@ -189,9 +189,6 @@ private const val STEPS_DONE_LABEL = "flexboard_steps_done"
  * id can silently mislead it.
  */
 private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
-    // Resolved, not named: the store has a second (String, I)I method that reads the value as
-    // text and parses it. Emitting that one would compile, verify and quietly parse a
-    // preference that was never written as a string.
     val getInt = context.resolvePreferenceGetInt()
     assertRegisterCount(ENGINE_CONSTRUCTOR_REGISTER_COUNT, THREE_ARGUMENT_ENGINE_CONSTRUCTOR)
 
@@ -261,9 +258,6 @@ private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
  * static* fallback, so the scaling is skipped rather than corrupting global state.
  */
 private fun MutableMethod.scaleStepTable(context: BytecodePatchContext) {
-    // Resolved, not named: the store has a second (String, I)I method that reads the value as
-    // text and parses it. Emitting that one would compile, verify and quietly parse a
-    // preference that was never written as a string.
     val getInt = context.resolvePreferenceGetInt()
     val registerCount = assertRegisterCount(
         DELETE_CONSTRUCTOR_REGISTER_COUNT,
@@ -377,9 +371,6 @@ private fun MutableMethod.capWordCount(
     context: BytecodePatchContext,
     startKey: StartKeyChain,
 ) {
-    // Resolved, not named: the store has a second (String, I)I method that reads the value as
-    // text and parses it. Emitting that one would compile, verify and quietly parse a
-    // preference that was never written as a string.
     val getInt = context.resolvePreferenceGetInt()
     val (thisRegister, resolvedHandlerContext) = resolveDispatchEntry(context)
 
