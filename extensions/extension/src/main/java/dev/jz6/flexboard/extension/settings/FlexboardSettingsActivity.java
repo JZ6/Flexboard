@@ -298,16 +298,17 @@ public final class FlexboardSettingsActivity extends Activity {
 
         addSectionHeader(column, SECTION);
 
-        addSlider(
-                column,
-                KEY_STEP_SCALE,
-                "Swipe length",
-                "How far to swipe per deleted word, as a percent of Gboard's own distance. "
-                        + "Lower deletes more words for the same swipe.",
-                STEP_SCALE_MIN,
-                STEP_SCALE_MAX,
-                STEP_SCALE_DEFAULT,
-                value -> value + "%");
+        // Swipe length slider disabled — the scaling code is commented out in ScrubTuningPatch.
+        //addSlider(
+        //        column,
+        //        KEY_STEP_SCALE,
+        //        "Swipe length",
+        //        "How far to swipe per deleted word, as a percent of Gboard's own distance. "
+        //                + "Lower deletes more words for the same swipe.",
+        //        STEP_SCALE_MIN,
+        //        STEP_SCALE_MAX,
+        //        STEP_SCALE_DEFAULT,
+        //        value -> value + "%");
 
         addSlider(
                 column,

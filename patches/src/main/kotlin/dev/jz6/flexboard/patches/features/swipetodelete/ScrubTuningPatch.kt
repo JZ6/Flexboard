@@ -87,8 +87,10 @@ internal val scrubTuningPatch = bytecodePatch(
         val startKey = resolveStartKeyChain()
 
         ScrubEngineConstructorFingerprint.method.substituteHoldDelay(this)
-        ScrubDeleteConstructorFingerprint.method.scaleStepTable(this)
-        ScrubDispatchFingerprint.method.useStockDistanceFromBackspace(this, startKey)
+        // Swipe-length scaling disabled — the slider has no effect on distance for now.
+        // See the swipe-length investigation in docs/roadmap.md.
+        //ScrubDeleteConstructorFingerprint.method.scaleStepTable(this)
+        //ScrubDispatchFingerprint.method.useStockDistanceFromBackspace(this, startKey)
         ScrubDispatchFingerprint.method.capWordCount(this, startKey)
     }
 }
