@@ -48,6 +48,15 @@ public final class GboardSettings {
     /** `pref_enable_flick_symbols`. */
     private static final int ENABLE_FLICK_SYMBOLS = 0x7f140a01;
 
+    /** `enable_secondary_digits` — "Touch & hold keys for numbers". Un-greys the flick row. */
+    private static final int ENABLE_SECONDARY_DIGITS = 0x7f140a21;
+
+    /** `block_offensive_words` — off means "don't suggest offensive words". */
+    private static final int BLOCK_OFFENSIVE_WORDS = 0x7f1409c0;
+
+    /** `show_suggestions` — off means no word suggestions above the keyboard. */
+    private static final int SHOW_SUGGESTIONS = 0x7f140b6f;
+
     private GboardSettings() {}
 
     /**
@@ -70,16 +79,52 @@ public final class GboardSettings {
     }
 
     /**
-     * Turns flick keys on, but only if the user has never set it.
+     * Writes Gboard's "suggested" defaults once, on the first run after installing.
      *
-     * <p>The difference from {@link #forceScrubPreferences} is the whole feature: this is a default
-     * rather than something forced, so turning it off in Gboard's settings sticks.
+     * <p>Each key is guarded by {@link SharedPreferences#contains} so turning any of these off in
+     * Gboard's own settings sticks — this is a default, not a force. The guards are per-key rather
+     * than behind a single "have we seeded" marker, so someone who has set only one still gets the
+     * rest when a later release adds them.
+     *
+     * <p>The settings and their rationales:
+     *
+     * <ul>
+     *   <li><b>Flick keys for symbols</b> on — pull down on a key to enter the symbol in its corner.
+     *   <li><b>Touch &amp; hold keys for numbers</b> on — un-greys the flick row above, which
+     *       carries {@code dependency="enable_secondary_digits"} in Gboard's preference XML.
+     *   <li><b>Block offensive words</b> off — stops Gboard from suppressing words it considers
+     *       offensive from its suggestions.
+     *   <li><b>Word suggestions</b> off — removes the suggestion strip above the keyboard.
+     * </ul>
      */
-    public static void defaultFlickSymbolsOn(Context context) {
+    public static void defaultSuggestedSettings(Context context) {
         SharedPreferences preferences = Preferences.of(context);
+        SharedPreferences.Editor editor = preferences.edit();
+        boolean wrote = false;
+
         String key = context.getString(ENABLE_FLICK_SYMBOLS);
         if (!preferences.contains(key)) {
-            preferences.edit().putBoolean(key, true).apply();
+            editor.putBoolean(key, true);
+            wrote = true;
+        }
+        key = context.getString(ENABLE_SECONDARY_DIGITS);
+        if (!preferences.contains(key)) {
+            editor.putBoolean(key, true);
+            wrote = true;
+        }
+        key = context.getString(BLOCK_OFFENSIVE_WORDS);
+        if (!preferences.contains(key)) {
+            editor.putBoolean(key, false);
+            wrote = true;
+        }
+        key = context.getString(SHOW_SUGGESTIONS);
+        if (!preferences.contains(key)) {
+            editor.putBoolean(key, false);
+            wrote = true;
+        }
+
+        if (wrote) {
+            editor.apply();
         }
     }
 }

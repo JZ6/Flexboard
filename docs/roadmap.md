@@ -8,13 +8,9 @@ get the whole list of icons shipped with gboard, pretty sure undo is there and u
 
 swipe length seem to be reversed? lower value takes more swipe to swipe multiple words on the delete key
 
-what other material symbols are there, im pretty sure undo exists
-
 update settings to match rest of gboard
 
 some settings disabled like grammer check and ai writing tools, rambler mode etc
-
-max tool icon slider isnt working, i dont see amount of tools changing
 
 flick up to undo autocorrect 
 

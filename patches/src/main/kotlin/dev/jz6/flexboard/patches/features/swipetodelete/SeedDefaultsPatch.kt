@@ -34,7 +34,7 @@ import dev.jz6.flexboard.patches.shared.callAtAppStart
  * ## The insertion
  *
  * `LatinApp.applyPreferenceValues` runs at Application start, before any keyboard is built and so
- * before any of these values is read. `flickSymbolsPatch` and `forceScrubPreferencesPatch` already
+ * before any of these values is read. `suggestedSettingsPatch` and `forceScrubPreferencesPatch` already
  * insert here for the same reason.
  *
  * `p0` is the `LatinApp` itself, an `Application` and therefore a `Context`, so the argument needs

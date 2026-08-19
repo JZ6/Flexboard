@@ -131,7 +131,7 @@ private fun Document.disableGlideRows() {
  * What makes that acceptable is the pin. `COMPATIBILITY_GBOARD` fixes this bundle to one Gboard
  * build by version *and* signature, and a reorder cannot reach us without a new build failing that
  * gate first. It is also a milder bet than several the project already makes: the hardcoded
- * resource ids in [forceScrubPreferencesPatch] and `flickSymbolsPatch` would silently write the
+ * resource ids in [forceScrubPreferencesPatch] and `suggestedSettingsPatch` would silently write
  * *wrong preference* on a changed build, where the worst this can do is grey the cursor-control row
  * instead of this one. Cosmetic, and visible the moment the screen is opened.
  */
