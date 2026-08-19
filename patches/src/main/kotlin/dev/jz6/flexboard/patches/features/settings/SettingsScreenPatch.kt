@@ -79,6 +79,14 @@ internal val scrubSettingsScreenPatch = resourcePatch(
             "Unexpected manifest package '$packageName' — cannot target the settings Activity"
         }
 
+        // Write the Flexboard settings icon as a new drawable resource. aapt2 assigns it an id
+        // during recompilation, and the preference XML references it by name.
+        val iconXml = {}.javaClass.classLoader
+            ?.getResourceAsStream("drawable/flexboard_settings_icon.xml")
+            ?.bufferedReader()?.use { it.readText() }
+            ?: error("flexboard_settings_icon.xml not found in patch resources")
+        get("res/drawable/flexboard_settings_icon.xml", true).writeText(iconXml)
+
         document(GBOARD_SETTINGS_XML).use { settings ->
             settings.addFlexboardEntry(packageName)
         }
@@ -89,18 +97,15 @@ private const val PREFERENCE_SCREEN_TAG = "PreferenceScreen"
 private const val PREFERENCE_CATEGORY_TAG = "androidx.preference.PreferenceCategory"
 private const val FOOTER_PREFERENCE_TAG = "com.android.settingslib.widget.FooterPreference"
 /**
- * The row whose icon Flexboard borrows.
+ * The row whose icon Flexboard uses.
  *
- * A patch-added drawable has no id until aapt2 recompiles, so the icon has to come from one of
- * Gboard's own. What is copied is a **theme-attribute reference**, not a drawable id, so it
- * resolves through the active Gboard theme and follows light/dark with the rest of the screen.
- *
- * The tag is the anchor because this row, unlike the fragment-backed ones around it, carries no
- * `android:fragment` to match on. If Gboard ever drops it, [addFlexboardEntry] falls back to no
- * icon rather than to the wrong one.
+ * The icon is a patch-added drawable resource, written to `res/drawable/` from
+ * `patches/src/main/resources/drawable/` and referenced by name
+ * (`@drawable/flexboard_settings_icon`). aapt2 assigns it an id during recompilation. The tint
+ * follows the active theme via `?attr/colorControlNormal`, so it matches Gboard's own rows in
+ * light and dark.
  */
-private const val RATE_US_PREFERENCE_TAG =
-    "com.google.android.libraries.inputmethod.rateus.RateUsPreference"
+private const val FLEXBOARD_ICON_REF = "@drawable/flexboard_settings_icon"
 private const val PREFERENCE_TAG = "Preference"
 private const val INTENT_TAG = "intent"
 
@@ -183,13 +188,8 @@ private fun Document.addFlexboardEntry(packageName: String) {
         setAndroidAttribute("summary", ENTRY_SUMMARY)
         // Nothing to store: the row is a launcher, and the Activity owns the values.
         setAndroidAttribute("persistent", "false")
-        // Borrowed so the row does not render iconless beside Gboard's own, which all carry one.
-        // The value copied is a theme-attribute reference, so it resolves to whatever the active
-        // Gboard theme uses and follows light/dark with the rest of the screen.
-        root.descendants()
-            .firstOrNull { it.tagName == RATE_US_PREFERENCE_TAG }
-            ?.androidAttribute("icon")
-            ?.let { setAndroidAttribute("icon", it) }
+        // The Flexboard settings icon, written as a new drawable resource above.
+        setAndroidAttribute("icon", FLEXBOARD_ICON_REF)
     }
     entry.appendChild(
         createElement(INTENT_TAG).apply {

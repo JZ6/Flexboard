@@ -14,11 +14,7 @@ some settings disabled like grammer check and ai writing tools, rambler mode etc
 
 flick up to undo autocorrect 
 
-Hot keys as new tool bar objects
-
 gesture down on a to select all
-
-tool bar amount used to be different between inner and outer screen of a fold
 
 use graph 6 material icon for fleksy settings
 
