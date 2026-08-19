@@ -2,6 +2,8 @@
 
 Ideas, in no particular order and with no promises. Kept verbatim as written.
 
+turn the flick down for symbols patch into a "suggested settings patch", and turn on touch hold keys for symbols, turn off dont suggest offensive words, turn off word suggestions
+
 update settings to match rest of gboard
 
 some settings disabled like grammer check and ai writing tools, rambler mode etc
@@ -17,8 +19,6 @@ gesture down on a to select all
 tool bar amount used to be different between inner and outer screen of a fold
 
 use graph 6 material icon for fleksy settings
-
-add select all copy paste hotkeys
 
 increased tool bar size fit more buttons
 

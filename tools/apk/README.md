@@ -130,10 +130,45 @@ The two encodings never match as text — Gboard's `M3,5h2L5,3c-1.1,0 -2,0.9 -2,
 Material's `M3 5h2V3c-1.1 0-2 .9-2 2z` — so each path is evaluated to the absolute points it
 visits, which both agree on exactly.
 
-Confirmed present this way: `content_copy` `0x7f080214`, `content_cut` `0x7f080215`,
-`content_paste` `0x7f080217`, `select_all` `0x7f080218`. Consecutive ids, because they arrived as a
-block. **Not the whole catalogue** — `undo` and `search` match nothing, so check rather than assume.
-Only 489 of the 1,679 drawables are vectors at all; the rest are gradients, shapes and ripples.
+**The bundled set is known exhaustively**, so there is nothing left to guess at: all 2,170
+published Material Icons were matched against the APK's 496 vector drawables, and 29 shapes are
+present at 35 ids. The table is in
+[`../../docs/gboard-bindings.md`](../../docs/gboard-bindings.md#material-icons-gboard-bundles).
+Read it before reaching for an icon — the hit rate is 1.3% and the misses are not the predictable
+ones.
+
+To rebuild it after a Gboard bump, fetch the reference set and match the lot:
+
+```bash
+curl -s https://api.github.com/repos/google/material-design-icons/contents/src \
+  | python3 -c "import json,sys; print(' '.join(e['name'] for e in json.load(sys.stdin)))" \
+  | tr ' ' '\n' | while read -r c; do
+      curl -s "https://api.github.com/repos/google/material-design-icons/contents/src/$c" \
+        | python3 -c "import json,sys; [print('$c/'+e['name']) for e in json.load(sys.stdin)]"
+    done > /tmp/mi_index.txt        # ~2,200 icons, 18 category listings
+
+mkdir -p /tmp/mi && cd /tmp/mi
+sed 's#/#|#' /tmp/mi_index.txt | xargs -P 24 -I{} bash -c \
+  'IFS="|" read -r c n <<< "{}"
+   curl -sf -o "$n.svg" \
+     "https://raw.githubusercontent.com/google/material-design-icons/master/src/$c/$n/materialicons/24px.svg" || true'
+
+python3 glyphs.py gboard.apk /tmp/mi/*.svg | grep BUNDLED
+```
+
+Three things about that output.
+
+`glyphs.py` prints at most **three ids per icon**, so a glyph bundled four times — `close`, at
+`0x7f080211`, `0x7f08058d`, `0x7f08061a` and `0x7f0806af` — reads as three. Group by id yourself if
+you need every copy.
+
+Only **496 of the 1,679** drawables are vectors at all; the rest are gradients, shapes and ripples,
+which this method cannot see. And a miss is not proof of absence in the other direction either:
+most of those 496 are Gboard's own icons, drawn by Google and matching no published set.
+
+A handful of icons have no filled `materialicons` variant to download (39 last time, all battery
+and signal-strength indicators), so `curl -f` skips them and they are silently untested. Harmless
+for keyboard work, worth knowing before claiming coverage.
 
 Pick the legacy **Material Icons** variant on the site, not Material **Symbols**: the newer set is
 drawn to a different geometry and will not match.

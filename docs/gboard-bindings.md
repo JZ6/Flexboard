@@ -222,6 +222,64 @@ runtime, so they could not be collapsed.
 
 Resolve ids with [`../tools/apk/arsc.py`](../tools/apk/README.md).
 
+### Material icons Gboard bundles
+
+Drawable names are collapsed too, so an icon can only be found by its geometry. Matching **all
+2,170 published Material Icons** against the APK's 496 vector drawables gives the complete list of
+what a patch can put on a button without shipping an image of its own: **29 shapes, at 35 ids.**
+
+| Glyph | Id(s) |
+|---|---|
+| `arrow_back` | `0x7f08054e`, `0x7f0806f4` |
+| `arrow_drop_down` | `0x7f0806b2`, `0x7f08076f` |
+| `arrow_drop_up` | `0x7f0806b3` |
+| `arrow_left` | `0x7f0806f7` |
+| `arrow_right` | `0x7f0806f9` |
+| `auto_awesome` | `0x7f0806fc` |
+| `cancel` | `0x7f0806b4` |
+| `check_box` | `0x7f08074e` |
+| `check_circle` | `0x7f080622` |
+| `circle` | `0x7f080702` |
+| `clear` / `close` *(same glyph)* | `0x7f080211`, `0x7f08058d`, `0x7f08061a`, `0x7f0806af` |
+| `content_copy` | `0x7f080214` |
+| `content_cut` | `0x7f080215` |
+| `content_paste` | `0x7f080217` |
+| `done` | `0x7f080623` |
+| `error` | `0x7f0806b8` |
+| `grade` / `star` *(same glyph)* | `0x7f080239` |
+| `help` | `0x7f080714` |
+| `help_outline` | `0x7f080713` |
+| `keyboard` | `0x7f080400`, `0x7f080612` |
+| `keyboard_capslock` | `0x7f08071c` |
+| `keyboard_tab` | `0x7f080720` |
+| `launch` / `open_in_new` *(same glyph)* | `0x7f080724` |
+| `radio_button_unchecked` | `0x7f080733` |
+| `select_all` | `0x7f080218` |
+| `share` | `0x7f080219` |
+| `spellcheck` | `0x7f080742` |
+| `unfold_more` | `0x7f08074b` |
+| `visibility_off` | `0x7f0803ca` |
+
+**Consult this rather than guessing.** The hit rate is 1.3%, and the misses are not the ones
+intuition predicts: `undo`, `redo`, `search`, `send`, `add`, `edit`, `favorite`, `bookmark`,
+`star_border` and every numbered glyph (`looks_one`…`looks_6`, `filter_1`…`filter_6`) match
+nothing, while `spellcheck` and `auto_awesome` are present. `content_copy`, `content_cut`,
+`content_paste` and `select_all` sit at consecutive ids because they arrived as an import block —
+and Gboard draws none of the four, since its text editing panel spells those actions out in words.
+
+Two limits on the list. It covers only the **496 vector** drawables of 1,679; the rest are
+gradients, shapes and ripples, invisible to a path comparison. And it says nothing about Gboard's
+own custom icons, which are the majority of those vectors and match no published set by
+construction — an icon absent here may still exist in the APK, drawn by Google rather than lifted
+from Material.
+
+Of the 2,209 icons in the reference set, 39 could not be tested: they have no filled
+`materialicons` variant in Google's repository, and all 39 are battery, wifi or cellular signal
+indicators.
+
+How this is done, and how to regenerate it after a Gboard bump, is in
+[`../tools/apk/README.md`](../tools/apk/README.md#find-an-icon-when-every-drawable-is-called-0_resource_name_obfuscated).
+
 ## How to re-derive these
 
 Tools and worked examples are in [`../tools/apk/`](../tools/apk/README.md).
