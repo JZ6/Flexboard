@@ -94,7 +94,7 @@ the swipe-anywhere gesture; the backspace key keeps Gboard's own behaviour, see 
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Swipe length** | 100% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe. |
+| **Swipe length** | 60% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe; 100% is Gboard's own distance. |
 | **Max words per swipe** | 1 | The most words one swipe can delete. At 1 a swipe deletes a single word however far it travels; 10 means no limit. Swiping back still restores. |
 | **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
 
@@ -103,9 +103,13 @@ Bigger Toolbar patch and are described [further down](#bigger-toolbar), and six 
 belonging to [Toolbar Buttons](#toolbar-buttons).
 
 Every value is read out of Gboard's own preference store, so there is no separate settings app and
-nothing to keep in sync. Swipe length already ships at Gboard's own distance; setting the other two
-to 10 and 200 ms puts those back as well, and why they do not start there is in
+nothing to keep in sync. All three now start somewhere other than Gboard's own behaviour; 100%, 10
+and 200 ms put them back, and why they do not start there is in
 [`docs/design.md`](docs/design.md).
+
+The starting values are written into the store the first time the patched app runs, rather than
+being numbers inside the patch. So they behave as defaults for a fresh install, and a later update
+can pick different ones without moving settings you have already got used to.
 
 Changes are not instant: a new setting is picked up the next time the keyboard is opened. Hotkeys
 are half an exception — *editing* a snippet takes effect immediately, because the text is read when
@@ -234,9 +238,13 @@ own count preference if you have one set, and to three if it has decided your sc
 room. Flexboard replaces the answer rather than the starting point, so the slider is the last word
 on it.
 
-Leaving the slider alone changes nothing at all: with no value stored, Flexboard's code falls
-straight through and Gboard's own runs untouched. A value outside 3–12 is treated the same way as no
-value rather than being forced into range.
+**It starts at 6, and at 12 on the inner screen of a fold.** Those are written into Gboard's
+preference store the first time the patched app runs, rather than being numbers baked into the
+patch — which means an update can ship different starting values for new installs without moving a
+toolbar you have already got used to. Move a slider and it is yours from then on.
+
+A value outside 3–12 is ignored rather than forced into range, and the bar falls back to whatever
+Gboard would have done.
 
 **Icons get narrower, not smaller in number.** The bar divides its width by the number of items, so
 at 10 they are about half the width they are at 5, and at 12 narrower still. Eight is as far as
@@ -248,8 +256,8 @@ the line between the bar and the overflow menu falls.
 
 **On a foldable, the two screens keep their own counts.** Gboard already works this way — the inner
 screen is wider and fits more — so Flexboard's settings carry a second slider, **Icons when
-unfolded**, that applies only while the phone is open. Leave it alone and the main slider covers
-both screens; move it and the inner screen gets its own number. On anything that does not fold the
+unfolded**, that applies only while the phone is open. It starts at 12 against the main slider's 6,
+and each owns its screen: changing one does not move the other. On anything that does not fold the
 second slider does nothing.
 
 This shipped once before, in `1.1.0-dev.1`, and did nothing — it moved the ceiling rather than the

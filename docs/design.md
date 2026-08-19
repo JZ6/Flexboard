@@ -5,13 +5,16 @@ reasoning behind the choices a user would otherwise have to guess at.
 
 ## What the three swipe sliders default to, and why
 
-**Swipe length, 100% — Gboard's own.** This shipped at 36% up to `1.1.0-dev.1`, reasoning that
-Gboard's distance assumes a thumb travelling from the backspace key and back, which is the whole
-journey this patch exists to remove, so a gesture starting under your thumb wants a shorter one.
-The reasoning is sound and the number was too aggressive: at 36% an ordinary swipe crosses three or
-four thresholds, and the word cap is then doing the work of hiding it. Shipping Gboard's own
-distance makes the gesture behave exactly like the one people already know, and leaves shortening it
-to anyone who wants that.
+**Swipe length, 60% — a middle.** This shipped at 36% up to `1.1.0-dev.1`, reasoning that Gboard's
+distance assumes a thumb travelling from the backspace key and back, which is the whole journey
+this patch exists to remove, so a gesture starting under your thumb wants a shorter one. The
+reasoning is sound and the number was too aggressive: at 36% an ordinary swipe crosses three or
+four thresholds, and the word cap is then doing the work of hiding it. It went to 100% — Gboard's
+own — as the safe correction, which asks for the whole journey again.
+
+Sixty keeps the reasoning without the overshoot. With the word cap at its default of 1 a swipe
+still deletes one word however far it travels, so this changes how far that is and nothing else,
+and 100% remains available to anyone who wants Gboard's distance exactly.
 
 **Max words per swipe, 1 rather than no limit.** One word per swipe makes each deletion deliberate
 rather than a run that then has to be swiped back.
@@ -21,8 +24,35 @@ makes it feel like a press-and-drag rather than a flick. Zero is not an improvem
 as continuity: it is what Flexboard did before the delay was adjustable at all, so existing installs
 keep the feel they had.
 
-All three are sliders precisely because that is a preference and not a fact. Only two now differ
-from Gboard's own, and 10 and 200 ms put those back.
+All three are sliders precisely because that is a preference and not a fact. All three now differ
+from Gboard's own, and 100%, 10 and 200 ms put those back.
+
+## Why the starting values are written rather than defaulted
+
+Every value in this project is read out of Gboard's preference store by patched bytecode, and the
+read carries a fallback operand. Making that operand the starting value is the obvious thing, costs
+one literal, and is what swipe length did for its first several releases.
+
+It has one property worth avoiding: **a read-side default follows the code.** Change the number in
+a later release and it moves every user who never touched the slider. Someone who has spent a month
+with a keyboard finds it different after an update they did not ask for, and nothing they did
+caused it.
+
+So the three starting values are instead written into the store on the first run after installing —
+`seedDefaultsPatch`, one instruction, calling the extension's `Defaults.seed`. Afterwards the value
+is an ordinary stored preference, indistinguishable from one the user set, and later releases can
+pick different starting numbers for new installs without disturbing anyone.
+
+**It is also much less work than doing it in bytecode**, which is not the reason but is worth
+recording, because the first attempt went the other way. The extension has always been able to
+write preferences — it is how the settings screen stores a slider — so the patch does not need to
+reach a setter on Gboard's store at all. It hands `Defaults` a `Context` and stops. Doing it in
+smali would have meant deriving a string-keyed setter and reusing the `getInt` whose two
+same-signature siblings on that class are a documented trap, for an identical result.
+
+The toolbar counts had no starting value at all before this: an unset preference fell through to
+whatever Gboard computed, and the 5 the settings screen showed was only ever displayed. That is why
+`README.md` no longer says leaving the slider alone changes nothing.
 
 **Neither of those two defaults could be moved by editing one number**, because each number was
 doing two jobs — the default *and* a control-flow sentinel, at which the scaling or the clamp is
@@ -30,10 +60,10 @@ skipped. Setting a default to its sentinel value makes the chosen setting the on
 nothing. They are four constants rather than two for that reason, and `ScrubTuningPatch.kt`
 documents each.
 
-Swipe length is the worked example, in both directions. Moving it off 100 is what forced the split
-in the first place; moving it back to 100 has made `STEP_SCALE_DEFAULT` and `STEP_SCALE_IDENTITY`
-hold the same number again, which looks redundant and is not. Collapsing them would silently
-re-arm the trap the next time the default moves.
+Swipe length is the worked example, and it has now moved three times. Going to 36 forced the split
+in the first place; coming back to 100 made `STEP_SCALE_DEFAULT` and `STEP_SCALE_IDENTITY` hold the
+same number and look redundant; going to 60 has separated them again. That third move cost one
+constant precisely because the second one did not collapse them.
 
 ## Why the toolbar count is a slider when hold delay nearly was not
 

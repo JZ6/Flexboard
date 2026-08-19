@@ -86,8 +86,15 @@ public final class FlexboardSettingsActivity extends Activity {
 
     private static final int STEP_SCALE_MIN = 25;
     private static final int STEP_SCALE_MAX = 300;
-    /** Must match STEP_SCALE_DEFAULT in ScrubTuningPatch.kt. */
-    private static final int STEP_SCALE_DEFAULT = 100;
+
+    /**
+     * Must match STEP_SCALE_DEFAULT in ScrubTuningPatch.kt, and STEP_SCALE in {@link
+     * dev.jz6.flexboard.extension.prefs.Defaults}, which writes it on first run.
+     *
+     * <p>Only shown, in practice: the seed means the preference is set before this screen can be
+     * opened, so the slider reads a stored value rather than falling back to this one.
+     */
+    private static final int STEP_SCALE_DEFAULT = 60;
 
     private static final int MAX_WORDS_MIN = 1;
     /**
@@ -113,9 +120,11 @@ public final class FlexboardSettingsActivity extends Activity {
      * <p>Applies only while the device reports itself as a foldable, which in practice means the
      * large inner screen of an open fold. Gboard keeps its own count per device class for the same
      * reason, so a single value for both screens would be a change from stock rather than a
-     * feature. Unset, it falls back to {@link #KEY_TOOLBAR_COUNT} rather than to Gboard's own — the
-     * main slider is the setting, and this is an override for the one screen that may want a
-     * different one.
+     * feature.
+     *
+     * <p>The patch falls back to {@link #KEY_TOOLBAR_COUNT} when this is unset, which is now only
+     * reachable if the first-run seed did not happen: {@code Defaults} writes both, so in practice
+     * each slider owns its screen.
      */
     private static final String KEY_TOOLBAR_COUNT_UNFOLDED = "flexboard_toolbar_count_unfolded";
 
@@ -125,15 +134,21 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final int TOOLBAR_COUNT_MAX = 12;
 
     /**
-     * Gboard's own stock count, shown while the preference is unset.
+     * The starting counts, seeded on first run by {@link dev.jz6.flexboard.extension.prefs.Defaults}
+     * — these must match the values it writes.
      *
-     * <p>Only ever displayed. Neither of the patch's two insertions uses it — one reads the
-     * preference with whatever Gboard itself computed as the default, the other falls through into
-     * Gboard's own code entirely — so an untouched slider leaves the count exactly where Gboard put
-     * it even if that is not this number. It is checked against the literal in
-     * `AccessPointsBar.<init>` by `tools/apk/preflight.py`, so what the slider shows stays truthful.
+     * <p>They used to be one number, 5, which was Gboard's own and was <i>only</i> displayed:
+     * neither of the toolbar patch's insertions used it, so an untouched slider left the count
+     * wherever Gboard put it. Now the value is written, so what the slider shows and what the
+     * keyboard does are the same thing by construction.
+     *
+     * <p>Twelve unfolded because the inner screen of a fold fits them, and because Gboard already
+     * keeps a count per device class — the two screens differing is stock behaviour. Each slider
+     * owns its screen; neither falls back to the other.
      */
-    private static final int TOOLBAR_COUNT_DEFAULT = 5;
+    private static final int TOOLBAR_COUNT_DEFAULT = 6;
+
+    private static final int TOOLBAR_COUNT_UNFOLDED_DEFAULT = 12;
 
     /** Must match HOTKEY_SLOT_COUNT in TextActionsPatch.kt. */
     private static final int HOTKEY_SLOT_COUNT = 6;
@@ -335,11 +350,11 @@ public final class FlexboardSettingsActivity extends Activity {
                 KEY_TOOLBAR_COUNT_UNFOLDED,
                 "Icons when unfolded",
                 "Foldables only. Overrides the setting above while the phone is open, because the "
-                        + "inner screen is wider and fits more. Leave it alone and the setting "
-                        + "above applies to both screens.",
+                        + "inner screen is wider and fits more. It has its own value rather than "
+                        + "following the setting above.",
                 TOOLBAR_COUNT_MIN,
                 TOOLBAR_COUNT_MAX,
-                TOOLBAR_COUNT_DEFAULT,
+                TOOLBAR_COUNT_UNFOLDED_DEFAULT,
                 value -> Integer.toString(value));
 
         addSectionHeader(column, SECTION_HOTKEYS);

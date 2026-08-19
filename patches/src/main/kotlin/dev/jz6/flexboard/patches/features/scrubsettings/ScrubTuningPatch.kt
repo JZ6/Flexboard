@@ -67,6 +67,10 @@ internal val scrubTuningPatch = bytecodePatch(
     // would leave three values nothing can ever set.
     dependsOn(scrubSettingsScreenPatch)
 
+    // Writes the swipe length's starting value on first run, rather than letting the read's
+    // fallback stand in for it. See that patch for why the difference matters.
+    dependsOn(seedDefaultsPatch)
+
     // Carries FlexboardSettingsActivity, which the manifest entry that patch writes names. The
     // merge has to happen from a bytecode patch; a resource patch cannot do it.
     extendWith("extensions/extension.mpe")
@@ -100,25 +104,29 @@ internal const val HOLD_DELAY_KEY = "flexboard_scrub_hold_ms"
 internal const val MAX_WORDS_KEY = "flexboard_max_words"
 
 /**
- * Percent of Gboard's own swipe distance. Ships at Gboard's own value, so the gesture is the one
- * Gboard built and the slider is what shortens it — a shorter swipe per word is available to anyone
- * who wants it, rather than assumed for everyone.
+ * Percent of Gboard's own swipe distance.
  *
- * This was 36 up to `1.1.0-dev.1`, on the reasoning that Gboard's distance assumes a thumb
- * travelling from the backspace key and a gesture starting under your thumb wants less. That is
- * sound in principle and turned out to be too aggressive in practice.
+ * Sixty is a middle: 36 shipped up to `1.1.0-dev.1` on the reasoning that Gboard's distance assumes
+ * a thumb travelling from the backspace key and a gesture starting under your thumb wants less,
+ * which was sound in principle and too aggressive in practice; 100 is Gboard's own, which asks for
+ * the whole journey the patch exists to remove. With the word cap at its default of 1 a swipe still
+ * deletes one word however far it travels, so this only changes how far that is.
+ *
+ * **Written on first run rather than left to this fallback** — see `seedDefaultsPatch`. The two
+ * agree so that behaviour is the same either way, but the stored value is what a user actually gets
+ * and what a later change to this number will deliberately *not* move them off.
  */
-internal const val STEP_SCALE_DEFAULT = 100
+internal const val STEP_SCALE_DEFAULT = 60
 
 /**
  * The percentage at which scaling is a no-op, so the table is left alone rather than multiplied by
  * 1.0.
  *
- * **Deliberately a separate constant from [STEP_SCALE_DEFAULT] even though the two now hold the same
- * number.** They were one constant once; when the default moved off 100 that made the sentinel
- * follow it, so the one value the user had asked for became the one value with no effect. The
- * default has since come back to 100, which makes them look redundant — they are not. Splitting
- * them is what lets the default move again without dragging the sentinel along.
+ * **Deliberately a separate constant from [STEP_SCALE_DEFAULT].** They were one constant once; when
+ * the default moved off 100 that made the sentinel follow it, so the one value the user had asked
+ * for became the one value with no effect. Splitting them is what has since let the default move to
+ * 36, back to 100 and now to 60 without dragging the sentinel along — and what keeps 100 meaning
+ * "leave Gboard's table alone" for anyone who sets it there.
  */
 internal const val STEP_SCALE_IDENTITY = 100
 

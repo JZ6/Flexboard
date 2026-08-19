@@ -64,6 +64,14 @@ The list above is kept as written; this notes which of it has landed, rather tha
   needed. With the slider working the two now compose properly: raise the count and the button
   costs nothing that used to be visible.
 
+- **set new defaults, swipe length 60%, icons on the toolbar 6, icons when unfolded 12** — all
+  three, and **written into the store on first run** rather than baked into the patch as read
+  fallbacks. That distinction is the point: a fallback follows the code, so changing it later moves
+  everyone who never touched a slider. A written value is yours from the first run, and a future
+  release can pick different starting numbers for new installs without touching a keyboard someone
+  has got used to. The toolbar had no starting value at all before — unset fell through to whatever
+  Gboard computed.
+
 - **what other material symbols are there, im pretty sure undo exists** — it does not. All 2,170
   published Material Icons were matched against the APK's 496 vector drawables, and 29 shapes are
   bundled at 35 ids; the table is in [`gboard-bindings.md`](gboard-bindings.md#material-icons-gboard-bundles).

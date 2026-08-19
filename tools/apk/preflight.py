@@ -61,6 +61,9 @@ ACCESS_POINTS_BAR = ('Lcom/google/android/libraries/inputmethod/accesspoint/widg
                      'AccessPointsBar;')
 CONTEXT = 'Landroid/content/Context;'
 
+# A `35c` invoke encodes each register in a nibble, so it can only reach v0..v15.
+PACKED_INVOKE_REGISTER_LIMIT = 16
+
 # `AbstractIme->…(L…;Z)V` — the shape of the undo re-commit, whatever it is called this build.
 RECOMMIT_RE = re.compile(
     r'^Lcom/google/android/libraries/inputmethod/ime/AbstractIme;->\w+\((L[\w/$;]+;)Z\)V$')
@@ -103,6 +106,7 @@ EXPECTED = {
     'scrub_r_registers': 13,
     'engine_ctor_registers': 11,
     'apply_preferences_registers': 13,
+    'apply_preferences_ins': 2,
     'sigcheck_registers': 8,
     'sigcheck_returns': [6, 4, 3],
     'undo_scratch': [2, 3],
@@ -740,8 +744,12 @@ def run(dl, apk=None):
         check('toolbar: its parameter words',
               c['ins'] == E['toolbar_ctor_ins'], f'got {c["ins"]}')
 
-        # The displayed default, so the settings slider does not claim a number Gboard stopped
-        # using. Read off the getInt the flag falls back to rather than written down twice.
+        # Gboard's own starting count, read off the getInt the flag falls back to.
+        #
+        # This used to assert that the settings slider showed the same number, because it did: the
+        # patch had no default and an untouched slider left the count wherever Gboard put it. The
+        # first-run seed ended that relationship — Flexboard writes its own number now — so what is
+        # left is a fact about Gboard worth noticing if it moves, and the docs quote it.
         gi = [i for i, (pc, n, a) in enumerate(ins)
               if 'Landroid/content/res/TypedArray;->getInt(II)I' in a]
         if check('toolbar: one getInt on the styled attributes', len(gi) == 1, f'found {len(gi)}'):
@@ -749,10 +757,10 @@ def run(dl, apk=None):
             src = [i for i in range(gi[0] - 1, -1, -1)
                    if ins[i][1].startswith('const') and regs(ins[i][2])[:1] == [default_reg]]
             literal = re.search(r'#(-?\d+)', ins[src[0]][2]) if src else None
-            check('toolbar: the stock count still matches the settings slider',
+            check("toolbar: Gboard's own starting count is unchanged",
                   literal is not None and int(literal.group(1)) == E['toolbar_stock_count'],
                   f'got {literal and literal.group(1)}, '
-                  f'slider shows {E["toolbar_stock_count"]}')
+                  f'expected {E["toolbar_stock_count"]}')
 
         flag = [i for i, (pc, n, a) in enumerate(ins) if 'Lnxp;->g()Ljava/lang/Object;' in a]
         if check('toolbar: one flag read in the constructor', len(flag) == 1, f'found {len(flag)}'):
@@ -1308,12 +1316,24 @@ def run(dl, apk=None):
             free = live_free(ins, c['registers'], 0)
             check('buttons: v0 is dead at onCreate entry', 0 in free, f'free={free}')
 
-    # ---- forced preferences and flick symbols share this hook
+    # ---- forced preferences, flick symbols and the first-run seed share this hook
     c, _ = body(dl, f'{LATIN_APP}->d({store})V')
     check('prefs: applyPreferenceValues exists', c is not None)
     check('prefs: its register count', c is not None
           and c['registers'] == E['apply_preferences_registers'],
           f'got {c and c["registers"]}')
+    # `this` plus the store. The seed passes p0 — the LatinApp, and so a Context — straight to the
+    # extension, which is only sound if the parameter list is still the one that says so.
+    check('prefs: its parameter words', c is not None
+          and c['ins'] == E['apply_preferences_ins'], f'got {c and c["ins"]}')
+    # ...and only encodable if p0 fits the four-bit register field of a 35c invoke. Emitting a `pN`
+    # an invoke cannot address is what produced an unappliable bundle once before, and it is not
+    # visible in Kotlin, in smali, or anywhere but on the phone that refuses the patch.
+    if c is not None:
+        receiver = c['registers'] - c['ins']
+        check('prefs: p0 is addressable by a packed invoke',
+              receiver < PACKED_INVOKE_REGISTER_LIMIT,
+              f'p0 is v{receiver}; the seed would need move-object/from16 first')
 
     # ---- bypass signature
     sig_cls = B['sigcheck']
