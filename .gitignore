@@ -134,3 +134,7 @@ __pycache__/
 # Ignore IDEA files
 .idea/
 local.properties
+
+# Exported Gboard icon SVGs for local viewing
+docs/icons/
+.DS_Store
