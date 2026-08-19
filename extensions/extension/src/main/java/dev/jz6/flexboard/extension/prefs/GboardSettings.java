@@ -54,7 +54,7 @@ public final class GboardSettings {
     /** `block_offensive_words` — off means "don't suggest offensive words". */
     private static final int BLOCK_OFFENSIVE_WORDS = 0x7f1409c0;
 
-    /** `show_suggestions` — off means no word suggestions above the keyboard. */
+    /** `show_suggestions` — off means no word suggestions in the strip. */
     private static final int SHOW_SUGGESTIONS = 0x7f140b6f;
 
     /** `show_suggestion_strip` — the strip itself, which carries feature buttons. On by default. */

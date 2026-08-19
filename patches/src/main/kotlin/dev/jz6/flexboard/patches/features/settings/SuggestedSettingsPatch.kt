@@ -19,7 +19,12 @@ import dev.jz6.flexboard.patches.shared.callAtAppStart
  *  - **Touch & hold keys for numbers** on — un-greys the flick row, which carries
  *    `dependency="enable_secondary_digits"` in Gboard's preference XML.
  *  - **Block offensive words** off — stops Gboard from suppressing words it considers offensive.
- *  - **Word suggestions** off — removes the suggestion strip above the keyboard.
+ *  - **Word suggestions** off — removes word suggestions from the strip. The strip itself stays
+ *    so feature buttons (grammar check, proofread, etc.) still render.
+ *  - **Suggestion strip** on — the strip that carries both suggestions and feature buttons.
+ *    Explicitly on so that turning word suggestions off does not take the strip with it.
+ *  - **Grammar check** on — underlines grammatical errors in blue.
+ *  - **Smart replies** on — shows reply suggestions in supported apps.
  *
  * ## Why a write and not a hook
  *
