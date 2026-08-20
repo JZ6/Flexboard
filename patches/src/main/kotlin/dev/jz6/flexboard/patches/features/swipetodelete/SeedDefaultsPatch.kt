@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.features.scrubsettings
+package dev.jz6.flexboard.patches.features.swipetodelete
 
 import app.morphe.patcher.patch.bytecodePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD

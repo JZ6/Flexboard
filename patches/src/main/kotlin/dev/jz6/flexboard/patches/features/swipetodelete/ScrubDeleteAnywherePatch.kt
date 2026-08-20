@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.features.scrubdelete
+package dev.jz6.flexboard.patches.features.swipetodelete
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
@@ -9,7 +9,7 @@ import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.iface.instruction.NarrowLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
-import dev.jz6.flexboard.patches.features.scrubsettings.scrubTuningPatch
+import dev.jz6.flexboard.patches.features.swipetodelete.scrubTuningPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall

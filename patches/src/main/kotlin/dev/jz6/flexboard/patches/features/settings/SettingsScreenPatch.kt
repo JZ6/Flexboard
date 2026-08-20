@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.features.scrubsettings
+package dev.jz6.flexboard.patches.features.settings
 
 import app.morphe.patcher.patch.resourcePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD

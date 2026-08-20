@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.features.scrubsettings
+package dev.jz6.flexboard.patches.features.swipetodelete
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
@@ -7,25 +7,26 @@ import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
-import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_DISABLED_FIELD
-import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_FIELD
-import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_START_KEY_FIELD
-import dev.jz6.flexboard.patches.features.scrubdelete.CONFIG_STEP_TABLE_FIELD
-import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_FIELD
-import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_FIELD_NAME
-import dev.jz6.flexboard.patches.features.scrubdelete.HANDLER_CONTEXT_OWNER
-import dev.jz6.flexboard.patches.features.scrubdelete.INTEGER_VALUE_OF
-import dev.jz6.flexboard.patches.features.scrubdelete.checkPreferenceStorePins
-import dev.jz6.flexboard.patches.features.scrubdelete.resolvePreferenceGetInt
-import dev.jz6.flexboard.patches.features.scrubdelete.PREFERENCE_STORE_GET
-import dev.jz6.flexboard.patches.features.scrubdelete.SCRUB_DELETE_MOTION_EVENT_HANDLER
-import dev.jz6.flexboard.patches.features.scrubdelete.SCRUB_MOTION_EVENT_HANDLER
-import dev.jz6.flexboard.patches.features.scrubdelete.StartKeyChain
-import dev.jz6.flexboard.patches.features.scrubdelete.branchOnStartKey
-import dev.jz6.flexboard.patches.features.scrubdelete.resolveStartKeyChain
-import dev.jz6.flexboard.patches.features.scrubdelete.ScrubDeleteConstructorFingerprint
-import dev.jz6.flexboard.patches.features.scrubdelete.ScrubDispatchFingerprint
-import dev.jz6.flexboard.patches.features.scrubdelete.ScrubEngineConstructorFingerprint
+import dev.jz6.flexboard.patches.features.swipetodelete.CONFIG_DISABLED_FIELD
+import dev.jz6.flexboard.patches.features.swipetodelete.CONFIG_FIELD
+import dev.jz6.flexboard.patches.features.swipetodelete.CONFIG_START_KEY_FIELD
+import dev.jz6.flexboard.patches.features.swipetodelete.CONFIG_STEP_TABLE_FIELD
+import dev.jz6.flexboard.patches.features.swipetodelete.HANDLER_CONTEXT_FIELD
+import dev.jz6.flexboard.patches.features.swipetodelete.HANDLER_CONTEXT_FIELD_NAME
+import dev.jz6.flexboard.patches.features.swipetodelete.HANDLER_CONTEXT_OWNER
+import dev.jz6.flexboard.patches.features.swipetodelete.INTEGER_VALUE_OF
+import dev.jz6.flexboard.patches.features.swipetodelete.checkPreferenceStorePins
+import dev.jz6.flexboard.patches.features.swipetodelete.resolvePreferenceGetInt
+import dev.jz6.flexboard.patches.features.swipetodelete.PREFERENCE_STORE_GET
+import dev.jz6.flexboard.patches.features.swipetodelete.SCRUB_DELETE_MOTION_EVENT_HANDLER
+import dev.jz6.flexboard.patches.features.swipetodelete.SCRUB_MOTION_EVENT_HANDLER
+import dev.jz6.flexboard.patches.features.swipetodelete.StartKeyChain
+import dev.jz6.flexboard.patches.features.swipetodelete.branchOnStartKey
+import dev.jz6.flexboard.patches.features.swipetodelete.resolveStartKeyChain
+import dev.jz6.flexboard.patches.features.swipetodelete.ScrubDeleteConstructorFingerprint
+import dev.jz6.flexboard.patches.features.swipetodelete.ScrubDispatchFingerprint
+import dev.jz6.flexboard.patches.features.swipetodelete.ScrubEngineConstructorFingerprint
+import dev.jz6.flexboard.patches.features.settings.scrubSettingsScreenPatch
 import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.PACKED_INVOKE_REGISTER_LIMIT
@@ -82,7 +83,7 @@ internal val scrubTuningPatch = bytecodePatch(
         checkPreferenceStorePins()
 
         // Resolved once and handed to both edits below. Reading it is what lets them ask, mid
-        // gesture, which key the finger went down on — see `scrubdelete/StartKey.kt`.
+        // gesture, which key the finger went down on — see `swipetodelete/StartKey.kt`.
         val startKey = resolveStartKeyChain()
 
         ScrubEngineConstructorFingerprint.method.substituteHoldDelay(this)

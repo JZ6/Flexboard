@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.features.scrubdelete
+package dev.jz6.flexboard.patches.features.swipetodelete
 
 import app.morphe.patcher.patch.BytecodePatchContext
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction

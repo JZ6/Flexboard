@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.features.undodelete
+package dev.jz6.flexboard.patches.features.undo
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
