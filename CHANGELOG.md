@@ -1,3 +1,9 @@
+# [1.2.1-dev.1](https://github.com/JZ6/Flexboard/compare/v1.2.0...v1.2.1-dev.1) (2026-08-20)
+
+* **Gboard:** clean up CHANGELOG — remove bump commits, stable releases show all dev changes
+* **Gboard:** release changelog only shows the bump commit, not the actual changes
+* **Gboard:** gitignore docs/icons/ — exported SVGs for local viewing only
+
 # [1.2.0](https://github.com/JZ6/Flexboard/compare/v1.2.0-dev.5...v1.2.0) (2026-08-19)
 
 * **Gboard:** release v1.2.0
