@@ -115,7 +115,9 @@ private fun Document.renameGboardPackage() {
     }
 
     val unexpected = attributes.firstOrNull { attribute ->
-        GBOARD_PACKAGE_NAME in attribute.value && selected.none { it === attribute }
+        GBOARD_PACKAGE_NAME in attribute.value &&
+            selected.none { it === attribute } &&
+            KEEP_ORIGINAL.none { attribute.matches(it) }
     }
     check(unexpected == null) {
         "Unexpected package-derived manifest value at " +
@@ -164,6 +166,19 @@ private val RENAME_MAPPINGS = listOf(
     androidMapping("provider", "authorities", "$GBOARD_PACKAGE_NAME.tracing"),
     androidMapping("provider", "authorities", "$GBOARD_PACKAGE_NAME.wdb"),
     androidMapping("provider", "authorities", "$GBOARD_PACKAGE_NAME.mlkitinitprovider"),
+)
+
+/**
+ * Manifest values that contain the original package name but must NOT be renamed.
+ *
+ * Phenotype registration keys: Gboard queries Phenotype via a content URI built from
+ * `AllFlags.STATICMENDELPACKAGENAME`, a `static final String` baked in as the original
+ * package name at compile time. The manifest registration must match that value, so
+ * these entries stay on the original name.
+ */
+private val KEEP_ORIGINAL = listOf(
+    androidMapping("meta-data", "name", "com.google.android.gms.phenotype.registration.binarypb:$GBOARD_PACKAGE_NAME"),
+    androidMapping("meta-data", "name", "com.google.android.gms.phenotype.registration.xml:$GBOARD_PACKAGE_NAME"),
 )
 
 /** Derived rather than written out, so it cannot drift from the rename itself. */
