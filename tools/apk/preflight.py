@@ -121,6 +121,10 @@ EXPECTED = {
         (0x7f140b6e, 'show_suggestion_strip'),
         (0x7f140a07, 'pref_key_enable_grammar_checker'),
         (0x7f140a28, 'enable_smart_reply'),
+        # Semicolon-joined access-point ids the toolbar is ordered by. ToolbarMerge reads these
+        # to place the injected buttons where the user dragged them.
+        (0x7f1409b0, 'access_points_showing_order'),
+        (0x7f140a44, 'foldable_access_points_showing_order'),
     ],
     'sigcheck_registers': 8,
     'sigcheck_returns': [6, 4, 3],
