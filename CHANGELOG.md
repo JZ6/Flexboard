@@ -1,3 +1,8 @@
+# [1.2.1-dev.6](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.5...v1.2.1-dev.6) (2026-08-20)
+
+* **Gboard:** custom hotkey icons, icon picker, and 12 slots
+* **Gboard:** use visible gray fill for settings icon instead of broken tint
+
 # [1.2.1-dev.5](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.4...v1.2.1-dev.5) (2026-08-20)
 
 * **Gboard:** enable grammar check, smart replies, and keep suggestion strip on
