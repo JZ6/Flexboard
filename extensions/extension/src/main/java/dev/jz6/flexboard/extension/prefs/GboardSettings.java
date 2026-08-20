@@ -66,15 +66,6 @@ public final class GboardSettings {
     /** `enable_smart_reply` — shows reply suggestions in supported apps. */
     private static final int ENABLE_SMART_REPLY = 0x7f140a28;
 
-    /** `access_points_count_on_bar` — the number of icons on the toolbar. */
-    private static final int ACCESS_POINTS_COUNT_ON_BAR = 0x7f1409af;
-
-    /** `foldable_access_points_count_on_bar` — the count for the unfolded inner screen. */
-    private static final int FOLDABLE_ACCESS_POINTS_COUNT_ON_BAR = 0x7f140a43;
-
-    /** The toolbar icon count written as a default. */
-    private static final int GBOARD_TOOLBAR_COUNT_DEFAULT = 15;
-
     private GboardSettings() {}
 
     /**
@@ -159,31 +150,6 @@ public final class GboardSettings {
         key = context.getString(ENABLE_SMART_REPLY);
         if (!preferences.contains(key)) {
             editor.putBoolean(key, true);
-            wrote = true;
-        }
-
-        if (wrote) {
-            editor.apply();
-        }
-    }
-
-    /**
-     * Seeds the toolbar icon count preference. Called by the base patch, always — the
-     * {@code toolbarCountPatch} reads this preference and needs a value to be present.
-     */
-    public static void seedToolbarCount(Context context) {
-        SharedPreferences preferences = Preferences.of(context);
-        SharedPreferences.Editor editor = preferences.edit();
-        boolean wrote = false;
-
-        String key = context.getString(ACCESS_POINTS_COUNT_ON_BAR);
-        if (!preferences.contains(key)) {
-            editor.putInt(key, GBOARD_TOOLBAR_COUNT_DEFAULT);
-            wrote = true;
-        }
-        key = context.getString(FOLDABLE_ACCESS_POINTS_COUNT_ON_BAR);
-        if (!preferences.contains(key)) {
-            editor.putInt(key, GBOARD_TOOLBAR_COUNT_DEFAULT);
             wrote = true;
         }
 
