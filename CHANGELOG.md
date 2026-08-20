@@ -1,3 +1,14 @@
+# [1.2.1-dev.8](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.7...v1.2.1-dev.8) (2026-08-21)
+
+* **Gboard:** force the grammar check row on
+* **Gboard:** suggest settings missing basePatch, correct comment reference
+* **Gboard:** polish: neutral underline for hotkey text fields
+* **Gboard:** preflight: pin the toolbar order preference keys
+* **Gboard:** drop the Gboard-side toolbar count seed
+* **Gboard:** resolve the preference file from the package at runtime
+* **Gboard:** render the Flexboard settings row as a HeaderPreference
+* **Gboard:** keep the user's toolbar order for Flexboard buttons
+
 # [1.2.1-dev.7](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.6...v1.2.1-dev.7) (2026-08-20)
 
 * **Gboard:** use Graph 6 Material icon for Flexboard settings

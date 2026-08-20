@@ -35,9 +35,9 @@ Both keyboards stay installed, so you can switch back whenever you like.
 ## Patches
 
 <!-- PATCHES_START EXPANDED -->
-> **[v1.2.1-dev.7](https://github.com/JZ6/Flexboard/releases/tag/v1.2.1-dev.7)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;7 patches total
+> **[v1.2.1-dev.8](https://github.com/JZ6/Flexboard/releases/tag/v1.2.1-dev.8)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;8 patches total
 <details open>
-<summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;7 patches</summary>
+<summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;8 patches</summary>
 <br>
 
 **🎯 Supported versions:**
@@ -49,6 +49,7 @@ Both keyboards stay installed, so you can switch back whenever you like.
 |----------|----------------|-----------|
 | [Bigger Toolbar](#bigger-toolbar) | Makes the number of icons on the toolbar above the keyboard adjustable, from Gboard's own settings. Anything past the limit stays in the overflow menu. |  |
 | [Bypass Gboard Signature](#bypass-gboard-signature) | Bypass Gboard's signature whitelist checks and force them to pass. |  |
+| [Grammar Check Row](#grammar-check-row) | Force the grammar check settings row to appear. The Phenotype flag that governs it never syncs on a patched build, so its compiled-in default (off) sticks. |  |
 | [Install as Gboard Clone](#install-as-gboard-clone) | Rename the package to dev.jz6.com.google.android.inputmethod.latin so the patched build installs alongside the official Gboard instead of replacing it. |  |
 | [Suggested Settings](#suggested-settings) | Turns on flick keys for symbols, touch & hold keys for numbers, suggestion strip, grammar check and smart replies, and turns off block offensive words and word suggestions. Written once as defaults, so each can still be changed in Gboard's own settings. |  |
 | [Swipe Right to Undo](#swipe-right-to-undo) | Swipe right after deleting to put the words back. Uses Gboard's own undo, which already records what a delete swipe removed. |  |
