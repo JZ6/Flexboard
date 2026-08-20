@@ -1,3 +1,8 @@
+# [1.2.1-dev.5](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.4...v1.2.1-dev.5) (2026-08-20)
+
+* **Gboard:** enable grammar check, smart replies, and keep suggestion strip on
+* **Gboard:** add a custom Flexboard settings icon instead of borrowing Gboard's
+
 # [1.2.1-dev.4](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.3...v1.2.1-dev.4) (2026-08-20)
 
 * **Gboard:** allowlist Phenotype meta-data keys in manifest sweep
