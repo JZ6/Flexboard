@@ -705,7 +705,9 @@ public final class FlexboardSettingsActivity extends Activity {
         // Multi-line, because a signature or an address is a perfectly reasonable thing to want on
         // a button. Only the first line becomes the button's name; the whole of it gets typed.
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        field.setBackgroundTintList(ColorStateList.valueOf(colorAccent));
+        // Neutral underline — a saturated accent line under every field reads as an error bar,
+        // and there are twelve of them.
+        field.setBackgroundTintList(ColorStateList.valueOf(colorSummary));
         field.addTextChangedListener(
                 new TextWatcher() {
                     @Override
