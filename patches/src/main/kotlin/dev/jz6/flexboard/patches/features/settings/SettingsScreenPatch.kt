@@ -134,12 +134,24 @@ private const val FOOTER_PREFERENCE_TAG = "com.android.settingslib.widget.Footer
  *
  * The icon is a patch-added drawable resource, written to `res/drawable/` from
  * `patches/src/main/resources/drawable/` and referenced by name
- * (`@drawable/flexboard_settings_icon`). aapt2 assigns it an id during recompilation. The tint
- * follows the active theme via `?attr/colorControlNormal`, so it matches Gboard's own rows in
- * light and dark.
+ * (`@drawable/flexboard_settings_icon`). aapt2 assigns it an id during recompilation. Its fill
+ * colour is fixed; `HeaderPreference` tints it to the row's title colour at bind time.
  */
 private const val FLEXBOARD_ICON_REF = "@drawable/flexboard_settings_icon"
-private const val PREFERENCE_TAG = "Preference"
+
+/**
+ * Gboard's own settings row widget, used in place of the androidx default so our entry is
+ * rendered by the same row layout — same icon inset, same text metrics, same tint — as every
+ * row around it.
+ *
+ * The class name is a plain unobfuscated string here because preference XML instantiates views
+ * by name, so R8 cannot rename it; `res/B_o.xml` (the settings root) uses it for its own rows.
+ * It extends `ExtendedPreference` which extends androidx `Preference`, and its constructor is
+ * the standard `(Context, AttributeSet)` the framework reflects on, so no attribute it reads is
+ * new to it.
+ */
+private const val PREFERENCE_TAG =
+    "com.google.android.libraries.inputmethod.settings.widget.HeaderPreference"
 private const val INTENT_TAG = "intent"
 
 private const val ENTRY_KEY = "flexboard_settings"
