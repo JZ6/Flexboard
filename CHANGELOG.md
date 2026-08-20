@@ -1,3 +1,7 @@
+# [1.2.1-dev.7](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.6...v1.2.1-dev.7) (2026-08-20)
+
+* **Gboard:** use Graph 6 Material icon for Flexboard settings
+
 # [1.2.1-dev.6](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.5...v1.2.1-dev.6) (2026-08-20)
 
 * **Gboard:** custom hotkey icons, icon picker, and 12 slots
