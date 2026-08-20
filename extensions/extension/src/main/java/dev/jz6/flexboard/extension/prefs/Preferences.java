@@ -28,9 +28,10 @@ import android.content.SharedPreferences;
  * preferences in direct-boot storage.
  *
  * <p>Mirrored line for line rather than paraphrased, including the {@code getApplicationContext}
- * call, so the two sides cannot drift. The file name is hardcoded to the <b>renamed</b> package
- * name rather than derived from {@link Context#getPackageName()}, so the file is unambiguous
- * regardless of which context the extension is handed.
+ * call, so the two sides cannot drift. The file name comes from {@link Context#getPackageName()}
+ * at runtime, so it follows whichever package the build actually is: renamed installs get the
+ * renamed file, and — because the rename patch is selectable — an un-renamed build must not be
+ * stranded writing a file nothing else reads.
  *
  * <p>There is no version guard because there is nothing to guard against: both context methods are
  * API 24 and Gboard's manifest declares {@code minSdkVersion} 26, so they are below the floor this
@@ -45,18 +46,13 @@ public final class Preferences {
 
     private static final String SUFFIX = "_preferences";
 
-    /**
-     * The renamed package name. Hardcoded so the preference file is unambiguous regardless of
-     * which context the extension is handed.
-     */
-    private static final String PACKAGE_NAME = "dev.jz6.com.google.android.inputmethod.latin";
-
     private Preferences() {}
 
     /** Gboard's default preference file, opened against the context Gboard itself would use. */
     public static SharedPreferences of(Context context) {
         Context storage = deviceProtected(context);
-        return storage.getSharedPreferences(PACKAGE_NAME + SUFFIX, Context.MODE_PRIVATE);
+        return storage.getSharedPreferences(
+                storage.getPackageName() + SUFFIX, Context.MODE_PRIVATE);
     }
 
     @SuppressLint("NewApi") // Both methods are API 24; Gboard's minSdkVersion is 26.
