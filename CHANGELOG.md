@@ -1,3 +1,9 @@
+# [1.2.1-dev.3](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.2...v1.2.1-dev.3) (2026-08-20)
+
+* **Gboard:** add internal basePatch as the foundation every public patch depends on
+* **Gboard:** generalize flick symbols into a 'Suggested Settings' patch
+* **Gboard:** disable swipe-length scaling and hide its slider
+
 # [1.2.1-dev.2](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.1...v1.2.1-dev.2) (2026-08-20)
 
 * **Gboard:** regenerate CHANGELOG with correct ranges and stripped prefixes

@@ -35,9 +35,9 @@ Both keyboards stay installed, so you can switch back whenever you like.
 ## Patches
 
 <!-- PATCHES_START EXPANDED -->
-> **[v1.2.1-dev.2](https://github.com/JZ6/Flexboard/releases/tag/v1.2.1-dev.2)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;7 patches total
+> **[v1.2.1-dev.3](https://github.com/JZ6/Flexboard/releases/tag/v1.2.1-dev.3)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;6 patches total
 <details open>
-<summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;7 patches</summary>
+<summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;6 patches</summary>
 <br>
 
 **🎯 Supported versions:**
@@ -49,7 +49,6 @@ Both keyboards stay installed, so you can switch back whenever you like.
 |----------|----------------|-----------|
 | [Bigger Toolbar](#bigger-toolbar) | Makes the number of icons on the toolbar above the keyboard adjustable, from Gboard's own settings. Anything past the limit stays in the overflow menu. |  |
 | [Bypass Gboard Signature](#bypass-gboard-signature) | Bypass Gboard's signature whitelist checks and force them to pass. |  |
-| [Flick Keys for Symbols](#flick-keys-for-symbols) | Turn on Gboard's "Flick keys to enter symbols" — pull down on a key to enter the symbol hinted in its corner. Written once as a default, so it can still be turned off in Gboard's own settings. |  |
 | [Install as Gboard Clone](#install-as-gboard-clone) | Rename the package to dev.jz6.com.google.android.inputmethod.latin so the patched build installs alongside the official Gboard instead of replacing it. |  |
 | [Swipe Right to Undo](#swipe-right-to-undo) | Swipe right after deleting to put the words back. Uses Gboard's own undo, which already records what a delete swipe removed. |  |
 | [Swipe to Delete](#swipe-to-delete) | Swipe left anywhere on the keyboard to delete the previous word, and swipe right to restore it. Uses Gboard's own word-scrub engine, so it behaves exactly like swiping on the backspace key already does — only it can start anywhere. |  |
