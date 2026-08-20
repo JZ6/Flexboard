@@ -49,7 +49,7 @@ internal const val CONFIG_STEP_TABLE_FIELD = "Lpvs;->h:[F"
 
 /**
  * Set by the engine constructor when the distance table is not strictly increasing; `g()` bails at
- * offset 27 when it is true, and the table then points at the shared static `Lmbs;->c:[F`.
+ * offset 27 when it is true, and the table then points at the shared static `Lmvf;->c:[F`.
  */
 internal const val CONFIG_DISABLED_FIELD = "Lpvs;->g:Z"
 
