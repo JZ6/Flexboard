@@ -263,6 +263,15 @@ private const val SUB_LIST = "Ljava/util/List;->subList(II)Ljava/util/List;"
 private const val MATH_MIN = "Ljava/lang/Math;->min(II)I"
 
 /**
+ * Placed after the buttons are built: {@code merge(p1, pairs)} returns the final list, with the
+ * freshly built buttons interleaved into the user's saved toolbar order rather than pinned to
+ * hardcoded indices. See `ToolbarMerge` in the extension for the placement algorithm.
+ */
+private const val TOOLBAR_MERGE =
+    "Ldev/jz6/flexboard/extension/toolbar/ToolbarMerge;->merge(" +
+        "Ljava/util/List;Ljava/util/List;)Ljava/util/List;"
+
+/**
  * Asserted rather than assumed, in the house pattern: an insertion is only sound against a known
  * register layout, and R8 re-rolls register allocation on every Gboard build.
  */
@@ -596,25 +605,25 @@ private fun BytecodePatchContext.publishInputMethodService() {
 }
 
 /**
- * Prepends the buttons to the list the bar is built from.
+ * Builds the buttons and merges them into the list the bar is built from.
  *
  * The target is derived by shape rather than name: the sole method taking a `List` that splits it
  * with two `subList` calls around a `Math.min`. Those are framework references, so the derivation
  * survives R8 renaming everything around them.
  *
- * The incoming list is Guava-immutable, so it is copied into an `ArrayList` rather than added to.
  * `p1` is only ever read by the stock body — a size and the two `subList` calls — so substituting
  * it at entry is safe. v0..v4 are dead there by backward liveness over the real CFG, not by a
  * forward first-touch scan, which is unsound and nearly shipped register corruption once already.
  *
- * Each button is inserted at its own index rather than all at zero, because repeated insertion at
- * zero would reverse them.
+ * ## Placement
  *
- * The hotkeys follow, and go in the other way round: every one of them inserts at the same index,
- * just past the text actions, in **reverse** slot order. That is what lets a slot be skipped
- * without arithmetic — a fixed index means present slots close up behind the text actions however
- * many are empty, and reversing the emission order puts slot 1 leftmost again. The alternative, a
- * running counter, would need a register this method does not have to spare.
+ * Placement is not done here. Each built button is appended to a flat pair list
+ * (`id, accessPoint, id, accessPoint, …`) in canonical order — text actions first, hotkeys in
+ * ascending slot order — and the whole list is handed to {@code ToolbarMerge.merge}. The merge
+ * reads Gboard's persisted toolbar-order string (`access_points_showing_order`, semicolon-joined
+ * access-point ids) and inserts the buttons at the positions the user dragged them to, instead of
+ * the fixed indices an injector would otherwise own. On a first run — no saved order — it
+ * prepends the canonical set, which is what stock looked like before this change.
  */
 private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuilder) {
     val candidates = methodsMatching { it.splitsAccessPoints() }
@@ -641,20 +650,15 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
         "${HOTKEY_ICONS.size} hotkey icons for $HOTKEY_SLOT_COUNT slots"
     }
 
-    // Every index emitted below is a `const/4`: the text actions take 0 upwards, and the hotkeys
-    // all share the one just past them. Nine buttons therefore need no wider literal than three
-    // did — only a tenth *text action* would.
-    check(BUTTONS.size <= MAX_NIBBLE_LITERAL) {
-        "${BUTTONS.size} buttons cannot all be indexed with a `const/4`"
-    }
-
-    val built = BUTTONS.withIndex().joinToString("\n") { (index, button) ->
+    val built = BUTTONS.joinToString("\n") { button ->
         """
             invoke-static { }, ${builder.newBuilder}
             move-result-object v1
 
             const-string v2, "${button.id}"
             invoke-virtual { v1, v2 }, ${builder.setId}
+            invoke-interface { v0, v2 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
+            move-result v3
 
             const v2, ${button.icon}
             invoke-virtual { v1, v2 }, ${builder.setIcon}
@@ -677,19 +681,18 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
             invoke-virtual { v1, v3, v2 }, ${builder.putExtra}
 
             invoke-virtual { v1 }, ${builder.build}
-            move-result-object v1
-
-            const/4 v2, $index
-            invoke-virtual { v0, v2, v1 }, Ljava/util/ArrayList;->add(ILjava/lang/Object;)V
+            move-result-object v2
+            invoke-interface { v0, v2 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
+            move-result v3
         """
     }
 
-    val hotkeys = (HOTKEY_SLOT_COUNT downTo 1).joinToString("\n") { slot ->
+    val hotkeys = (1..HOTKEY_SLOT_COUNT).joinToString("\n") { slot ->
         val absent = "flexboard_hotkey_${slot}_absent"
         val constSlot = if (slot <= MAX_CONST_4_VALUE) "const/4" else "const/16"
         """
-            $constSlot v2, $slot
-            invoke-static { v2 }, $HOTKEY_LABEL_AT
+            $constSlot v3, $slot
+            invoke-static { v3 }, $HOTKEY_LABEL_AT
             move-result-object v2
             if-eqz v2, :$absent
 
@@ -698,6 +701,8 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
 
             const-string v3, "${hotkeyId(slot)}"
             invoke-virtual { v1, v3 }, ${builder.setId}
+            invoke-interface { v0, v3 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
+            move-result v3
 
             const v3, ${HOTKEY_ICONS[slot - 1]}
             $constSlot v4, $slot
@@ -723,10 +728,9 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
             invoke-virtual { v1, v4, v3 }, ${builder.putExtra}
 
             invoke-virtual { v1 }, ${builder.build}
-            move-result-object v1
-
-            const/4 v3, ${BUTTONS.size}
-            invoke-virtual { v0, v3, v1 }, Ljava/util/ArrayList;->add(ILjava/lang/Object;)V
+            move-result-object v2
+            invoke-interface { v0, v2 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
+            move-result v3
             :$absent
         """
     }
@@ -735,16 +739,14 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
         0,
         """
             new-instance v0, Ljava/util/ArrayList;
-            invoke-direct { v0, p1 }, Ljava/util/ArrayList;-><init>(Ljava/util/Collection;)V
+            invoke-direct { v0 }, Ljava/util/ArrayList;-><init>()V
             $built
             $hotkeys
-            move-object p1, v0
+            invoke-static { p1, v0 }, $TOOLBAR_MERGE
+            move-result-object p1
         """,
     )
 }
-
-/** `const/4` carries its value in a nibble, so it can index at most eight buttons. */
-private const val MAX_NIBBLE_LITERAL = 8
 
 /** `const/4` encodes a 4-bit signed value, so it holds at most 7. Slots 8+ use `const/16`. */
 private const val MAX_CONST_4_VALUE = 7
