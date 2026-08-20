@@ -1,3 +1,10 @@
+# [1.2.1-dev.2](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.1...v1.2.1-dev.2) (2026-08-20)
+
+* **Gboard:** regenerate CHANGELOG with correct ranges and stripped prefixes
+* **Gboard:** reorganize patch packages by user-facing feature
+* **Gboard:** note the glyphs.py fix in the roadmap icon audit entry
+* **Gboard:** glyphs.py tail check bleeding into the next path, skipping filled icons
+
 # [1.2.1-dev.1](https://github.com/JZ6/Flexboard/compare/v1.2.0...v1.2.1-dev.1) (2026-08-20)
 
 * **Gboard:** clean up CHANGELOG — remove bump commits, stable releases show all dev changes
