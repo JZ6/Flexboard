@@ -1,3 +1,8 @@
+# [1.2.1-dev.4](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.3...v1.2.1-dev.4) (2026-08-20)
+
+* **Gboard:** allowlist Phenotype meta-data keys in manifest sweep
+* **Gboard:** default Bigger Toolbar on, make Suggested Settings user-configurable
+
 # [1.2.1-dev.3](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.2...v1.2.1-dev.3) (2026-08-20)
 
 * **Gboard:** add internal basePatch as the foundation every public patch depends on
