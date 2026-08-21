@@ -1,3 +1,9 @@
+# [1.2.1-dev.10](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.9...v1.2.1-dev.10) (2026-08-21)
+
+* **Gboard:** fix: harden toolbar merge — never crash the keyboard over order placement
+* **Gboard:** fix: keep the conventional-commit type in release notes/' changelog
+* **Gboard:** fix: keep conventional-commit type in changelog bullets
+
 # [1.2.1-dev.9](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.8...v1.2.1-dev.9) (2026-08-21)
 
 * **Gboard:** fix: Kotlin equality between Int and Long is always false

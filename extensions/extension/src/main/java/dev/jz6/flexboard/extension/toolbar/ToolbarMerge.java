@@ -2,6 +2,7 @@ package dev.jz6.flexboard.extension.toolbar;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +61,8 @@ public final class ToolbarMerge {
 
     private static final String FLEXBOARD_PREFIX = "flexboard_";
 
+    private static final String TAG = "Flexboard";
+
     private ToolbarMerge() {}
 
     /**
@@ -72,6 +75,19 @@ public final class ToolbarMerge {
      *                 slot order).
      */
     public static List merge(List incoming, List pairs) {
+        try {
+            return mergeOrdered(incoming, pairs);
+        } catch (Throwable error) {
+            // The merge runs inside Gboard's toolbar build path; a fault here must degrade to
+            // the canonical order rather than take the keyboard down with it.
+            Log.w(TAG, "merge failed, falling back to canonical order", error);
+            List<Object> out = new ArrayList<>(incoming);
+            prependAll(out, pairs);
+            return out;
+        }
+    }
+
+    private static List mergeOrdered(List incoming, List pairs) {
         List<Object> out = new ArrayList<>(incoming);
 
         String saved = readOrder();
@@ -86,6 +102,9 @@ public final class ToolbarMerge {
         int inserted = 0;
 
         for (String id : saved.split(";")) {
+            if (id.isEmpty()) {
+                continue;
+            }
             int index = indexOf(pairs, id);
             if (index >= 0 && !placed[index]) {
                 // After every Gboard entry seen so far (they sit in `out` in that relative
