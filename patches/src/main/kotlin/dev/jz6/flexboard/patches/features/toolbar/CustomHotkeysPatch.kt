@@ -33,8 +33,8 @@ val customHotkeysPatch = bytecodePatch(
     description = "Add up to ${HOTKEY_SLOT_COUNT} custom buttons to the toolbar above the " +
         "keyboard, each typing a string you write in Flexboard's settings. A slot stays " +
         "invisible until you fill it in. Reorder them alongside Gboard's own buttons in its " +
-        "customise view.",
-    default = true,
+        "customise view. Disabled by default while reorder bugs are worked out.",
+    default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
     dependsOn(basePatch)

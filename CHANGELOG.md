@@ -1,3 +1,7 @@
+# [1.2.2-dev.4](https://github.com/JZ6/Flexboard/compare/v1.2.2-dev.3...v1.2.2-dev.4) (2026-08-21)
+
+* **Gboard:** chore: default custom hotkeys off while the reorder crash is being isolated
+
 # [1.2.2-dev.3](https://github.com/JZ6/Flexboard/compare/v1.2.2-dev.1...v1.2.2-dev.3) (2026-08-21)
 
 * **Gboard:** fix: hotkeySlotOf was called without being declared
