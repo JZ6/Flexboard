@@ -1,3 +1,9 @@
+# [1.2.2-dev.1](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.10...v1.2.2-dev.1) (2026-08-21)
+
+* **Gboard:** fix: import emitToolbarMergeCall in BasePatch
+* **Gboard:** fix: collapse the two-merge composition into one merge driven by the base patch
+* **Gboard:** feat: split hotkeys and text actions into separate patches
+
 # [1.2.1-dev.10](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.9...v1.2.1-dev.10) (2026-08-21)
 
 * **Gboard:** fix: harden toolbar merge — never crash the keyboard over order placement

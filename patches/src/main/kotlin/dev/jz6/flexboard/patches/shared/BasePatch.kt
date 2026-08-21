@@ -3,6 +3,7 @@ package dev.jz6.flexboard.patches.shared
 import app.morphe.patcher.patch.bytecodePatch
 import dev.jz6.flexboard.patches.features.settings.scrubSettingsScreenPatch
 import dev.jz6.flexboard.patches.features.swipetodelete.seedDefaultsPatch
+import dev.jz6.flexboard.patches.features.toolbar.emitToolbarMergeCall
 
 /**
  * The foundation every Flexboard patch needs.
