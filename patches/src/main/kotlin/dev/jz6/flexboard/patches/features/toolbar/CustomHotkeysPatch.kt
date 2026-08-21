@@ -72,12 +72,17 @@ private const val MAX_CONST_4_VALUE = 7
 private const val HOTKEY_CLASS = "Ldev/jz6/flexboard/extension/hotkey/Hotkey;"
 private const val NEW_HOTKEY = "$HOTKEY_CLASS-><init>(I)V"
 private const val HOTKEY_LABEL_AT = "$HOTKEY_CLASS->labelAt(I)Ljava/lang/String;"
+
 private const val HOTKEY_ICON_AT = "$HOTKEY_CLASS->iconAt(II)I"
 
 /**
- * The emission for the twelve hotkey slots. Each slot is guarded on the extension reporting it
- * occupied; an empty one branches past the whole button, which is what makes unfilled slots
- * disappear.
+ * The emission for the twelve hotkey slots.
+ *
+ * Every slot is emitted unconditionally — no conditional branching, no labels. Each emits its
+ * own builder + register call; the extension's `ToolbarMerge.register` drops empty ones at
+ * merge time (via [Hotkey.hasContent]). Keeping the insertion label-free is what makes an
+ * insertion into the split method robust across multiple patches — the bug cascade that took
+ * down v1.2.1-dev.11 was Morphe's label bookkeeping choking on a second labeled insertion.
  */
 private fun hotkeysEmission(builder: AccessPointBuilder): String {
     check(HOTKEY_ICONS.size == HOTKEY_SLOT_COUNT) {
@@ -85,14 +90,8 @@ private fun hotkeysEmission(builder: AccessPointBuilder): String {
     }
 
     return (1..HOTKEY_SLOT_COUNT).joinToString("\n") { slot ->
-        val absent = "flexboard_hotkey_${slot}_absent"
         val constSlot = if (slot <= MAX_CONST_4_VALUE) "const/4" else "const/16"
         """
-            $constSlot v3, $slot
-            invoke-static { v3 }, $HOTKEY_LABEL_AT
-            move-result-object v2
-            if-eqz v2, :$absent
-
             invoke-static { }, ${builder.newBuilder}
             move-result-object v1
 
@@ -108,7 +107,13 @@ private fun hotkeysEmission(builder: AccessPointBuilder): String {
             const/4 v3, 0x0
             invoke-virtual { v1, v3 }, ${builder.setLabel}
             invoke-virtual { v1, v3 }, ${builder.setContentDescription}
+            $constSlot v4, $slot
+            invoke-static { v4 }, $HOTKEY_LABEL_AT
+            move-result-object v2
             iput-object v2, v1, ${builder.labelField}
+            $constSlot v4, $slot
+            invoke-static { v4 }, $HOTKEY_LABEL_AT
+            move-result-object v2
             iput-object v2, v1, ${builder.contentDescriptionField}
 
             new-instance v3, $HOTKEY_CLASS
@@ -127,7 +132,6 @@ private fun hotkeysEmission(builder: AccessPointBuilder): String {
 
             const-string v3, "flexboard_hotkey_$slot"
             invoke-static { v3, v2 }, $TOOLBAR_REGISTER
-            :$absent
         """
     }
 }

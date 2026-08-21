@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import dev.jz6.flexboard.extension.hotkey.Hotkey;
 import dev.jz6.flexboard.extension.ime.ImeService;
 import dev.jz6.flexboard.extension.prefs.Preferences;
 
@@ -71,11 +72,18 @@ public final class ToolbarMerge {
      * effect on rebuild without a restart.
      */
     public static synchronized void register(String id, Object ap) {
+        // Empty hotkey slots never reach the bar. The slot number is derived at patch time so
+        // the emission can stay label-free — every slot is built and registered, and the empty
+        // ones are filtered here.
         for (int i = 0; i + 1 < cohort.size(); i += 2) {
             if (cohort.get(i).equals(id)) {
                 cohort.set(i + 1, ap);
                 return;
             }
+        }
+        int slot = hotkeySlotOf(id);
+        if (slot >= 1 && !Hotkey.hasContent(slot)) {
+            return;
         }
         cohort.add(id);
         cohort.add(ap);

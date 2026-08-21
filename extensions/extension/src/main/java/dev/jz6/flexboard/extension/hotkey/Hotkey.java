@@ -108,20 +108,23 @@ public final class Hotkey implements Runnable {
     }
 
     /**
-     * The button name for a slot, or {@code null} if the slot is empty.
+     * The button name for a slot, or an empty string if the slot is untouched.
      *
-     * <p>Called from patched bytecode while the toolbar is being built, and <b>null is what makes
-     * an empty slot vanish</b>: the emitted block branches past the whole button on null, so an
-     * untouched Flexboard puts no hotkeys on the bar at all and each one appears as it is filled
-     * in. That is the off switch for this feature, and it is per-button.
+     * <p>Called from patched bytecode while the toolbar is being built. Empty slots still get
+     * constructed and registered — the "no button" logic lives in the merge, which reads the
+     * label off the freshly built access point and skips the empty ones. That keeps the patch
+     * emission free of labels, which is what lets two toolbar patches insert into the same
+     * split method without tripping Morphe's label bookkeeping.
      *
      * <p>Whitespace counts as empty. A slot holding a space would otherwise be a button with an
      * invisible name that types nothing anyone can see.
+     *
+     * @return the trimmed first-line label, or an empty string when the slot is unset/blank.
      */
     public static String labelAt(int slot) {
         String text = textAt(slot);
         if (text == null) {
-            return null;
+            return "";
         }
 
         // First line only. A multi-line snippet is perfectly reasonable to type and a terrible
@@ -133,6 +136,11 @@ public final class Hotkey implements Runnable {
         }
 
         return line.length() <= LABEL_MAX ? line : line.substring(0, LABEL_MAX) + ELLIPSIS;
+    }
+
+    /** True when a slot has a non-empty label, as a merge-side filter for empty slots. */
+    public static boolean hasContent(int slot) {
+        return !labelAt(slot).isEmpty();
     }
 
     /** The stored snippet for a slot, or {@code null} when unset, blank, or stored as the wrong
