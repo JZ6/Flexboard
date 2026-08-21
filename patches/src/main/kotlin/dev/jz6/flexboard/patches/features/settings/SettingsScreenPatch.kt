@@ -84,26 +84,6 @@ internal val scrubSettingsScreenPatch = resourcePatch(
         // during recompilation, and the preference XML references it by name.
         writeDrawableResource("flexboard_settings_icon.xml")
 
-        // Write custom hotkey icon drawables. These are resolved by name at runtime via
-        // getIdentifier, so the patch does not need to know the resource IDs aapt2 assigns.
-        writeDrawableResource("flexboard_hotkey_icon_1.xml")
-        writeDrawableResource("flexboard_hotkey_icon_2.xml")
-        writeDrawableResource("flexboard_hotkey_icon_3.xml")
-        writeDrawableResource("flexboard_hotkey_icon_4.xml")
-        writeDrawableResource("flexboard_hotkey_icon_5.xml")
-        writeDrawableResource("flexboard_hotkey_icon_6.xml")
-        writeDrawableResource("flexboard_hotkey_icon_7.xml")
-        writeDrawableResource("flexboard_hotkey_icon_8.xml")
-        writeDrawableResource("flexboard_hotkey_icon_9.xml")
-        writeDrawableResource("flexboard_hotkey_icon_10.xml")
-        writeDrawableResource("flexboard_hotkey_icon_11.xml")
-        writeDrawableResource("flexboard_hotkey_icon_12.xml")
-        writeDrawableResource("flexboard_icon_snowflake.xml")
-        writeDrawableResource("flexboard_icon_token.xml")
-        for (n in 1..9) {
-            writeDrawableResource("flexboard_icon_counter_$n.xml")
-        }
-
         document(GBOARD_SETTINGS_XML).use { settings ->
             settings.addFlexboardEntry(packageName)
         }
@@ -161,7 +141,7 @@ private const val ENTRY_TITLE = "Flexboard"
  * ticked, and this row is added by every one of them — naming the sliders meant rewriting this line
  * each time a feature landed, and it was already stale once.
  */
-private const val ENTRY_SUMMARY = "Gesture, toolbar and hotkey settings"
+private const val ENTRY_SUMMARY = "Gesture and toolbar settings"
 
 /** Ignored once the intent carries a component, but it is what v0.3 shipped. */
 private const val ENTRY_ACTION = "android.intent.action.MAIN"

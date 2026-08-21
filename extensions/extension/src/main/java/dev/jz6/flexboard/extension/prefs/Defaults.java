@@ -18,16 +18,16 @@ import android.content.SharedPreferences;
  * different starting numbers for new installs without disturbing anyone.
  *
  * <p><b>Only when unset.</b> Each key is guarded separately rather than behind a single "have we
- * seeded" marker, so someone who has set only the swipe length still gets the toolbar numbers when
- * those arrive. The framework's own {@link SharedPreferences#contains} is the test, which is also
- * why nothing here names anything of Gboard's.
+ * seeded" marker, so a partial grant still fills in whatever arrived after it. The framework's own
+ * {@link SharedPreferences#contains} is the test, which is also why nothing here names anything of
+ * Gboard's.
  *
  * <p><b>Where this runs.</b> {@code seedDefaultsPatch} calls it from Gboard's Application start,
  * before any keyboard is built and so before any of these is read. The patched call passes the
  * {@code LatinApp} itself, which is an {@code Application} and therefore a {@link Context}; nothing
  * obfuscated crosses the boundary.
  *
- * <p>All three keys are seeded whichever patches were applied. A key belonging to a patch the user
+ * <p>All keys are seeded whichever patches were applied. A key belonging to a patch the user
  * did not pick is inert — read by nothing — and the alternative is threading patch selection into
  * the extension, which is the same wart the settings screen already documents for its sections.
  */
@@ -44,49 +44,14 @@ public final class Defaults {
 
     private static final int STEP_SCALE_DEFAULT = 60;
 
-    /** Must match TOOLBAR_COUNT_KEY in ToolbarCountPatch.kt. */
-    private static final String KEY_TOOLBAR_COUNT = "flexboard_toolbar_count";
-
-    private static final int TOOLBAR_COUNT_DEFAULT = 6;
-
-    /**
-     * Must match TOOLBAR_COUNT_UNFOLDED_KEY in ToolbarCountPatch.kt.
-     *
-     * <p>Twelve rather than six because the inner screen of a fold is wide enough for them, and
-     * because Gboard itself keeps a separate count per device class — the two screens differing is
-     * stock behaviour, not something Flexboard introduces. Each slider owns its screen: this one is
-     * not a fallback to the other.
-     */
-    private static final String KEY_TOOLBAR_COUNT_UNFOLDED = "flexboard_toolbar_count_unfolded";
-
-    private static final int TOOLBAR_COUNT_UNFOLDED_DEFAULT = 12;
-
     private Defaults() {}
 
     /** Called from patched bytecode at Gboard's Application start. */
     public static void seed(Context context) {
         SharedPreferences preferences = Preferences.of(context);
 
-        SharedPreferences.Editor editor = preferences.edit();
-        boolean wrote = false;
-
         if (!preferences.contains(KEY_STEP_SCALE)) {
-            editor.putInt(KEY_STEP_SCALE, STEP_SCALE_DEFAULT);
-            wrote = true;
-        }
-        if (!preferences.contains(KEY_TOOLBAR_COUNT)) {
-            editor.putInt(KEY_TOOLBAR_COUNT, TOOLBAR_COUNT_DEFAULT);
-            wrote = true;
-        }
-        if (!preferences.contains(KEY_TOOLBAR_COUNT_UNFOLDED)) {
-            editor.putInt(KEY_TOOLBAR_COUNT_UNFOLDED, TOOLBAR_COUNT_UNFOLDED_DEFAULT);
-            wrote = true;
-        }
-
-        // Nothing to commit on every start but the first, which is the common case by a very long
-        // way — this runs on each cold start for the life of the install.
-        if (wrote) {
-            editor.apply();
+            preferences.edit().putInt(KEY_STEP_SCALE, STEP_SCALE_DEFAULT).apply();
         }
     }
 }

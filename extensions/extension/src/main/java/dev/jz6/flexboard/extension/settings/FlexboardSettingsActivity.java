@@ -1,7 +1,6 @@
 package dev.jz6.flexboard.extension.settings;
 
 import android.annotation.SuppressLint;
-import android.app.AlertDialog;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
@@ -9,27 +8,19 @@ import android.content.res.Configuration;
 import android.content.res.TypedArray;
 import android.graphics.Insets;
 import android.graphics.Typeface;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.InputType;
-import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
-import android.widget.EditText;
-import android.widget.GridLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
-import dev.jz6.flexboard.extension.hotkey.Hotkey;
 import dev.jz6.flexboard.extension.prefs.Preferences;
 
 /**
@@ -63,19 +54,12 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  *
  * <p><b>It writes to Gboard's own preference file, deliberately</b>, so the bytecode patches can
  * read every value back with Gboard's own accessor. Which file that is turns out to be the subtle
- * part — it is not this Activity's — and the reasoning lives in {@link Preferences}, which the
- * keyboard-side hotkey actions share.
+ * part — it is not this Activity's — and the reasoning lives in {@link Preferences}.
  *
  * <p>The keys must match the ones the bytecode patches read. They are duplicated as literals in
- * <code>ScrubTuningPatch.kt</code> and <code>ToolbarCountPatch.kt</code>, because a patch-added
- * resource has no id until aapt2 recompiles and so cannot be addressed from bytecode.
- * <code>check_shared_constants.py</code> fails the build when the two sides disagree.
- *
- * <p><b>Every section is shown whether or not its patch was applied.</b> The screen is one merged
- * class and cannot know which patches the user ticked, so a slider for a patch that is not installed
- * moves and stores and does nothing. Grouping by feature is what makes that legible; making it
- * conditional would need a marker preference written at app start, which is another bytecode
- * insertion for a cosmetic gain.
+ * <code>ScrubTuningPatch.kt</code>, because a patch-added resource has no id until aapt2 recompiles
+ * and so cannot be addressed from bytecode. <code>check_shared_constants.py</code> fails the build
+ * when the two sides disagree.
  */
 public final class FlexboardSettingsActivity extends Activity {
 
@@ -113,126 +97,33 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final int HOLD_DELAY_MAX = 300;
     private static final int HOLD_DELAY_DEFAULT = 0;
 
-    /** Must match TOOLBAR_COUNT_KEY in ToolbarCountPatch.kt. */
-    private static final String KEY_TOOLBAR_COUNT = "flexboard_toolbar_count";
-
-    /**
-     * Must match TOOLBAR_COUNT_UNFOLDED_KEY in ToolbarCountPatch.kt.
-     *
-     * <p>Applies only while the device reports itself as a foldable, which in practice means the
-     * large inner screen of an open fold. Gboard keeps its own count per device class for the same
-     * reason, so a single value for both screens would be a change from stock rather than a
-     * feature.
-     *
-     * <p>The patch falls back to {@link #KEY_TOOLBAR_COUNT} when this is unset, which is now only
-     * reachable if the first-run seed did not happen: {@code Defaults} writes both, so in practice
-     * each slider owns its screen.
-     */
-    private static final String KEY_TOOLBAR_COUNT_UNFOLDED = "flexboard_toolbar_count_unfolded";
-
-    /** Must match TOOLBAR_COUNT_MIN / TOOLBAR_COUNT_MAX in ToolbarCountPatch.kt. */
-    private static final int TOOLBAR_COUNT_MIN = 3;
-
-    private static final int TOOLBAR_COUNT_MAX = 12;
-
-    /**
-     * The starting counts, seeded on first run by {@link dev.jz6.flexboard.extension.prefs.Defaults}
-     * — these must match the values it writes.
-     *
-     * <p>They used to be one number, 5, which was Gboard's own and was <i>only</i> displayed:
-     * neither of the toolbar patch's insertions used it, so an untouched slider left the count
-     * wherever Gboard put it. Now the value is written, so what the slider shows and what the
-     * keyboard does are the same thing by construction.
-     *
-     * <p>Twelve unfolded because the inner screen of a fold fits them, and because Gboard already
-     * keeps a count per device class — the two screens differing is stock behaviour. Each slider
-     * owns its screen; neither falls back to the other.
-     */
-    private static final int TOOLBAR_COUNT_DEFAULT = 6;
-
-    private static final int TOOLBAR_COUNT_UNFOLDED_DEFAULT = 12;
-
-    /** Must match HOTKEY_SLOT_COUNT in TextActionsPatch.kt. */
-    private static final int HOTKEY_SLOT_COUNT = 12;
-
-    /**
-     * The icon each hotkey slot wears on the toolbar, drawn here beside the field that fills it.
-     *
-     * <p>These are Gboard's own drawable ids, and they resolve because this Activity is merged into
-     * Gboard's APK rather than shipped as its own app — {@code getResources()} is Gboard's. Nothing
-     * numbered is available (Gboard bundles 29 Material shapes and none of them is a digit), so the
-     * icons are arbitrary markers and the preview is what makes them learnable: the user picks the
-     * star while looking at the star.
-     *
-     * <p>Must match HOTKEY_ICON_1 through HOTKEY_ICON_6 in TextActionsPatch.kt.
-     */
-    private static final int HOTKEY_ICON_1 = 0x7f080239;
-
-    private static final int HOTKEY_ICON_2 = 0x7f0806fc;
-    private static final int HOTKEY_ICON_3 = 0x7f080215;
-    private static final int HOTKEY_ICON_4 = 0x7f08074e;
-    private static final int HOTKEY_ICON_5 = 0x7f080733;
-    private static final int HOTKEY_ICON_6 = 0x7f080219;
-
-    private static final int HOTKEY_ICON_7 = 0x7f080239;
-    private static final int HOTKEY_ICON_8 = 0x7f0806fc;
-    private static final int HOTKEY_ICON_9 = 0x7f080215;
-    private static final int HOTKEY_ICON_10 = 0x7f08074e;
-    private static final int HOTKEY_ICON_11 = 0x7f080733;
-    private static final int HOTKEY_ICON_12 = 0x7f080219;
-
-    private static final int[] HOTKEY_ICONS = {
-        HOTKEY_ICON_1, HOTKEY_ICON_2, HOTKEY_ICON_3, HOTKEY_ICON_4, HOTKEY_ICON_5, HOTKEY_ICON_6,
-        HOTKEY_ICON_7, HOTKEY_ICON_8, HOTKEY_ICON_9, HOTKEY_ICON_10, HOTKEY_ICON_11, HOTKEY_ICON_12,
-    };
-
     private static final String TITLE = "Flexboard";
     private static final String SUBTITLE = "Swipe anywhere to delete the previous word.";
     private static final String SECTION = "Swipe to delete";
-    private static final String SECTION_TOOLBAR = "Toolbar";
-    private static final String SECTION_HOTKEYS = "Hotkeys";
-
-    private static final String HOTKEYS_SUMMARY =
-            "Buttons that type a string you choose. Fill one in and its icon appears on the "
-                    + "toolbar; clear it and the button goes away again. The icon is how you tell "
-                    + "them apart, so the one shown here is the one you will be tapping.";
-
-    private static final String HOTKEY_TITLE = "Hotkey";
-
-    private static final String HOTKEY_HINT = "Empty — no button";
 
     /**
-     * The custom drawables bundled by Flexboard, available for the user to pick per slot.
-     * Each name corresponds to a vector drawable written into the APK at patch time.
+     * Fallbacks only.
+     *
+     * <p>The palette used to be picked from these by {@link Configuration#uiMode}, which is why the
+     * screen looked foreign next to Gboard's own: Gboard follows its theme, and on Android 12+ that
+     * includes Material You, so a fixed pair of palettes is the wrong shade on any themed device
+     * rather than merely a different one. The colours now come from the theme the manifest entry
+     * carries — Gboard's own settings theme — and these are what is used for any attribute that
+     * does not resolve.
      */
-    private static final String[] HOTKEY_ICON_CHOICES = {
-        "flexboard_hotkey_icon_1", // alternate_email
-        "flexboard_hotkey_icon_2", // password
-        "flexboard_hotkey_icon_3", // phone_enabled
-        "flexboard_hotkey_icon_4", // local_post_office
-        "flexboard_hotkey_icon_5", // home_pin
-        "flexboard_hotkey_icon_6", // work
-        "flexboard_hotkey_icon_7", // favorite
-        "flexboard_hotkey_icon_8", // kid_star
-        "flexboard_hotkey_icon_9", // credit_card
-        "flexboard_hotkey_icon_10", // hexagon
-        "flexboard_hotkey_icon_11", // hive
-        "flexboard_hotkey_icon_12", // sports_soccer
-        "flexboard_icon_snowflake", // snowflake
-        "flexboard_icon_token", // token
-        "flexboard_icon_counter_1", // 1
-        "flexboard_icon_counter_2", // 2
-        "flexboard_icon_counter_3", // 3
-        "flexboard_icon_counter_4", // 4
-        "flexboard_icon_counter_5", // 5
-        "flexboard_icon_counter_6", // 6
-        "flexboard_icon_counter_7", // 7
-        "flexboard_icon_counter_8", // 8
-        "flexboard_icon_counter_9", // 9
-    };
+    private static final int COLOR_DARK_BACKGROUND = 0xFF202124;
 
-    private static final String TAKES_EFFECT =
-            "Changes apply the next time the keyboard is opened.";
+    private static final int COLOR_DARK_TITLE = 0xFFE8EAED;
+    private static final int COLOR_DARK_SUMMARY = 0xFF9AA0A6;
+    private static final int COLOR_DARK_ACCENT = 0xFF8AB4F8;
+
+    private static final int COLOR_LIGHT_BACKGROUND = 0xFFFFFFFF;
+    private static final int COLOR_LIGHT_TITLE = 0xFF1F1F1F;
+    private static final int COLOR_LIGHT_SUMMARY = 0xFF5F6368;
+    private static final int COLOR_LIGHT_ACCENT = 0xFF0B57D0;
+
+    /** Above this, the background is light enough to need dark status-bar icons. */
+    private static final double LIGHT_BACKGROUND_LUMINANCE = 0.5d;
 
     /**
      * Fallbacks only.
@@ -282,9 +173,6 @@ public final class FlexboardSettingsActivity extends Activity {
 
     /** Only used when the theme gives no action bar to put the title in. */
     private static final int HEADING_SP = 28;
-
-    /** Matches the 24dp Material icons are drawn at, which is what these are. */
-    private static final int ICON_DP = 24;
 
 
     /** Renders the stored int as the value shown beside a row's title. */
@@ -372,49 +260,6 @@ public final class FlexboardSettingsActivity extends Activity {
                 HOLD_DELAY_MAX,
                 HOLD_DELAY_DEFAULT,
                 value -> value == 0 ? "Off" : value + " ms");
-
-        addSectionHeader(column, SECTION_TOOLBAR);
-
-        addSlider(
-                column,
-                KEY_TOOLBAR_COUNT,
-                "Icons on the toolbar",
-                "How many icons fit on the toolbar above the keyboard. The rest stay in the "
-                        + "overflow menu behind the chevron. More icons means narrower ones.",
-                TOOLBAR_COUNT_MIN,
-                TOOLBAR_COUNT_MAX,
-                TOOLBAR_COUNT_DEFAULT,
-                value -> Integer.toString(value));
-
-        addSlider(
-                column,
-                KEY_TOOLBAR_COUNT_UNFOLDED,
-                "Icons when unfolded",
-                "Foldables only. Overrides the setting above while the phone is open, because the "
-                        + "inner screen is wider and fits more. It has its own value rather than "
-                        + "following the setting above.",
-                TOOLBAR_COUNT_MIN,
-                TOOLBAR_COUNT_MAX,
-                TOOLBAR_COUNT_UNFOLDED_DEFAULT,
-                value -> Integer.toString(value));
-
-        addSectionHeader(column, SECTION_HOTKEYS);
-
-        TextView hotkeys = new TextView(this);
-        hotkeys.setText(HOTKEYS_SUMMARY);
-        hotkeys.setTextColor(colorSummary);
-        hotkeys.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
-        column.addView(hotkeys, marginTop(dp(LOOSE_DP)));
-
-        for (int slot = 1; slot <= HOTKEY_SLOT_COUNT; slot++) {
-            addHotkeyField(column, slot, HOTKEY_ICONS[slot - 1]);
-        }
-
-        TextView footnote = new TextView(this);
-        footnote.setText(TAKES_EFFECT);
-        footnote.setTextColor(colorSummary);
-        footnote.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
-        column.addView(footnote, marginTop(dp(EDGE_DP)));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(colorBackground);
@@ -652,170 +497,6 @@ public final class FlexboardSettingsActivity extends Activity {
                     public void onStopTrackingTouch(SeekBar seekBar) {}
                 });
         parent.addView(bar, marginTop(dp(LOOSE_DP)));
-    }
-
-    /**
-     * One hotkey row: the slot's toolbar icon, its name, and the string it types.
-     *
-     * <p><b>The icon is the point of the row.</b> Six hotkeys are six identical buttons on the bar
-     * unless the user can remember which shape does what, and the reliable moment to learn that is
-     * while typing the string. So the row shows the actual drawable the button will wear, loaded
-     * out of the host APK by id.
-     *
-     * <p>Written on every keystroke rather than on focus loss, matching the sliders: the value is
-     * already stored if the screen is dismissed mid-edit, and the keyboard rereads it either way.
-     */
-    private void addHotkeyField(LinearLayout parent, final int slot, int iconResource) {
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        final ImageView iconView = new ImageView(this);
-        int currentIcon = Hotkey.iconAt(slot, iconResource);
-        Drawable glyph = drawable(currentIcon);
-        if (glyph != null) {
-            iconView.setImageDrawable(glyph);
-        }
-        LinearLayout.LayoutParams iconParams =
-                new LinearLayout.LayoutParams(dp(ICON_DP), dp(ICON_DP));
-        iconParams.rightMargin = dp(LOOSE_DP + TIGHT_DP);
-        iconView.setLayoutParams(iconParams);
-        iconView.setClickable(true);
-        iconView.setFocusable(true);
-        iconView.setOnClickListener(v -> showIconPicker(slot, iconResource, iconView));
-        titleRow.addView(iconView);
-
-        TextView titleView = new TextView(this);
-        titleView.setText(HOTKEY_TITLE + " " + slot);
-        titleView.setTextColor(colorTitle);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, TITLE_SP);
-        titleRow.addView(
-                titleView,
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        parent.addView(titleRow, marginTop(dp(ROW_TOP_DP)));
-
-        final String key = Hotkey.keyFor(slot);
-        final EditText field = new EditText(this);
-        field.setText(preferences.getString(key, ""));
-        field.setHint(HOTKEY_HINT);
-        field.setTextColor(colorTitle);
-        field.setHintTextColor(colorSummary);
-        field.setTextSize(TypedValue.COMPLEX_UNIT_SP, SUMMARY_SP);
-        // Multi-line, because a signature or an address is a perfectly reasonable thing to want on
-        // a button. Only the first line becomes the button's name; the whole of it gets typed.
-        field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        // Neutral underline — a saturated accent line under every field reads as an error bar,
-        // and there are twelve of them.
-        field.setBackgroundTintList(ColorStateList.valueOf(colorSummary));
-        field.addTextChangedListener(
-                new TextWatcher() {
-                    @Override
-                    public void beforeTextChanged(
-                            CharSequence text, int start, int count, int after) {}
-
-                    @Override
-                    public void onTextChanged(CharSequence text, int start, int before, int count) {}
-
-                    @Override
-                    public void afterTextChanged(Editable text) {
-                        preferences.edit().putString(key, text.toString()).apply();
-                    }
-                });
-        parent.addView(field, marginTop(dp(TIGHT_DP)));
-    }
-
-    /**
-     * A grid of bundled icons the user can pick for a hotkey slot.
-     *
-     * <p>Tapping an icon writes its drawable resource name to
-     * {@code flexboard_hotkey_<slot>_icon} in preferences and updates the preview immediately.
-     * {@link Hotkey#iconAt(int, int)} reads that preference at toolbar-build time, so the new
-     * icon appears the next time the keyboard opens.
-     */
-    private void showIconPicker(int slot, int defaultResId, ImageView preview) {
-        GridLayout grid = new GridLayout(this);
-        grid.setColumnCount(4);
-
-        String currentName = preferences.getString("flexboard_hotkey_" + slot + "_icon", null);
-
-        for (String name : HOTKEY_ICON_CHOICES) {
-            int resId = getResources().getIdentifier(name, "drawable", getPackageName());
-            if (resId == 0) continue;
-            Drawable glyph = drawable(resId);
-            if (glyph == null) continue;
-
-            ImageView item = new ImageView(this);
-            item.setImageDrawable(glyph);
-            int size = dp(48);
-            GridLayout.LayoutParams params = new GridLayout.LayoutParams();
-            params.width = size;
-            params.height = size;
-            params.setMargins(dp(8), dp(8), dp(8), dp(8));
-            item.setLayoutParams(params);
-            item.setClickable(true);
-            item.setFocusable(true);
-            if (name.equals(currentName)) {
-                item.setAlpha(0.5f);
-            }
-            grid.addView(item);
-        }
-
-        final AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Choose an icon")
-                .setView(grid)
-                .setNegativeButton("Reset to default", (d, which) -> {
-                    preferences.edit().remove("flexboard_hotkey_" + slot + "_icon").apply();
-                    Drawable def = drawable(defaultResId);
-                    if (def != null) {
-                        preview.setImageDrawable(def);
-                    }
-                })
-                .setNeutralButton("Cancel", null)
-                .create();
-
-        for (int i = 0; i < grid.getChildCount(); i++) {
-            ImageView item = (ImageView) grid.getChildAt(i);
-            final String iconName = HOTKEY_ICON_CHOICES[i];
-            final int iconResId = getResources().getIdentifier(
-                    iconName, "drawable", getPackageName());
-            item.setOnClickListener(v -> {
-                preferences.edit()
-                        .putString("flexboard_hotkey_" + slot + "_icon", iconName).apply();
-                Drawable picked = drawable(iconResId);
-                if (picked != null) {
-                    preview.setImageDrawable(picked);
-                }
-                dialog.dismiss();
-            });
-        }
-
-        dialog.show();
-    }
-
-    /**
-     * One of Gboard's own drawables, or {@code null} if that id no longer names one.
-     *
-     * <p>The ids are pinned to a single Gboard build, the same way the buttons themselves are, and
-     * {@code tools/apk/preflight.py} fails the build when one stops drawing the expected glyph. If
-     * one slips through anyway, a hotkey row should lose its picture rather than the settings
-     * screen losing its ability to open.
-     *
-     * <p><b>Mutated before tinting.</b> These drawables are Gboard's, shared by constant state with
-     * wherever else Gboard draws them, so tinting the original would recolour them across the app.
-     */
-    private Drawable drawable(int id) {
-        try {
-            Drawable glyph = getResources().getDrawable(id, getTheme());
-            if (glyph == null) {
-                return null;
-            }
-            glyph = glyph.mutate();
-            glyph.setTint(colorTitle);
-            return glyph;
-        } catch (RuntimeException notFound) {
-            return null;
-        }
     }
 
     private LinearLayout.LayoutParams marginTop(int margin) {
