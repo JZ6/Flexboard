@@ -1,3 +1,8 @@
+# [1.2.2-dev.3](https://github.com/JZ6/Flexboard/compare/v1.2.2-dev.1...v1.2.2-dev.3) (2026-08-21)
+
+* **Gboard:** fix: hotkeySlotOf was called without being declared
+* **Gboard:** fix: drop empty-slot smali labels — merge filters them in the extension
+
 # [1.2.2-dev.1](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.10...v1.2.2-dev.1) (2026-08-21)
 
 * **Gboard:** fix: import emitToolbarMergeCall in BasePatch

@@ -89,6 +89,22 @@ public final class ToolbarMerge {
         cohort.add(ap);
     }
 
+    /**
+     * The slot number a hotkey id names, or {@code -1} for any other entry. Reading the slot lets
+     * [register] drop an unfilled hotkey without the patch having to decide at emission time.
+     */
+    private static int hotkeySlotOf(String id) {
+        if (!id.startsWith("flexboard_hotkey_")) {
+            return -1;
+        }
+        String numeral = id.substring("flexboard_hotkey_".length());
+        try {
+            return Integer.parseInt(numeral);
+        } catch (NumberFormatException badId) {
+            return -1;
+        }
+    }
+
     /** Called from the emitted split-method epilogue, once per toolbar build. */
     public static List merge(List incoming) {
         synchronized (ToolbarMerge.class) {
