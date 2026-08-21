@@ -4,42 +4,38 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import com.android.tools.smali.dexlib2.iface.ClassDef
+import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
-import dev.jz6.flexboard.patches.features.toolbar.AccessPointBuilder
-import dev.jz6.flexboard.patches.features.toolbar.methodsMatching
-import dev.jz6.flexboard.patches.features.toolbar.splitsAccessPoints
-import dev.jz6.flexboard.patches.shared.toDescriptor
 
 /**
  * One toolbar button registered through Gboard's **own** access-point machinery, rather than
  * spliced into the split method's list.
  *
- * Handles a button end-to-end: a unique allowed-set id, a label (string resource id or a literal),
- * an icon, and a `Runnable` click action. Only no-argument `Runnable` constructors are supported
- * right now — the first button slot where a parameterized action is needed is also the place to
- * generalize this without paying for it ahead of time.
+ * Handles a button end-to-end: an allowed-set id, a label (string resource id or a literal),
+ * an icon, and a `Runnable` click action. The action may take `Int` constructor arguments —
+ * one class in the extension can serve many buttons this way, told apart by an ordinal (see
+ * `TextAction.java`).
  *
  * ## What makes this "native"
  *
  * The access-point id has to be picked from Gboard's allowed set — `res/array/…` id
  * `0x7f0300dc`, read once at startup into the order manager. Any other string is dropped by the
  * read filter before the customize UI ever writes the order back, so a button keyed on it can
- * be dragged but never persisted. The ids this layer is meant to be used with are the dormant
- * ids in that array (see `ToolbarNativeTestPatch` for the list), borrowed without touching a
- * single resource file.
+ * be dragged but never persisted. The ids this layer is used with are the dormant ones in that
+ * array — borrowed without touching a single resource file.
  *
  * With an allowed id, the whole Gboard-native flow then just happens: the read filter passes,
- * `Lmlh;->g(mic, true)` lands the definition in the registry map and folds the id into the
- * shown order, the customize-write path stores the order string verbatim, and on every reload
- * the order manager re-folds any registered id back in.
+ * the controller's register call lands the definition in the registry map and folds the id into
+ * the shown order, the customize-write path stores the order string verbatim, and on every
+ * reload the order manager re-folds any registered id back in.
  *
  * ## Where the call goes
  *
  * The bar controller's constructor. By its tail the registry map is initialized and the order
  * manager has already read the allowed set from resources, so a registration here is a full
  * native registration at the one instant that predates every observer. The emission anchors
- * on the tail `return-void`, writes into dead scratch registers `v0`/`v1`, and leaves the
+ * on the tail `return-void`, writes into dead scratch registers `v0`/`v1`/`v2`, and leaves the
  * receiver `p0` untouched.
  */
 internal data class NativeToolbarButton(
@@ -56,22 +52,31 @@ internal data class NativeToolbarButton(
      */
     val labelRes: String? = null,
     /**
-     * The label as a literal string written straight into the builder's pass-through field —
-     * the trick hotkeys already use. The completeness bit still has to be set, so when a literal
-     * is given the resource-id setter is called with `0` first.
+     * The label as a literal string written straight into the builder's pass-through field.
+     * The completeness bit still has to be set, so when a literal is given the resource-id
+     * setter is called with `0` first.
      */
     val labelLiteral: String? = null,
     /** Same shape as label. Defaults to whatever the label uses. Mutually exclusive per-row. */
     val contentDescriptionRes: String? = null,
     val contentDescriptionLiteral: String? = null,
     /**
-     * The extension-side `Runnable` click action, as a full no-arg constructor descriptor —
-     * `"Ldev/jz6/flexboard/extension/toolbar/TestAction;-><init>()V"`, not just the class
-     * name. The helper extracts the class half from this to emit `new-instance`, and hands the
-     * full string to `invoke-direct`. Declaring it as a `const val` in the patch file is what
-     * lets `check_shared_constants.py` see the emission across the helper boundary.
+     * The extension-side `Runnable` click action, as a full constructor descriptor —
+     * `"Ldev/jz6/flexboard/extension/toolbar/TestAction;-><init>()V"` or
+     * `"Ldev/jz6/flexboard/extension/textaction/TextAction;-><init>(I)V"`, not just the class
+     * name. The helper extracts the class half for `new-instance`, and hands the full string to
+     * `invoke-direct`.
+     *
+     * Declaring it as a `const val` in the patch file is what lets `check_shared_constants.py`
+     * see the emission across the helper boundary.
      */
     val actionCtor: String,
+    /**
+     * `Int` constructor arguments, loaded as `const/4` (or `const/16` above 7) before the
+     * `<init>` invoke. The count and types must match [actionCtor]'s parameter list. At most
+     * one int is supported today — that is the shape the existing consumers need.
+     */
+    val actionArgs: List<Int> = emptyList(),
 ) {
     init {
         require((labelRes != null) != (labelLiteral != null)) {
@@ -82,11 +87,23 @@ internal data class NativeToolbarButton(
         ) {
             "At most one of contentDescriptionRes / contentDescriptionLiteral must be set on $id"
         }
-        require(actionCtor.endsWith("-><init>()V")) {
-            "actionCtor on $id must be a no-arg constructor: $actionCtor"
-        }
         require(actionCtor.startsWith("Ldev/jz6/flexboard/extension/")) {
             "actionCtor on $id must live in the extension: $actionCtor"
+        }
+        val paramList = actionCtor.substringAfter("-><init>(", "").substringBefore(")")
+        require(actionCtor.contains("-><init>(")) {
+            "actionCtor on $id must be a constructor descriptor: $actionCtor"
+        }
+        require(paramList.all { it == 'I' }) {
+            "actionCtor on $id must take only Int parameters (one per actionArgs entry): $actionCtor"
+        }
+        require(paramList.length == actionArgs.size) {
+            "actionCtor on $id declares ${paramList.length} Int parameters but " +
+                "actionArgs has ${actionArgs.size}: $actionCtor vs $actionArgs"
+        }
+        require(actionArgs.size <= 1) {
+            "actionArgs on $id carries ${actionArgs.size} parameters; only one Int slot is " +
+                "emitted today, and the shape that needs more is also the place to generalize this"
         }
     }
 
@@ -98,6 +115,22 @@ internal data class NativeToolbarButton(
 /** The bar-controller's `<init>` register count on Gboard 18.0.3 — the value the insertion
  * assumes. A Gboard bump that moves this is asserted by preflight. */
 private const val CONTROLLER_INIT_REGISTER_COUNT = 13
+
+/** `const/4` encodes a 4-bit signed value, so it holds at most 7; larger args use `const/16`. */
+private const val MAX_CONST_4_VALUE = 7
+
+/** The bar-versus-overflow split, identified by what it does to its `List` parameter. */
+private fun Method.splitsAccessPoints(): Boolean {
+    if (parameterTypes.map(Any::toString) != listOf("Ljava/util/List;")) return false
+    if (returnType != "V") return false
+    val called = calledDescriptors()
+    return called.count { it == "Ljava/util/List;->subList(II)Ljava/util/List;" } == 2 &&
+        called.any { it == "Ljava/lang/Math;->min(II)I" }
+}
+
+private fun Method.calledDescriptors(): List<String> =
+    implementation?.instructions?.toList().orEmpty()
+        .mapNotNull { ((it as? ReferenceInstruction)?.reference as? MethodReference)?.toString() }
 
 // -------------------------------------------------------------------------------------------
 // Where the call goes
@@ -115,8 +148,7 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
 ) {
     check(buttons.isNotEmpty()) { "emitNativeToolbarButtons called with no buttons" }
 
-    // Anchor the bar-controller class on the split method the other toolbar patches already
-    // locate — one derivation rather than two that can drift.
+    // Anchor the bar-controller class on the split method — shape-derived, not name-derived.
     val split = methodsMatching { it.splitsAccessPoints() }.single()
     val controllerType = split.definingClass
     val controllerClass = classDefByOrNull(controllerType)
@@ -135,11 +167,12 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
         "$initDescriptor has no return-void — the constructor's shape has changed"
     }
 
-    // Two scratch registers are all a button's emission touches: v0 holds the builder being
-    // built and then the finished `mic`, v1 holds each argument in turn. The receiver `p0`
-    // (v10 at this register count) is read as `g`'s target, never written.
+    // Three scratch registers cover everything a button's emission touches: v0 holds the builder
+    // then the finished `mic`, v1 holds each argument in turn, and v2 is needed only when an
+    // action has an Int ordinal (the action instance sits in v1, the ordinal in v2).
+    // The receiver `p0` (v10 at this register count) is read as `g`'s target, never written.
     validateScratchRegisters(
-        scratch = listOf(0, 1),
+        scratch = listOf(0, 1, 2),
         avoid = listOf(10, 11, 12),
         what = initDescriptor,
     )
@@ -244,6 +277,15 @@ private fun NativeToolbarButton.toSmali(
             iput-object v1, v0, ${builder.contentDescriptionField}
         """.trimIndent()
 
+    // v1: the Runnable instance. v2 (scratch, only when args exist): the ordinal load.
+    val argSetup = if (actionArgs.isEmpty()) ""
+    else {
+        val arg = actionArgs.single()
+        val constOp = if (arg <= MAX_CONST_4_VALUE) "const/4" else "const/16"
+        "\n        $constOp v2, $arg"
+    }
+    val ctorRegisters = if (actionArgs.isEmpty()) "v1" else "v1, v2"
+
     return """
         invoke-static { }, ${builder.newBuilder}
         move-result-object v0
@@ -257,8 +299,8 @@ private fun NativeToolbarButton.toSmali(
         $labelSetters
         $descSetters
 
-        new-instance v1, ${actionCtor.substringBefore("->")}
-        invoke-direct { v1 }, $actionCtor
+        new-instance v1, ${actionCtor.substringBefore("->")}$argSetup
+        invoke-direct { $ctorRegisters }, $actionCtor
         invoke-virtual { v0, v1 }, ${builder.setAction}
 
         invoke-virtual { v0 }, ${builder.build}

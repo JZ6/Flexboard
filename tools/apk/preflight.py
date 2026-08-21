@@ -150,17 +150,12 @@ EXPECTED = {
     # the patch -- it reads the preference with whatever Gboard computed -- but it is the number the
     # settings slider displays while unset, so it has to stay true.
     'toolbar_stock_count': 5,
-    # ---- the native-registration path in ToolbarNativeTestPatch
+    # ---- the native-registration path in ToolbarNativeTestPatch and ToolbarButtonsPatch
     #
     # The bar-controller's constructor is the hook site, so its register count is pinned. A bump
     # moves it and the insertion would write past the locals, which is invisible until the phone
     # verifies. Currently 13 on Gboard 18.0.3.
     'native_controller_init_registers': 13,
-    # The id the test button registers under. Allowed-set membership is verified from the ARSC
-    # array below, when the APK is given; dex-side it has to be name-shadowed, i.e. the literal
-    # appears nowhere. If a future Gboard adds a real handler for it the two would collide, and
-    # this check is the only thing that would notice in time.
-    'native_test_id': 'flag_editor',
     # The ARSC string-array listing what the toolbar accepts. The id has to be in this array or
     # the read filter drops the persisted order's mention of the button, which is the whole point
     # of native registration.
@@ -186,23 +181,18 @@ EXPECTED = {
     # Of those, the ones whose literal is a String and so can be written directly. The icon's
     # literal is an Icon, which is why it is not here.
     'hotkey_literal_properties': [' label', ' contentDescription'],
-    'hotkey_slots': 6,
-    # One icon per hotkey slot, asserted by glyph rather than by type -- a renumbering would still
-    # land on something reading 'drawable/'. Gboard bundles no numbered glyphs, so these are
-    # arbitrary markers and the settings screen previews each one; showing the user one shape and
-    # putting another on the bar would take away the only thing telling six buttons apart.
-    'hotkey_icons': [
-        ('star', 0x7f080239, 'M12,17.27L18.18,21l-1.64,-7.03L22,9.24l-7.19,-'),
-        ('auto_awesome', 0x7f0806fc, 'M19,9l1.25,-2.75L23,5l-2.75,-1.25L19,1l-1.25,2'),
-        ('content_cut', 0x7f080215, 'M9.64,7.64c0.23,-0.5 0.36,-1.05 0.36,-1.64 0,-'),
-        ('check_box', 0x7f08074e, 'M19,3L5,3c-1.11,0 -2,0.9 -2,2v14c0,1.1 0.89,2 '),
-        ('radio_button_unchecked', 0x7f080733,
-         'M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.4'),
-        ('share', 0x7f080219, 'M18,16.08c-0.76,0 -1.44,0.3 -1.96,0.77L8.91,12'),
+    # Toolbar ids Flexboard's native-registered buttons borrow from the allowed-set array. They
+    # have to be in the array (else the read filter drops them) AND dormant in dex (else our
+    # definition would clobber a real Gboard AP with the same id). One entry per registered
+    # button, so a future bump that adds a real handler for one is caught here before it ships.
+    'native_button_ids': [
+        # ToolbarButtonsPatch
+        'editor_info',
+        'undo_cooperative',
+        'muse_toggle_playground_ap',
+        # ToolbarNativeTestPatch (same id the dedicated check above fires off).
+        'flag_editor',
     ],
-    'buttons_split_registers': 7,
-    'buttons_split_ins': 2,
-    'buttons_split_scratch': [0, 1, 2, 3, 4],
     'buttons_oncreate_registers': 12,
     # The keycode Gboard wraps a Runnable in, and the dispatcher that runs it. Two other classes
     # test this keycode and decline it, so "something tests it" is not the check that matters.
@@ -1342,53 +1332,16 @@ def run(dl, apk=None):
                           signature in glyph(icon_id),
                           f'{hex(icon_id)} no longer draws it')
 
-            # The hotkey icons have no label to go with them -- a hotkey is named by the user's own
-            # snippet -- so the glyph is the whole of what the check can be about.
-            check('hotkeys: there is an icon per slot',
-                  len(E['hotkey_icons']) == E['hotkey_slots'],
-                  f"{len(E['hotkey_icons'])} icons for {E['hotkey_slots']} slots")
-            check('hotkeys: no two slots share an icon',
-                  len({i for _n, i, _s in E['hotkey_icons']}) == len(E['hotkey_icons']),
-                  'two slots would be indistinguishable on the bar')
-            for name, icon_id, signature in E['hotkey_icons']:
-                drawable = table.name(icon_id)
-                if check(f'hotkeys: the {name} icon id is still a drawable',
-                         str(drawable).startswith('drawable/'), f'reads {drawable!r}'):
-                    check(f'hotkeys: it is still the {name} glyph',
-                          signature in glyph(icon_id),
-                          f'{hex(icon_id)} no longer draws it')
         except Exception as exc:
             check('buttons: the label id still reads "Select all"', False,
                   f'could not read resources from {apk}: {exc}')
 
-    if check('buttons: exactly one access-points split method', len(splits) == 1, str(splits)):
-        c, ins = body(dl, splits[0])
-        check('buttons: the split register count',
-              c['registers'] == E['buttons_split_registers'], f'got {c["registers"]}')
-        check('buttons: the split parameter words',
-              c['ins'] == E['buttons_split_ins'], f'got {c["ins"]}')
-        free = live_free(ins, c['registers'], 0)
-        want = E['buttons_split_scratch']
-        check('buttons: the scratch registers are dead at the split entry',
-              all(r in free for r in want), f'free={free} want={want}')
-        # The list parameter is substituted wholesale at entry, so it has to still be genuinely an
-        # input: some path must read it before writing it.
-        #
-        # "Never written" is the wrong test and fails here for a benign reason. The method opens
-        # with an early return taken when the bar view is null, and that path reuses the parameter
-        # register as scratch before returning -- it never reads the list at all. Backward liveness
-        # over the real CFG answers the question that actually matters, and answers it soundly:
-        # if the parameter is live at entry, every path that reads it reads what was passed in.
-        p1 = c['registers'] - c['ins'] + 1
-        check('buttons: the list parameter is live at entry', p1 not in free,
-              f'v{p1} is dead at entry, so substituting it would reach nothing')
-
-    # ---- toolbar native test: registration through Lmlh.g
+    # ---- native registration: the anchor for every toolbar button
     #
-    # The patch hooks the bar controller's constructor and calls its `(ApType, Z)V` register
-    # method to put the test button into the `ArrayMap` the bar reads from. Anchors here on the
-    # same `splits` owner — the controller is the class that splits the order list, so naming it
-    # would re-derive what is already derived just above.
+    # With the legacy split-method splice removed, the only insertion point left on the bar is
+    # the controller's `<init>` tail, where each native button registers via `g(mic, true)`.
+    # The class is pinned by the split-method owning it — the same `splits` symbol the old
+    # scratch checks used to derive.
     if splits:
         controller = splits[0].split('->')[0]
         d_c, _sup_c, cd_c = find_class(dl, controller)
@@ -1432,15 +1385,14 @@ def run(dl, apk=None):
                 if ins is not None:
                     tail = len(ins) - 2   # before the final return-void
                     free = live_free(ins, c['registers'], tail)
-                    want = [0, 1]
-                    check('native: the patch\'s scratch v0, v1 are dead at the construct tail',
+                    want = [0, 1, 2]
+                    check('native: the patch\'s scratch v0, v1, v2 are dead at the construct tail',
                           all(r in free for r in want), f'free={free} want={want}')
 
-    # The id has to be dormant: nothing in Gboard's own dex should reference it. A future
-    # version adopting 'flag_editor' as a real handler would collide silently at the registry
-    # — ours would clobber its entry in mlh.h.
-    test_id = E.get('native_test_id')
-    if test_id:
+    # Each id the native path registers has to be dormant — nothing in Gboard's own dex should
+    # reference it. A future Gboard version adopting one of them as a real handler would collide
+    # silently at the registry — ours would clobber its entry in the controller's map.
+    for dorm_id in E['native_button_ids']:
         id_refs = []
         for dex in dl:
             for _cls_name, _af, cls_data in dex.classes():
@@ -1454,15 +1406,16 @@ def run(dl, apk=None):
                     except Exception:
                         continue
                     for _pc, _op, _mn, txt in dex.walk(mc):
-                        if txt and txt.strip("'\"") == test_id:
+                        if txt and txt.strip("'\"") == dorm_id:
                             id_refs.append(m_name)
                             break
-        check(f'native: {test_id!r} has no references in the dex (shadow-safe)',
+        check(f'native: {dorm_id!r} has no references in the dex (shadow-safe)',
               not id_refs, f'referenced by {sorted(set(id_refs))}')
 
-    # The id has to be in the allowed-set string array, else the read filter strips it from the
-    # persisted order. This check needs the ARSC table, so it only runs when the APK is handed in.
-    if test_id and apk is not None:
+    # Every borrowed id has to be in the allowed-set string array, else the read filter strips it
+    # from the persisted order. This check needs the ARSC table, so it only runs when the APK is
+    # handed in.
+    if apk is not None:
         try:
             import zipfile
             import arsc
@@ -1471,10 +1424,13 @@ def run(dl, apk=None):
             target = E['native_allowed_array']
             tid = (target >> 16) & 0xff
             eidx = target & 0xffff
-            members = _read_string_array(data, table, tid, eidx)
-            check(f'native: {test_id!r} is in the toolbar allowed-set array',
-                  members is not None and test_id in members,
-                  f'array has {len(members or [])} members; {test_id!r} not among them')
+            members = _read_string_array(data, table, tid, eidx) or []
+            check('native: the toolbar allowed-set array is readable',
+                  bool(members), 'bag walk returned nothing usable')
+            for dorm_id in E['native_button_ids']:
+                check(f'native: {dorm_id!r} is in the toolbar allowed-set array',
+                      dorm_id in members,
+                      f'array has {len(members)} members; {dorm_id!r} not among them')
         except Exception as exc:
             check('native: the toolbar allowed-set array is readable', False,
                   f'could not read from {apk}: {exc}')

@@ -31,21 +31,54 @@ After the test button proved out on device, the shape was promoted into a shared
 `patches/shared/ToolbarRegistry.kt`:
 
 - **`NativeToolbarButton`** — a spec carrying id / icon / label (res-or-literal) / optional
-  contentDescription / an actionCtor (`"Ldev/.../T;-><init>()V"`).
+  contentDescription / an actionCtor (`"Ldev/.../T;-><init>(... )V"`) plus `actionArgs`
+  (`const/4`-`const/16` ordinals).
 - **`emitNativeToolbarButtons(builder, buttons)`** — resolves the bar-controller class (via the
   split-method anchor), resolves the register call by shape (the unique `(ApType, Z)V` that
   `Lays.put`s into `h`), asserts the constructor register count, and emits one block per button
   at the `<init>` tail.
 
 Any future toolbar feature consumes it as `emitNativeToolbarButtons(builder, listOf(...))` and
-never thinks about hook sites, `Builders`, or the allowed-set — picking from the six dormant
-ids above. `ToolbarNativeTestPatch` is now a 30-line call into the helper.
+never thinks about hook sites, `Builders`, or the allowed-set — picking from the dormant ids
+below. `ToolbarNativeTestPatch` is now a 30-line call into the helper.
 
 A checker convention flows from this: the spec's `actionCtor` has to be a `const val` in the
 patch file, full member-descriptor form; `check_shared_constants.py` then treats each as if
 `invoke-direct` on a real extension class and verifies it against the actual Java source. The
 checker was also fixed to strip Kotlin comments before scanning — KDoc references to extension
 members were firing the "silently stopped checking" guard.
+
+## Replaced: the legacy merge splice
+
+The split-method list splice that used to implement toolbar insertion is gone:
+
+- `TextActionsPatch.kt` (three buttons emitted into `Lmlh;->C(List)V`) **deleted** — superseded
+  by `ToolbarButtonsPatch.kt` which registers the same three buttons using dormant-allowed-set
+  ids (`editor_info`, `undo_cooperative`, `muse_toggle_playground_ap`) at `<init>` tail.
+- `CustomHotkeysPatch.kt` **deleted** — the 12-slot hotkeys feature hung off the same merge
+  registry and will come back as native registration with its own ids (three dormant ids remain
+  for this — plus `jetson_feedback` and `signboard_education` — and if twelve are needed we
+  will have to widen the `0x7f0300dc` array, which is one ARSC patch).
+- `ToolbarMerge.java` and `emitToolbarMergeCall` **deleted** — no more order-string pair merge.
+  Reordering now lands in Gboard's own Customize UI; the bar rebuild path reads the resulting
+  order string as-is. The merge class was doing work Customize already knows how to do.
+- `BasePatch` no longer emits the merge call.
+
+The remaining dormant allowed-set ids and their slots:
+
+| id                          | used by                          |
+| --------------------------- | -------------------------------- |
+| `flag_editor`               | `ToolbarNativeTestPatch`         |
+| `editor_info`               | Select all                       |
+| `undo_cooperative`          | Copy                             |
+| `muse_toggle_playground_ap` | Paste                            |
+| `jetson_feedback`           | free                             |
+| `signboard_education`       | free                             |
+
+Old prefs on users' devices (`flexboard_select_all` etc. in `mlh.h`, and hotkey values in the
+user's shared-prefs) are orphaned by the swap; neither breaks anything — the old ids drop out
+of the order filter silently, and hotkey fields in the settings screen are inert until the
+hotkey patch returns in native form.
 
 ## Pending (investigated, needs implementation)
 

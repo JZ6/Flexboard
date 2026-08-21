@@ -5,6 +5,7 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.NativeToolbarButton
 import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.emitNativeToolbarButtons
+import dev.jz6.flexboard.patches.shared.resolveAccessPointBuilder
 
 /**
  * Registers a single <b>Test</b> button through Gboard's own access-point registry.

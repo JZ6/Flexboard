@@ -49,24 +49,6 @@ PAIRS = [
     ("TEXT_ACTION_SELECT_ALL", "SELECT_ALL"),
     ("TEXT_ACTION_COPY", "COPY"),
     ("TEXT_ACTION_PASTE", "PASTE"),
-    # How many hotkey slots exist, and the drawable each one wears. The count decides how many
-    # blocks the patch emits and how many rows the screen draws; the icons are what the patch puts
-    # on the button and what the screen previews beside the field that fills it. A drifted icon
-    # would show the user one shape and put another on the toolbar -- the single thing that makes
-    # six otherwise identical buttons tellable apart, quietly wrong.
-    ("HOTKEY_SLOT_COUNT", "HOTKEY_SLOT_COUNT"),
-    ("HOTKEY_ICON_1", "HOTKEY_ICON_1"),
-    ("HOTKEY_ICON_2", "HOTKEY_ICON_2"),
-    ("HOTKEY_ICON_3", "HOTKEY_ICON_3"),
-    ("HOTKEY_ICON_4", "HOTKEY_ICON_4"),
-    ("HOTKEY_ICON_5", "HOTKEY_ICON_5"),
-    ("HOTKEY_ICON_6", "HOTKEY_ICON_6"),
-    ("HOTKEY_ICON_7", "HOTKEY_ICON_7"),
-    ("HOTKEY_ICON_8", "HOTKEY_ICON_8"),
-    ("HOTKEY_ICON_9", "HOTKEY_ICON_9"),
-    ("HOTKEY_ICON_10", "HOTKEY_ICON_10"),
-    ("HOTKEY_ICON_11", "HOTKEY_ICON_11"),
-    ("HOTKEY_ICON_12", "HOTKEY_ICON_12"),
 ]
 
 # Hex is accepted because resource ids are written that way on both sides -- and on the Kotlin side
@@ -137,11 +119,13 @@ HELPER_CALL = re.compile(rf"\b({'|'.join(HELPER_CALLS)})\(\s*([A-Z_][A-Z0-9_]*)\
 # A second helper shape: `emitNativeToolbarButtons(builder, listOf(NativeToolbarButton(...)))`.
 # There is no single call-site descriptor to extract, because the button is a data-class spec —
 # the opcode is one `new-instance` + `invoke-direct` pair per NativeToolbarButton, and the action
-# comes from its `actionCtor = X` named argument. Accept both a const-val name and a direct
-# string literal; either way the resulting string must be the full `<init>()V` descriptor.
+# comes from its `actionCtor = X` named argument. Constructors may take Int args (the helper
+# emits one `const/4`/`const/16` per arg) so the member may be either `<init>()V` or
+# `<init>(I…)V`. Accept both a const-val name and a direct string literal; either way the
+# resulting string must be a full `<init>(…)V` descriptor.
 NATIVE_TOOLBAR_HELPER = "emitNativeToolbarButtons"
 NATIVE_TOOLBAR_ARG = re.compile(
-    r'\bactionCtor\s*=\s*([A-Z_][A-Z0-9_]*|"(?:' + EXTENSION_TYPE + r')-><init>\(\)V")'
+    r'\bactionCtor\s*=\s*([A-Z_][A-Z0-9_]*|"(?:' + EXTENSION_TYPE + r')-><init>\([^)]*\)V")'
 )
 
 MEMBER = re.compile(
