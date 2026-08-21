@@ -25,6 +25,28 @@ shape becomes the long-term home for Text Actions + Hotkeys (each `g(...)s` its 
 `h`), and `ToolbarMerge` shrinks back to "read the order string to seed the shown order"
 rather than the current half-broken injection.
 
+## The generalisation: NativeToolbarButton + emitNativeToolbarButtons
+
+After the test button proved out on device, the shape was promoted into a shared helper at
+`patches/shared/ToolbarRegistry.kt`:
+
+- **`NativeToolbarButton`** — a spec carrying id / icon / label (res-or-literal) / optional
+  contentDescription / an actionCtor (`"Ldev/.../T;-><init>()V"`).
+- **`emitNativeToolbarButtons(builder, buttons)`** — resolves the bar-controller class (via the
+  split-method anchor), resolves the register call by shape (the unique `(ApType, Z)V` that
+  `Lays.put`s into `h`), asserts the constructor register count, and emits one block per button
+  at the `<init>` tail.
+
+Any future toolbar feature consumes it as `emitNativeToolbarButtons(builder, listOf(...))` and
+never thinks about hook sites, `Builders`, or the allowed-set — picking from the six dormant
+ids above. `ToolbarNativeTestPatch` is now a 30-line call into the helper.
+
+A checker convention flows from this: the spec's `actionCtor` has to be a `const val` in the
+patch file, full member-descriptor form; `check_shared_constants.py` then treats each as if
+`invoke-direct` on a real extension class and verifies it against the actual Java source. The
+checker was also fixed to strip Kotlin comments before scanning — KDoc references to extension
+members were firing the "silently stopped checking" guard.
+
 ## Pending (investigated, needs implementation)
 
 **Toolbar reorder persistence — register as providers.** Gboard's customize-write path reconstructs the saved order string from the registered-provider list — the `Lmjv`/`Lmjz` order hierarchy — and drops any id it doesn't know. Our injected buttons (`flexboard_select_all`, `flexboard_copy`, `flexboard_paste`, `flexboard_hotkey_N`) aren't providers, so they never appear in the order string, and every customize session forgets them. On rebuild, `merge()` can only place them canonicallly at the front (which is why it currently always does that — see `ToolbarMerge.mergeOrdered`). To fix: register our access points with Gboard's provider machinery via a bytecode patch, instead of injecting into the bar's rendered list after the fact. Then the customize-write path has them by construction, and drag-persistence just works.

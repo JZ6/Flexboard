@@ -52,6 +52,8 @@ jobs:
       # Decides, before anything is built, whether this push is a release and what version it is.
       - name: Decide
         id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           VERSION=$(sed -nE 's/^version *= *(.+)$/\1/p' gradle.properties | tr -d '[:space:]')
@@ -77,6 +79,13 @@ jobs:
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+
+          # Verify pings raw.githubusercontent.com after the release to confirm Morphe can fetch
+          # what was published. Private repos 404 there for any caller without credentials — which
+          # both CI (tokenless curl) and Morphe itself are — so the check is skipped on private
+          # forks instead of failing forever.
+          PRIVATE=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.private')
+          echo "private=$PRIVATE" >> "$GITHUB_OUTPUT"
 
       # Rejected before the build, so a bad version costs seconds. Same script the local helper
       # runs, so there is one definition of "valid" rather than two that drift.
@@ -344,8 +353,12 @@ jobs:
       # Every Morphe-side failure here is silent — a bad created_at never appears, a broken
       # download_url shows an update that fails on tap. Without a manual release step there is no
       # moment where anyone is watching, so the run proves its own work.
+      #
+      # Skipped on private repos: raw.githubusercontent answers private paths with a 404 to any
+      # caller without a credential — that's the whole mechanism of "private" — so the curl below
+      # would fail forever, for the same reason Morphe itself cannot load from this repo at all.
       - name: Verify the release
-        if: steps.decide.outputs.release == 'true'
+        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.private != 'true'
         env:
           VERSION: ${{ steps.decide.outputs.version }}
           TAG: ${{ steps.decide.outputs.tag }}
