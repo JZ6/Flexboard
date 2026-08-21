@@ -27,5 +27,6 @@ internal val basePatch = bytecodePatch(
 
     execute {
         publishInputMethodService()
+        emitToolbarMergeCall()
     }
 }

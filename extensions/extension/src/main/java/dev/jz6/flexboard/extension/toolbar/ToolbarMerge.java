@@ -5,7 +5,9 @@ import android.content.SharedPreferences;
 import android.util.Log;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import dev.jz6.flexboard.extension.ime.ImeService;
 import dev.jz6.flexboard.extension.prefs.Preferences;
@@ -14,48 +16,38 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  * Merges Flexboard's toolbar buttons into Gboard's access-point list without destroying the
  * user's custom order.
  *
- * <p>Gboard persists the customized toolbar order as a semicolon-joined string of access-point
- * ids under the {@code access_points_showing_order} preference (and
- * {@code foldable_access_points_showing_order} for a fold's inner screen). Dragging a Flexboard
- * button in Gboard's own customize UI writes its id into that string exactly like a Gboard
- * button — the write side captures the bar as the user arranged it, ours included.
+ * ## The contract
  *
- * <p>The read side is where a blind injector loses the arrangement: the order rebuilder keeps
- * only ids known to the registered providers, and ours were never registered (we inject into
- * the finished list, after the provider machinery). The old insertion compensated for that by
- * pinning every button at a hardcoded index on each rebuild, which on the device reads as
- * <i>the drag never happened</i> — and when the rebuild did see leftover ids, added a second
- * copy beside them.
+ * Emitted blocks register each freshly built button with {@link #register(String, Object)} as
+ * they run, then {@link #merge(List)} is called once at the end of the split method's insertion.
+ * Two feature patches do this — the text actions and the custom hotkeys — and either works
+ * alone, an empty registry is a no-op. Registration order is the canonical order: on a first
+ * run, that is what goes to the front of the bar.
  *
- * <p>This class decides placement instead. The patch builds its buttons and hands them over
- * interleaved with their ids ({@code pairs}, the same list a {@code switch} on flat registers
- * could emit: {@code id, ap, id, ap, …}). The merge walks the <b>saved order string</b> — which
- * still carries the {@code flexboard_*} ids the user dragged around — and inserts each button
- * where the user gave it. A button never mentioned in the saved order is brand new: the whole
- * set goes to the front, which is what a first run looks like and always did. Because the merge
- * positions by the persisted string rather than the rebuild, the order survives kills, reboots,
- * and reopens.
+ * ## Placement maths
  *
- * <p><b>Position maths.</b> {@code incoming} holds the Gboard buttons in the saved order's
- * relative sequence, so a Flexboard button belongs after the count of non-Flexboard ids that
- * precede it in the string; counting only what precedes it before the add accounts for the
- * shift each insert exerts on later entries.
+ * Gboard persists the customized toolbar order as a semicolon-joined string of access-point ids
+ * under the {@code access_points_showing_order} preference (plus a fold-specific sibling for a
+ * phone that opens into a tablet). The customize screen writes whatever is on the bar when the
+ * user finishes, so ours land in the string exactly like Gboard's own.
  *
- * <p><b>Empty hotkeys.</b> The patch doesn't build buttons for empty slots, so their ids are
- * absent from {@code pairs}; a saved entry for a since-emptied hotkey matches nothing and
- * vanishes, as it should.
+ * The order rebuild keeps only ids the registered providers know; ours are injected afterwards,
+ * so this merge re-inserts them. For each id in the saved string:
  *
- * <p><b>Composition.</b> The text-actions patch and the hotkeys patch each call this with their
- * own pairs when both are applied. The second call sees the first's additions inside
- * {@code incoming}, so any id not in the current pairs — a Gboard id, or one the sibling just
- * placed — counts as an occupied position. That is what keeps the two merges composable.
+ *  - in the registry and not yet placed → insert at the current position, computed from the
+ *    number of stock entries that preceded it (they sit in {@code out} in that relative order)
+ *    plus however many of ours have already landed (each add shifts the rest down by one);
+ *  - {@code flexboard_*} id missing from the registry → an emptied hotkey slot or a patch the
+ *    user later deselected. It occupies nothing, so it counts nothing;
+ *  - anything else → a stock entry and counts as one.
  *
- * <p><b>Foldables.</b> The inner screen keeps its own order string, written only once the user
- * has customized the inner bar. When it is empty we fall back to the main one — the same
- * inheritance Gboard's own migration performs.
+ * A button never mentioned in the saved string is brand new: the whole unmentioned set goes to
+ * the front, which is what a first run looks like and always did.
  *
- * <p><b>When the string is unreadable.</b> No IME service yet, no preference yet, tampered
- * file: the merge reduces to the canonical front prepend, exactly the old first-run behaviour.
+ * ## Failure paths
+ *
+ * A preference written in the wrong type, a missing resource, a rearranged string — the merge
+ * degrades to the canonical prepend rather than taking the keyboard down with it.
  */
 public final class ToolbarMerge {
 
@@ -66,108 +58,125 @@ public final class ToolbarMerge {
 
     private static final String TAG = "Flexboard";
 
+    private static final String FLEXBOARD_PREFIX = "flexboard_";
+
+    /** Ids and their freshly built buttons, in registration order. Cleared after every merge. */
+    private static final List<Object> cohort = new ArrayList<>();
+
     private ToolbarMerge() {}
 
     /**
-     * Returns the list the bar should be built from: {@code incoming} with Flexboard's buttons
-     * placed per the saved custom order, or prepended in canonical order on its absence.
-     *
-     * @param incoming Gboard's provider-built access points, already in display order.
-     * @param pairs    {@code id, accessPoint, id, accessPoint, …} for every Flexboard button
-     *                 built this pass, in canonical order (text actions first, then hotkeys in
-     *                 slot order).
+     * Called by patch-emitted bytecode once per button, right after the builder produces it.
+     * A later call with the same id replaces the last button, so edits and icon overrides take
+     * effect on rebuild without a restart.
      */
-    public static List merge(List incoming, List pairs) {
-        try {
-            return mergeOrdered(incoming, pairs);
-        } catch (Throwable error) {
-            // The merge runs inside Gboard's toolbar build path; a fault here must degrade to
-            // the canonical order rather than take the keyboard down with it.
-            Log.w(TAG, "merge failed, falling back to canonical order", error);
-            List<Object> out = new ArrayList<>(incoming);
-            prependAll(out, pairs);
-            return out;
+    public static synchronized void register(String id, Object ap) {
+        for (int i = 0; i + 1 < cohort.size(); i += 2) {
+            if (cohort.get(i).equals(id)) {
+                cohort.set(i + 1, ap);
+                return;
+            }
+        }
+        cohort.add(id);
+        cohort.add(ap);
+    }
+
+    /** Called from the emitted split-method epilogue, once per toolbar build. */
+    public static List merge(List incoming) {
+        synchronized (ToolbarMerge.class) {
+            try {
+                return mergeOrdered(incoming);
+            } catch (Throwable error) {
+                Log.w(TAG, "merge failed, falling back to canonical order", error);
+                List<Object> out = new ArrayList<>(incoming);
+                prependAll(out, cohort);
+                return out;
+            } finally {
+                cohort.clear();
+            }
         }
     }
 
-    private static List mergeOrdered(List incoming, List pairs) {
+    /**
+     * Returns the list the bar should be built from: {@code incoming} with the registered
+     * buttons placed per the saved custom order, or prepended canonicallly on its absence.
+     */
+    private static List mergeOrdered(List incoming) {
         List<Object> out = new ArrayList<>(incoming);
 
         String saved = readOrder();
-        if (saved.isEmpty()) {
-            prependAll(out, pairs);
+        if (saved.isEmpty() || cohort.isEmpty()) {
+            prependAll(out, cohort);
             return out;
         }
 
+        Set<String> placedIds = new HashSet<>();
         boolean anyPlaced = false;
-        boolean[] placed = new boolean[pairs.size()];
-        int gboardSeen = 0;
+        int stock = 0;
         int inserted = 0;
 
         for (String id : saved.split(";")) {
             if (id.isEmpty()) {
                 continue;
             }
-            int index = indexOf(pairs, id);
-            if (index >= 0 && !placed[index]) {
-                // After every existing entry seen so far (they sit in `out` in that relative
-                // order) plus every Flexboard button this merge placed before this one.
-                int position = Math.min(gboardSeen + inserted, out.size());
-                out.add(position, pairs.get(index + 1));
-                placed[index] = true;
-                inserted++;
-                anyPlaced = true;
-            } else {
-                // Any id not in this merge's pairs still occupies a position in `out`: a
-                // Gboard entry, or a button a sibling merge already placed. Counting it keeps
-                // the math right when two merges run back to back over the same saved order.
-                gboardSeen++;
+            int index = indexOf(cohort, id);
+            if (index >= 0) {
+                if (placedIds.add(id)) {
+                    int position = Math.min(stock + inserted, out.size());
+                    out.add(position, cohort.get(index + 1));
+                    inserted++;
+                    anyPlaced = true;
+                }
+                // A duplicated id in the string counts as occupied once and is ignored.
+            } else if (!id.startsWith(FLEXBOARD_PREFIX)) {
+                stock++;
             }
         }
 
         if (!anyPlaced) {
-            prependAll(out, pairs);
+            prependAll(out, cohort);
             return out;
         }
 
-        // Slots the user never dragged were not part of their arrangement; newly filled hotkeys
-        // and untouched text actions keep showing at the front, same as a first run.
-        for (int i = placed.length - 2; i >= 0; i -= 2) {
-            if (!placed[i]) {
-                out.add(0, pairs.get(i + 1));
+        // Buttons the user never dragged stay at the front, in canonical order — same as a first
+        // run — so a freshly filled hotkey is still discoverable, and a slot emptied after a drag
+        // leaves no hole.
+        for (int i = cohort.size() - 2; i >= 0; i -= 2) {
+            if (!placedIds.contains(cohort.get(i))) {
+                out.add(0, cohort.get(i + 1));
             }
         }
         return out;
     }
 
-    private static int indexOf(List pairs, Object id) {
-        for (int i = 0; i + 1 < pairs.size(); i += 2) {
-            if (pairs.get(i).equals(id)) {
+    private static int indexOf(List cohort, Object id) {
+        for (int i = 0; i + 1 < cohort.size(); i += 2) {
+            if (cohort.get(i).equals(id)) {
                 return i;
             }
         }
         return -1;
     }
 
-    /** The saved toolbar order string, preferring the fold-specific one when written. */
+    /** The saved toolbar order string, preferring the main one; the fold's is a fallback. */
     private static String readOrder() {
         Context context = ImeService.get();
         if (context == null) {
             return "";
         }
         SharedPreferences preferences = Preferences.of(context);
-        String fold = preferences.getString(context.getString(ORDER_KEY_FOLDABLE_ID), null);
-        if (fold != null && !fold.isEmpty()) {
-            return fold;
+        String main = preferences.getString(context.getString(ORDER_KEY_ID), null);
+        if (main != null && !main.isEmpty()) {
+            return main;
         }
-        String main = preferences.getString(context.getString(ORDER_KEY_ID), "");
-        return main == null ? "" : main;
+        String fold = preferences.getString(context.getString(ORDER_KEY_FOLDABLE_ID), "");
+        return fold == null ? "" : fold;
     }
 
-    /** First-run placement: the whole set goes to the front, in canonical order. */
-    private static void prependAll(List out, List pairs) {
-        for (int i = pairs.size() - 2; i >= 0; i -= 2) {
-            out.add(0, pairs.get(i + 1));
+    /** First-run placement: the whole set goes to the front, in registration order. */
+    private static void prependAll(List out, List cohort) {
+        for (int i = cohort.size() - 2; i >= 0; i -= 2) {
+            out.add(0, cohort.get(i + 1));
         }
     }
 }

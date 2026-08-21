@@ -157,7 +157,6 @@ private val BUTTONS = listOf(
 )
 
 /**
-/**
  * The icons and slots for the custom hotkeys live beside their patch in `CustomHotkeysPatch.kt`.
  * The constants stay in that file because `check_shared_constants.py` scans the whole Kotlin
  * tree — only the Java side needs them declared anywhere in the extension.
@@ -176,13 +175,17 @@ private const val SUB_LIST = "Ljava/util/List;->subList(II)Ljava/util/List;"
 private const val MATH_MIN = "Ljava/lang/Math;->min(II)I"
 
 /**
- * Placed after the buttons are built: {@code merge(p1, pairs)} returns the final list, with the
- * freshly built buttons interleaved into the user's saved toolbar order rather than pinned to
- * hardcoded indices. See `ToolbarMerge` in the extension for the placement algorithm.
+ * Hands each freshly built button to the extension's toolbar-merge registry. A separate insertion
+ * from `BasePatch` then calls `ToolbarMerge.merge` once, after all registrations are in — one
+ * merge call over the whole set, so the two patches' placements compose against one order string.
  */
-private const val TOOLBAR_MERGE =
-    "Ldev/jz6/flexboard/extension/toolbar/ToolbarMerge;->merge(" +
-        "Ljava/util/List;Ljava/util/List;)Ljava/util/List;"
+internal const val TOOLBAR_REGISTER =
+    "Ldev/jz6/flexboard/extension/toolbar/ToolbarMerge;->register(" +
+        "Ljava/lang/String;Ljava/lang/Object;)V"
+
+/** The single merge call emitted by `BasePatch` once all blocks have registered their buttons. */
+internal const val TOOLBAR_MERGE =
+    "Ldev/jz6/flexboard/extension/toolbar/ToolbarMerge;->merge(Ljava/util/List;)Ljava/util/List;"
 
 /**
  * Asserted rather than assumed, in the house pattern: an insertion is only sound against a known
@@ -523,13 +526,34 @@ internal fun BytecodePatchContext.emitToolbarButtons(builder: AccessPointBuilder
 
     method.assertRegisterCount(SPLIT_REGISTER_COUNT, split.toDescriptor())
 
+    method.addInstructionsWithLabels(0, blocks)
+}
+
+/**
+ * One {@code merge} call, emitted by the base patch rather than by either toolbar feature, so it
+ * runs after every register() block regardless of which of them is selected. The dependency
+ * execution order (base before dependents) lands the emission below both blocks at runtime.
+ */
+internal fun BytecodePatchContext.emitToolbarMergeCall() {
+    val candidates = methodsMatching { it.splitsAccessPoints() }
+
+    check(candidates.size == 1) {
+        "Expected exactly one access-points split method — one taking a List and splitting it " +
+            "with two subList calls around Math.min — but found ${candidates.size}: " +
+            "${candidates.map { it.toDescriptor() }}"
+    }
+
+    val split = candidates.single()
+    val method = mutableClassDefBy(split.definingClass).methods.single {
+        it.toDescriptor() == split.toDescriptor()
+    }
+
+    method.assertRegisterCount(SPLIT_REGISTER_COUNT, split.toDescriptor())
+
     method.addInstructionsWithLabels(
         0,
         """
-            new-instance v0, Ljava/util/ArrayList;
-            invoke-direct { v0 }, Ljava/util/ArrayList;-><init>()V
-            $blocks
-            invoke-static { p1, v0 }, $TOOLBAR_MERGE
+            invoke-static { p1 }, $TOOLBAR_MERGE
             move-result-object p1
         """,
     )
@@ -549,8 +573,6 @@ private fun textActionsEmission(builder: AccessPointBuilder): String {
 
             const-string v2, "${button.id}"
             invoke-virtual { v1, v2 }, ${builder.setId}
-            invoke-interface { v0, v2 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
-            move-result v3
 
             const v2, ${button.icon}
             invoke-virtual { v1, v2 }, ${builder.setIcon}
@@ -574,8 +596,9 @@ private fun textActionsEmission(builder: AccessPointBuilder): String {
 
             invoke-virtual { v1 }, ${builder.build}
             move-result-object v2
-            invoke-interface { v0, v2 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
-            move-result v3
+
+            const-string v3, "${button.id}"
+            invoke-static { v3, v2 }, $TOOLBAR_REGISTER
         """
     }
 }

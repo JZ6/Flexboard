@@ -135,17 +135,23 @@ public final class Hotkey implements Runnable {
         return line.length() <= LABEL_MAX ? line : line.substring(0, LABEL_MAX) + ELLIPSIS;
     }
 
-    /** The stored snippet for a slot, or {@code null} when unset or blank. */
+    /** The stored snippet for a slot, or {@code null} when unset, blank, or stored as the wrong
+     *  type. A backup restore or a hand-edited file can put an int where a String belongs, and
+     *  letting that crash the toolbar build is not an option. */
     private static String textAt(int slot) {
         SharedPreferences preferences = ImeService.preferences();
         if (preferences == null) {
             return null;
         }
-        String text = preferences.getString(keyFor(slot), null);
-        if (text == null || text.trim().isEmpty()) {
+        try {
+            String text = preferences.getString(keyFor(slot), null);
+            if (text == null || text.trim().isEmpty()) {
+                return null;
+            }
+            return text;
+        } catch (ClassCastException wrongType) {
             return null;
         }
-        return text;
     }
 
     @Override

@@ -1,5 +1,11 @@
 # Roadmap
 
+toolbar still has major issues, gboard seems to crash when i click the 4 square icon to open the extended hotkey list, and then when i move hotkeys around, the order doesnt save properly and select all and copy paste somehow becomes the first 3 hotkeys again
+
+hot bar order editing problems
+
+inline autofill not working
+
 Ideas, in no particular order and with no promises. Kept verbatim as written.
 
 swipe length seem to be reversed? lower value takes more swipe to swipe multiple words on the delete key

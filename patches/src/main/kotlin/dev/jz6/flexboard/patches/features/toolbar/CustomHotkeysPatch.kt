@@ -98,8 +98,6 @@ private fun hotkeysEmission(builder: AccessPointBuilder): String {
 
             const-string v3, "flexboard_hotkey_$slot"
             invoke-virtual { v1, v3 }, ${builder.setId}
-            invoke-interface { v0, v3 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
-            move-result v3
 
             const v3, ${HOTKEY_ICONS[slot - 1]}
             $constSlot v4, $slot
@@ -126,8 +124,9 @@ private fun hotkeysEmission(builder: AccessPointBuilder): String {
 
             invoke-virtual { v1 }, ${builder.build}
             move-result-object v2
-            invoke-interface { v0, v2 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
-            move-result v3
+
+            const-string v3, "flexboard_hotkey_$slot"
+            invoke-static { v3, v2 }, $TOOLBAR_REGISTER
             :$absent
         """
     }
