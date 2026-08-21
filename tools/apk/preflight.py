@@ -150,6 +150,21 @@ EXPECTED = {
     # the patch -- it reads the preference with whatever Gboard computed -- but it is the number the
     # settings slider displays while unset, so it has to stay true.
     'toolbar_stock_count': 5,
+    # ---- the native-registration path in ToolbarNativeTestPatch
+    #
+    # The bar-controller's constructor is the hook site, so its register count is pinned. A bump
+    # moves it and the insertion would write past the locals, which is invisible until the phone
+    # verifies. Currently 13 on Gboard 18.0.3.
+    'native_controller_init_registers': 13,
+    # The id the test button registers under. Allowed-set membership is verified from the ARSC
+    # array below, when the APK is given; dex-side it has to be name-shadowed, i.e. the literal
+    # appears nowhere. If a future Gboard adds a real handler for it the two would collide, and
+    # this check is the only thing that would notice in time.
+    'native_test_id': 'flag_editor',
+    # The ARSC string-array listing what the toolbar accepts. The id has to be in this array or
+    # the read filter drops the persisted order's mention of the button, which is the whole point
+    # of native registration.
+    'native_allowed_array': 0x7f0300dc,
     # ---- text editing buttons
     # The three resource ids Gboard's text-editing access-point seed uses together. The patch finds
     # the seed by them and then reads the builder's setters out of it by the value each is handed,
@@ -410,6 +425,61 @@ class Report:
         tail = f', {skipped} skipped' if skipped else ''
         print(f'\n{total - failed}/{total} passed{tail}')
         return failed
+
+
+def _read_string_array(data, table, type_id, entry_index):
+    """Items in the ARSC string-array at (type_id, entry_index), resolved to their values.
+
+    `arsc.Table` deliberately skips complex (bag) entries — string arrays are bags, so the entry
+    itself never lands in its `entries` map and we have to walk it here. Sparse/packed index
+    layouts are unsupported on purpose: this is a patch-time check, and the only array it is ever
+    asked about is dense.
+    """
+    pos = 12  # skip the ResTable header's own ResChunk_header
+    _ct, _hs, cs = struct.unpack_from('<HHI', data, pos)
+    pos += cs  # skip the global string pool
+    pkg_pos = pos
+    _ct, pkg_hsize, pkg_size = struct.unpack_from('<HHI', data, pkg_pos)
+    pos = pkg_pos + pkg_hsize
+    pkg_end = pkg_pos + pkg_size
+    while pos < pkg_end:
+        ct2, hs2, cs2 = struct.unpack_from('<HHI', data, pos)
+        if ct2 == 0x0201 and data[pos + 8] == type_id:  # RES_TABLE_TYPE with our id
+            flags = data[pos + 9]
+            ecount, eoff = struct.unpack_from('<II', data, pos + 12)
+            # `hs2` is the full header size — the ResTable_config is already inside it, so
+            # adding cfg_size here would land us past the index table by exactly that much.
+            idx_base = pos + hs2
+            base = pos + eoff
+            if flags & 0x02:  # FLAG_OFFSET16
+                raw = struct.unpack_from(f'<{ecount}H', data, idx_base)
+                offs = [(i, o * 4) for i, o in enumerate(raw) if o != 0xFFFF]
+            elif flags & 0x01:  # FLAG_SPARSE
+                pairs = struct.unpack_from(f'<{ecount * 2}H', data, idx_base)
+                offs = [(pairs[i], pairs[i + 1] * 4) for i in range(0, len(pairs), 2)]
+            else:
+                raw = struct.unpack_from(f'<{ecount}I', data, idx_base)
+                offs = [(i, o) for i, o in enumerate(raw) if o != 0xFFFFFFFF]
+            hit = next(((i, o) for i, o in offs if i == entry_index), None)
+            if hit is None:
+                return None
+            at = base + hit[1]
+            esz, eflags, _ekey = struct.unpack_from('<HHI', data, at)
+            if not (eflags & 0x0001):  # complex flag — a bag
+                return None
+            _parent, count = struct.unpack_from('<II', data, at + 8)
+            bp = at + 16
+            members = []
+            for _ in range(count):
+                _bname, bsz, _br0, btype, bval = struct.unpack_from('<IHBBI', data, bp)
+                if btype == 0x01:      # reference — resolve through the arsc table
+                    members.append(str(table.value(bval)))
+                elif btype == 0x03:    # raw string — index into the global string pool
+                    members.append(table.strings[bval])
+                bp += 4 + bsz
+            return members
+        pos += cs2
+    return None
 
 
 def run(dl, apk=None):
@@ -1312,6 +1382,103 @@ def run(dl, apk=None):
         p1 = c['registers'] - c['ins'] + 1
         check('buttons: the list parameter is live at entry', p1 not in free,
               f'v{p1} is dead at entry, so substituting it would reach nothing')
+
+    # ---- toolbar native test: registration through Lmlh.g
+    #
+    # The patch hooks the bar controller's constructor and calls its `(ApType, Z)V` register
+    # method to put the test button into the `ArrayMap` the bar reads from. Anchors here on the
+    # same `splits` owner — the controller is the class that splits the order list, so naming it
+    # would re-derive what is already derived just above.
+    if splits:
+        controller = splits[0].split('->')[0]
+        d_c, _sup_c, cd_c = find_class(dl, controller)
+        if check('native: the bar controller class is present', d_c is not None, controller):
+            # The registration call is the unique (ApType, Z)V whose body Lays.put's into the
+            # registry map -- nothing else on the controller both takes that shape and writes
+            # into `h`.
+            registers = []
+            for m_name, _af, m_off in d_c.class_methods(cd_c):
+                if not m_off or not m_name.startswith(f'{controller}->'):
+                    continue
+                sig = re.match(r'^\S+->\w+\((L[\w/$;]+;)(Z)\)V$', m_name)
+                if not sig:
+                    continue
+                mc = d_c.code(m_off)
+                if mc is None:
+                    continue
+                walks = list(d_c.walk(mc))
+                if any('Lays;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;'
+                       in (t or '') for _p, _n, _mn, t in walks):
+                    registers.append(m_name)
+            if check('native: exactly one Lays.put-based register call on the controller',
+                     len(registers) == 1, str(registers)):
+                # The method name (`g`, or whatever it is on a future build) is NOT pinned on
+                # purpose — R8 re-rolls it every release. The shape is the anchor.
+                pass
+
+            # The constructor the patch hooks: only two-argument <init> taking Context first.
+            inits = [m for m, _a, _o in d_c.class_methods(cd_c)
+                     if re.match(
+                         rf'^{re.escape(controller)}-><init>\(Landroid/content/Context;L[\w/$;]+;\)V$',
+                         m)]
+            if check('native: exactly one (Context, ?) <init> on the controller',
+                     len(inits) == 1, str(inits)):
+                c, ins = body(dl, inits[0])
+                check('native: the constructor register count',
+                      c is not None and
+                      c['registers'] == E['native_controller_init_registers'],
+                      f'got {c and c["registers"]}, '
+                      f'expected {E["native_controller_init_registers"]}')
+                if ins is not None:
+                    tail = len(ins) - 2   # before the final return-void
+                    free = live_free(ins, c['registers'], tail)
+                    want = [0, 1]
+                    check('native: the patch\'s scratch v0, v1 are dead at the construct tail',
+                          all(r in free for r in want), f'free={free} want={want}')
+
+    # The id has to be dormant: nothing in Gboard's own dex should reference it. A future
+    # version adopting 'flag_editor' as a real handler would collide silently at the registry
+    # — ours would clobber its entry in mlh.h.
+    test_id = E.get('native_test_id')
+    if test_id:
+        id_refs = []
+        for dex in dl:
+            for _cls_name, _af, cls_data in dex.classes():
+                if not cls_data:
+                    continue
+                for m_name, _maf, m_off in dex.class_methods(cls_data):
+                    if not m_off:
+                        continue
+                    try:
+                        mc = dex.code(m_off)
+                    except Exception:
+                        continue
+                    for _pc, _op, _mn, txt in dex.walk(mc):
+                        if txt and txt.strip("'\"") == test_id:
+                            id_refs.append(m_name)
+                            break
+        check(f'native: {test_id!r} has no references in the dex (shadow-safe)',
+              not id_refs, f'referenced by {sorted(set(id_refs))}')
+
+    # The id has to be in the allowed-set string array, else the read filter strips it from the
+    # persisted order. This check needs the ARSC table, so it only runs when the APK is handed in.
+    if test_id and apk is not None:
+        try:
+            import zipfile
+            import arsc
+            data = zipfile.ZipFile(apk).read('resources.arsc')
+            table = arsc.load(data)
+            target = E['native_allowed_array']
+            tid = (target >> 16) & 0xff
+            eidx = target & 0xffff
+            members = _read_string_array(data, table, tid, eidx)
+            check(f'native: {test_id!r} is in the toolbar allowed-set array',
+                  members is not None and test_id in members,
+                  f'array has {len(members or [])} members; {test_id!r} not among them')
+        except Exception as exc:
+            check('native: the toolbar allowed-set array is readable', False,
+                  f'could not read from {apk}: {exc}')
+
 
     # Read superclasses straight out of each class_def rather than resolving every class through
     # find_class, which is a scan per class and turns this into minutes.

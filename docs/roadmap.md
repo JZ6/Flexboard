@@ -1,5 +1,30 @@
 # Roadmap
 
+## Native registration (being proven out — Parked)
+
+The "Pending (investigated, needs implementation)" section above named the right goal but
+mis-diagnosed the seam: the "registered-provider" route isn't needed. Follow-up tracing of the
+order-write path confirms the save side (`Lmjz;->q`) writes whatever list it is handed with no
+filtering; the **only** filter is on read — `Lmjv;->c` drops ids not in the allowed-set.
+
+That set is the string-array resource `0x7f0300dc`, read once into `mku.c`. Six ids in it are
+dormant — zero dex code references them: `flag_editor`, `editor_info`,
+`muse_toggle_playground_ap`, `jetson_feedback`, `undo_cooperative`, `signboard_education`.
+Borrowing one of them means: the read filter accepts it, the save path keeps it, and Customize
+renders it as a fully capable draggable entry.
+
+The bar controller `Lmlh` has `h: ArrayMap<String, mic>` — the actual AP registry. Calling
+`mlh.g(mic, true)` on it both stores the definition *and* folds the id into the shown order via
+the order manager. `mjv.n(ctx, mxf, h, c, extras)` then re-folds `extras` on every rebuild, so
+the button survives orientation/fold changes.
+
+The **Toolbar Native Test** patch (default-off) does this: hooks `Lmlh.<init>` tail, builds an
+`mic` with id `flag_editor`, icon from stock, a literal "Test" label, and a click-runnable that
+commits "test" at the cursor via the extension's `TestAction`. If it works on device, the same
+shape becomes the long-term home for Text Actions + Hotkeys (each `g(...)s` its own id(s) into
+`h`), and `ToolbarMerge` shrinks back to "read the order string to seed the shown order"
+rather than the current half-broken injection.
+
 ## Pending (investigated, needs implementation)
 
 **Toolbar reorder persistence — register as providers.** Gboard's customize-write path reconstructs the saved order string from the registered-provider list — the `Lmjv`/`Lmjz` order hierarchy — and drops any id it doesn't know. Our injected buttons (`flexboard_select_all`, `flexboard_copy`, `flexboard_paste`, `flexboard_hotkey_N`) aren't providers, so they never appear in the order string, and every customize session forgets them. On rebuild, `merge()` can only place them canonicallly at the front (which is why it currently always does that — see `ToolbarMerge.mergeOrdered`). To fix: register our access points with Gboard's provider machinery via a bytecode patch, instead of injecting into the bar's rendered list after the fact. Then the customize-write path has them by construction, and drag-persistence just works.
