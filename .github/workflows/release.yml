@@ -285,9 +285,8 @@ jobs:
             RANGE=""
           fi
 
-          # The conventional-commit type is dropped from the body: conventional-changelog groups by
-          # type under its own headings rather than repeating it inline, and the parser strips
-          # everything up to the scope marker anyway.
+          # The conventional-commit scope and breaking-change marker are dropped, but the type is
+          # kept: "feat(toolbar)!: ..." becomes "feat: ...", so the in-app changelog stays readable.
           if [ -n "$RANGE" ]; then
             SUBJECTS=$(git log --no-merges --format='%s' "$RANGE" \
                        --invert-grep -E --grep='^chore: (release|bump)|^bump to')
@@ -296,7 +295,7 @@ jobs:
                        --invert-grep -E --grep='^chore: (release|bump)|^bump to')
           fi
           BULLETS=$(printf '%s\n' "$SUBJECTS" \
-            | sed -E 's/^(feat|fix|chore|docs|perf|refactor|style|test|build|ci|bump)(\([^)]*\))?!?: //' \
+            | sed -E 's/^([a-z]+)(\([^)]*\))?!: /\1: /' \
             | sed -E "s|^|* **$SCOPE:** |")
           [ -n "$SUBJECTS" ] || BULLETS="* **$SCOPE:** No changes recorded."
 
