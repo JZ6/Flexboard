@@ -126,30 +126,6 @@ public final class FlexboardSettingsActivity extends Activity {
     private static final double LIGHT_BACKGROUND_LUMINANCE = 0.5d;
 
     /**
-     * Fallbacks only.
-     *
-     * <p>The palette used to be picked from these by {@link Configuration#uiMode}, which is why the
-     * screen looked foreign next to Gboard's own: Gboard follows its theme, and on Android 12+ that
-     * includes Material You, so a fixed pair of palettes is the wrong shade on any themed device
-     * rather than merely a different one. The colours now come from the theme the manifest entry
-     * carries — Gboard's own settings theme — and these are what is used for any attribute that
-     * does not resolve.
-     */
-    private static final int COLOR_DARK_BACKGROUND = 0xFF202124;
-
-    private static final int COLOR_DARK_TITLE = 0xFFE8EAED;
-    private static final int COLOR_DARK_SUMMARY = 0xFF9AA0A6;
-    private static final int COLOR_DARK_ACCENT = 0xFF8AB4F8;
-
-    private static final int COLOR_LIGHT_BACKGROUND = 0xFFFFFFFF;
-    private static final int COLOR_LIGHT_TITLE = 0xFF1F1F1F;
-    private static final int COLOR_LIGHT_SUMMARY = 0xFF5F6368;
-    private static final int COLOR_LIGHT_ACCENT = 0xFF0B57D0;
-
-    /** Above this, the background is light enough to need dark status-bar icons. */
-    private static final double LIGHT_BACKGROUND_LUMINANCE = 0.5d;
-
-    /**
      * Metrics taken from androidx's preference rows, which is what every other screen in Gboard's
      * settings is built from.
      *
