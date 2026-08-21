@@ -84,9 +84,6 @@ private fun Method.body(): List<com.android.tools.smali.dexlib2.iface.instructio
 private fun Method.literals(): List<Long> =
     body().filterIsInstance<WideLiteralInstruction>().map { it.wideLiteral }
 
-private fun Method.calledDescriptors(): List<String> =
-    body().mapNotNull { ((it as? ReferenceInstruction)?.reference as? MethodReference)?.toString() }
-
 /** The text-editing access point, which is the template every button here is built from. */
 private fun Method.isAccessPointSeed(): Boolean {
     val literals = literals()

@@ -34,14 +34,6 @@ PAIRS = [
     # cap at every setting.
     ("MAX_WORDS_NO_LIMIT", "MAX_WORDS_MAX"),
     ("HOLD_DELAY_DEFAULT", "HOLD_DELAY_DEFAULT"),
-    # The toolbar count has no shared *default*: the patch reads the preference with whatever Gboard
-    # itself computed as the fallback, so an unset value is stock behaviour rather than a number
-    # either side had to agree on. The bounds are shared, because the patch rejects anything outside
-    # them and the slider is what has to stay inside them.
-    ("TOOLBAR_COUNT_KEY", "KEY_TOOLBAR_COUNT"),
-    ("TOOLBAR_COUNT_UNFOLDED_KEY", "KEY_TOOLBAR_COUNT_UNFOLDED"),
-    ("TOOLBAR_COUNT_MIN", "TOOLBAR_COUNT_MIN"),
-    ("TOOLBAR_COUNT_MAX", "TOOLBAR_COUNT_MAX"),
     # The ordinals the patch hands the extension's constructor. The extension maps them to
     # android.R.id.* so the framework constants stay symbolic in the one language that can name
     # them -- which means the number crossing the boundary is meaningless on its own, and a drift
@@ -299,23 +291,51 @@ def _check_extension_references(problems):
                 f"parsed from it — this check has silently stopped checking anything"
             )
 
-        # A class handed to a (Ljava/lang/Runnable;)V setter has to actually be a Runnable;
-        # nothing else in this pipeline would notice if it stopped being one.
-        for descriptor, (source, body) in sources.items():
+        # Every class the patch route puts into an `(Ljava/lang/Runnable;)V`-typed slot has to
+        # actually implement Runnable; Gboard's toolbar-builder setter happily stores whatever it
+        # is given and the failure surfaces as an ART class-verification crash at keyboard start.
+        #
+        # Two lanes in: the legacy `new-instance <T>` line at the use site (none today, but keep it
+        # — future authors will reach for it first), and the helper lane's `actionCtor` descriptor,
+        # which is a `<init>(...)V` on a class the helper turns into a Runnable.
+        runnable_distinct = set()
+        for descriptor, (_source, _body) in sources.items():
             constructed = re.search(rf"new-instance\s+\w+\s*,\s*{re.escape(descriptor)}", text)
             if constructed and "(Ljava/lang/Runnable;)V" in text:
-                if not re.search(r"\bimplements\b[^{]*\bRunnable\b", body):
-                    problems.append(
-                        f"  {path.name} hands {descriptor} to a Runnable setter, but "
-                        f"{source.name} does not declare `implements Runnable`"
-                    )
+                runnable_distinct.add(descriptor)
+        for arg in NATIVE_TOOLBAR_ARG.findall(text):
+            descriptor = arg[1:-1] if arg.startswith('"') else constants.get(arg)
+            if descriptor is not None:
+                # NATIVE_TOOLBAR_ARG is a full member descriptor; strip "-><init>(…)V" to get the
+                # class it belongs to.
+                runnable_distinct.add(descriptor.split("->")[0])
+        for descriptor in runnable_distinct:
+            if descriptor not in sources:
+                continue
+            source, body = sources[descriptor]
+            if not re.search(r"\bimplements\b[^{]*\bRunnable\b", body):
+                problems.append(
+                    f"  {path.name} hands {descriptor} to a Runnable action slot, but "
+                    f"{source.name} does not declare `implements Runnable`"
+                )
 
 
 def main():
-    kotlin = {}
-    for path in PATCHES.rglob("*.kt"):
-        kotlin.update(_collect(KOTLIN_CONST, path.read_text()))
     problems = []
+    kotlin, kotlin_from = {}, {}
+    for path in PATCHES.rglob("*.kt"):
+        # Comments carry prose shaped like constants ("`internal const val X = 0`" in a KDoc
+        # paragraph) and would poison the same-name lookup on the Java side. Strip them here the
+        # same way the reference check does it.
+        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        for name, value in _collect(KOTLIN_CONST, text).items():
+            if name in kotlin and kotlin[name] != value:
+                problems.append(
+                    f"  {name} is declared in multiple patch files with different values — "
+                    f"{kotlin_from[name].name} says {kotlin[name]!r}, {path.name} says {value!r}"
+                )
+                continue
+            kotlin[name], kotlin_from[name] = value, path
 
     # Every Java file in the extension, not just the settings screen. The screen was the only side
     # of the contract until the toolbar buttons arrived: their action ordinals are shared with

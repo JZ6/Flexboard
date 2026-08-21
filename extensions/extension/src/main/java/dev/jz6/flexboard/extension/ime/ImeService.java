@@ -11,21 +11,21 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  * Gboard's running {@link InputMethodService}, published from patched bytecode so the extension's
  * toolbar actions can reach the editor.
  *
- * <p><b>Why a static holder rather than a constructor argument.</b> The patch that builds the
- * access points runs inside the access-points code, which has no reference to the IME service; the
- * patch that does have one runs in {@code onCreate}. So the service is published from there and
- * picked up here. Gboard is a single IME process with a single service instance, so there is one
- * writer and the field is only ever overwritten with an equivalent value.
+ * <p><b>Why a static holder rather than a constructor argument.</b> The patch that needs the
+ * service publishes it from {@code InputMethodService.onCreate}; the patches that need it
+ * (the toolbar actions, the settings screen) run in classes with no path to the service's
+ * constructor. So the service is captured once at the top of {@code onCreate} and read by
+ * whoever needs it, any time after. Gboard is a single IME process with a single service
+ * instance, so there is one writer and the field is only ever overwritten with an equivalent
+ * value.
  *
  * <p>The field is {@code volatile} because the writer is the main thread during service creation
  * and the reader is whichever thread Gboard runs its key actions on. It is never cleared on
  * destroy: a stale service whose input connection has gone is handled by {@link #connection()},
  * whereas clearing it would open a window where a live keyboard has no action at all.
  *
- * <p><b>Why this is its own class.</b> It began inside {@code TextAction}, which was the only thing
- * that needed it. Hotkeys need it too, and a second copy of a single-writer static would be two
- * holders racing to describe one service — so it moved here rather than being reached into from
- * another package.
+ * <p><b>Why this is its own class.</b> More than one patch wants it, and a second copy of a
+ * single-writer static would be two holders racing to describe one service.
  */
 public final class ImeService {
 

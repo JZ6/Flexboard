@@ -121,10 +121,6 @@ EXPECTED = {
         (0x7f140b6e, 'show_suggestion_strip'),
         (0x7f140a07, 'pref_key_enable_grammar_checker'),
         (0x7f140a28, 'enable_smart_reply'),
-        # Semicolon-joined access-point ids the toolbar is ordered by. ToolbarMerge reads these
-        # to place the injected buttons where the user dragged them.
-        (0x7f1409b0, 'access_points_showing_order'),
-        (0x7f140a44, 'foldable_access_points_showing_order'),
     ],
     'sigcheck_registers': 8,
     'sigcheck_returns': [6, 4, 3],
@@ -421,9 +417,9 @@ def _read_string_array(data, table, type_id, entry_index):
     """Items in the ARSC string-array at (type_id, entry_index), resolved to their values.
 
     `arsc.Table` deliberately skips complex (bag) entries — string arrays are bags, so the entry
-    itself never lands in its `entries` map and we have to walk it here. Sparse/packed index
-    layouts are unsupported on purpose: this is a patch-time check, and the only array it is ever
-    asked about is dense.
+    itself never lands in its `entries` map and we walk it here. All three entry-table layouts are
+    supported (dense, FLAG_SPARSE, FLAG_OFFSET16), because a future aapt2 build is allowed to
+    pick any of them for this array and the check should not care which.
     """
     pos = 12  # skip the ResTable header's own ResChunk_header
     _ct, _hs, cs = struct.unpack_from('<HHI', data, pos)
@@ -1342,7 +1338,7 @@ def run(dl, apk=None):
     # the controller's `<init>` tail, where each native button registers via `g(mic, true)`.
     # The class is pinned by the split-method owning it — the same `splits` symbol the old
     # scratch checks used to derive.
-    if splits:
+    if check('native: exactly one access-points split method', len(splits) == 1, str(splits)):
         controller = splits[0].split('->')[0]
         d_c, _sup_c, cd_c = find_class(dl, controller)
         if check('native: the bar controller class is present', d_c is not None, controller):
@@ -1383,11 +1379,26 @@ def run(dl, apk=None):
                       f'got {c and c["registers"]}, '
                       f'expected {E["native_controller_init_registers"]}')
                 if ins is not None:
-                    tail = len(ins) - 2   # before the final return-void
-                    free = live_free(ins, c['registers'], tail)
-                    want = [0, 1, 2]
-                    check('native: the patch\'s scratch v0, v1, v2 are dead at the construct tail',
-                          all(r in free for r in want), f'free={free} want={want}')
+                    # The insertion goes before the last instruction. That only holds if the
+                    # constructor really has a straight-line tail: `ins[-1]` is the single
+                    # `return-void`, and nothing branches to it (i.e. it is genuinely the end of a
+                    # fall-through path, not a shared epilogue).
+                    #
+                    # A backward-liveness scratch check would prove nothing here: at the final
+                    # return-void nothing is live by construction, so the answer is vacuously
+                    # "everything is dead". The property that matters is the CFG shape.
+                    tail_pc, tail_mn, _ = ins[-1]
+                    check('native: the <init> tail is a return-void',
+                          tail_mn == 'return-void', f'got {tail_mn}')
+                    # The goto/if targets reachable from this body. dis.disasm prints them as
+                    # `-> N` where N is a code-unit pc.
+                    targets = {int(m.group(1))
+                               for _p, mn2, a2 in ins
+                               if a2 and (m := re.search(r'-> (\d+)', a2))
+                               and mn2.startswith(('goto', 'if-'))}
+                    check('native: the <init> tail is not branch-targeted (single exit)',
+                          tail_pc not in targets,
+                          f'targets include the tail: {sorted(targets & {tail_pc})}')
 
     # Each id the native path registers has to be dormant — nothing in Gboard's own dex should
     # reference it. A future Gboard version adopting one of them as a real handler would collide

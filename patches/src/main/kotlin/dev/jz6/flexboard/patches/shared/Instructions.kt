@@ -61,6 +61,15 @@ internal fun Instruction.callsMethod(descriptor: String): Boolean =
     ((this as? ReferenceInstruction)?.reference as? MethodReference)?.toString() == descriptor
 
 /**
+ * The descriptors this method calls, in body order. `null`-implementing (abstract) methods come
+ * back as the empty list — call sites that assumed an implementation have a `check` downstream
+ * that notices.
+ */
+internal fun com.android.tools.smali.dexlib2.iface.Method.calledDescriptors(): List<String> =
+    implementation?.instructions?.toList().orEmpty()
+        .mapNotNull { ((it as? ReferenceInstruction)?.reference as? MethodReference)?.toString() }
+
+/**
  * The register at [offset] in an invoke's argument list — `this` at 0, and a wide argument
  * occupying one slot at its low half. Handles both encodings: `35c` packs up to five registers into
  * nibbles, `3rc` gives a consecutive range.

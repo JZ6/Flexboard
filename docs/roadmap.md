@@ -1,5 +1,63 @@
 # Roadmap
 
+## User queue (verbatim, work in progress underneath)
+
+mainly im looking to remove any old probelmatic code that may still be around, and improve the strucure where its necessary to prepare for new features, you can also delete the bigger tool bar and hotkeys patch code so we can rewrite from scratch later
+also check if all the commits we have made are necessary, a lot of it was trying to fix the old toolbar ordering that doesnt exist anymore since we switched to native buttons
+i dont need reviews to be done quickly, i care more about accuracy and carefulness when it comes to reviews and code implmentation
+
+## Historical: the dead merge-splice architecture (kept for context)
+
+Under "Formerly broken / solved by native registration": the old design tried to splice extra
+buttons into the split-method list and hand-merge them against `access_points_showing_order` in
+`ToolbarMerge.merge`. It never landed ordering right, crashed the 4-square customize overflow
+(persistence write couldn't see unregistered ids), and snapped buttons back to the front on
+every rebuild. All of that is deleted; native registration via `emitNativeToolbarButtons` is
+the only way in.
+
+**Summary of the pre-native findings (the 'fix X' series that was wrong-headed):**
+- "ToolbarMerge previously fought itself: merged-by-pairs-approach produced duplicates and drift" — fixed by deleting ToolbarMerge.
+- "Hotkey.labelAt returns '' / hasContent / hotkeySlotOf" — fixed by deleting Hotkey.
+- "`addInstructionsWithLabels` chokes on two sequential insertions" — still true; emission is label-free everywhere.
+- "?attr/colorControlNormal does not resolve at recompile time" — still true; don't use AppCompat attrs.
+- "The settings Activity should render only enabled sections via markers" — deferred by user.
+
+## Pending (investigated, needs implementation)
+
+**Bigger Toolbar and Hotkeys return natively.** The user deleted these in the cleanup sweep;
+each needs a fresh rewrite on the native registration helper. Bigger Toolbar overrides
+`definedCountOnBar` — was unchanged structurally by the merge refactor, but the UI section is
+gone. Hotkeys need enough dormant allowed-set ids to make it useful; past scope, see "widening
+0x7f0300dc" below.
+
+**Widen the allowed-set array when hotkeys return.** `0x7f0300dc` needs N extra entries for N
+hotkey slots if we want more than the two dormant ids still free. The patch is an
+`addStringArrayEntry` step inside `SettingsScreenPatch` (or its own patch); it is a
+string-array bag entry, and aapt2 will happily re-link it. Not implemented today because no
+patch consumes it.
+
+# Roadmap entries written by the user verbatim.
+
+readd hotkeys with the icons
+
+allow hotkey import export
+
+readd ability to change number of hotkeys on toolbar
+
+redo settings to use native gboard
+
+some settings disabled like grammer check and ai writing tools, rambler mode etc
+
+flick up to undo autocorrect 
+
+gesture down on a to select all?
+
+increased tool bar size fit more buttons
+
+ok now clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
+
+
+
 ## Native registration (being proven out — Parked)
 
 The "Pending (investigated, needs implementation)" section above named the right goal but
@@ -95,27 +153,6 @@ hotkey patch returns in native form.
 - morphe-patcher's `addInstructionsWithLabels` (label-aware smali insertion) chokes on two sequential insertions into one method if labels are involved (`ArrayIndexOutOfBoundsException: length=0`). The fix is to remove labels from the inserted bytecode entirely (avoid `if-eqz`-generated `:absent` chains); branchless smali survives.
 - The settings Activity should render only enabled sections via markers — parked pending a decision; user's roadmap entry says "hotkeys and toolbar config still in flexboard settings when they arent patched; settings should only be added with the patches".
 
-# Roadmap entries written by the user verbatim.
-
-swipe length seem to be reversed? lower value takes more swipe to swipe multiple words on the delete key
-
-update settings to match rest of gboard
-
-some settings disabled like grammer check and ai writing tools, rambler mode etc
-
-flick up to undo autocorrect 
-
-gesture down on a to select all
-
-use graph 6 material icon for fleksy settings
-
-increased tool bar size fit more buttons
-
-ok now clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
-
-read the package rename patch from morphe, and see if any improvments can be made to ours, or should we just use theirs.
-
-Task 4 — Already shipped per the roadmap. The settings screen inherits Gboard's theme (colours, Material You), uses framework-only widgets, and approximates androidx metrics. The remaining gap is structural: Gboard uses SwitchPreferenceCompat and custom slider preferences, which the extension can't use without resources. Needs device testing to identify specific visual gaps.
 
 ## Shipped
 

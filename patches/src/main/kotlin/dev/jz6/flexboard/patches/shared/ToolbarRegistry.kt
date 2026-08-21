@@ -13,17 +13,16 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
  * spliced into the split method's list.
  *
  * Handles a button end-to-end: an allowed-set id, a label (string resource id or a literal),
- * an icon, and a `Runnable` click action. The action may take `Int` constructor arguments —
- * one class in the extension can serve many buttons this way, told apart by an ordinal (see
- * `TextAction.java`).
+ * an icon, and a `Runnable` click action. The action may take a single `Int` constructor
+ * argument — one class in the extension can serve many buttons this way, told apart by an
+ * ordinal (see `TextAction.java`).
  *
  * ## What makes this "native"
  *
  * The access-point id has to be picked from Gboard's allowed set — `res/array/…` id
  * `0x7f0300dc`, read once at startup into the order manager. Any other string is dropped by the
  * read filter before the customize UI ever writes the order back, so a button keyed on it can
- * be dragged but never persisted. The ids this layer is used with are the dormant ones in that
- * array — borrowed without touching a single resource file.
+ * be dragged but never persisted.
  *
  * With an allowed id, the whole Gboard-native flow then just happens: the read filter passes,
  * the controller's register call lands the definition in the registry map and folds the id into
@@ -54,7 +53,8 @@ internal data class NativeToolbarButton(
     /**
      * The label as a literal string written straight into the builder's pass-through field.
      * The completeness bit still has to be set, so when a literal is given the resource-id
-     * setter is called with `0` first.
+     * setter is called with `0` first. Must be a smali-safe string — no `"`, no newlines,
+     * no `\`, because this flows into a `const-string` operand unparsed.
      */
     val labelLiteral: String? = null,
     /** Same shape as label. Defaults to whatever the label uses. Mutually exclusive per-row. */
@@ -68,13 +68,14 @@ internal data class NativeToolbarButton(
      * `invoke-direct`.
      *
      * Declaring it as a `const val` in the patch file is what lets `check_shared_constants.py`
-     * see the emission across the helper boundary.
+     * see the emission across the helper boundary and verify the Java side actually declares
+     * `implements Runnable`.
      */
     val actionCtor: String,
     /**
      * `Int` constructor arguments, loaded as `const/4` (or `const/16` above 7) before the
-     * `<init>` invoke. The count and types must match [actionCtor]'s parameter list. At most
-     * one int is supported today — that is the shape the existing consumers need.
+     * `<init>` invoke. Must match [actionCtor]'s parameter list. At most one Int slot is
+     * emitted today — the shape that needs more is also the place to generalize this.
      */
     val actionArgs: List<Int> = emptyList(),
 ) {
@@ -105,6 +106,14 @@ internal data class NativeToolbarButton(
             "actionArgs on $id carries ${actionArgs.size} parameters; only one Int slot is " +
                 "emitted today, and the shape that needs more is also the place to generalize this"
         }
+        actionArgs.forEach { arg ->
+            require(arg in -8..MAX_CONST_16_SAFE) {
+                "actionArgs on $id contains $arg — const/4 only encodes -8..7 and const/16 only " +
+                    "down to -32768; outside that range the emitted smali fails to assemble"
+            }
+        }
+        labelLiteral?.let { requireSmaliSafe(it, "labelLiteral", id) }
+        contentDescriptionLiteral?.let { requireSmaliSafe(it, "contentDescriptionLiteral", id) }
     }
 
     /** The content-description spec: its own if given, the label's otherwise. */
@@ -112,12 +121,28 @@ internal data class NativeToolbarButton(
     val effectiveContentDescriptionLiteral: String? get() = contentDescriptionLiteral ?: labelLiteral
 }
 
+// Smali constants are uninterpreted text — a `"`, `\`, or a newline breaks assembly.
+private fun requireSmaliSafe(literal: String, what: String, id: String) {
+    require(
+        !literal.contains('"') &&
+            !literal.contains('\\') &&
+            !literal.contains('\n') &&
+            !literal.contains('\r'),
+    ) {
+        "$what on $id contains a character smali can't carry unparsed — " +
+            "use the resource-id variant for that shape"
+    }
+}
+
 /** The bar-controller's `<init>` register count on Gboard 18.0.3 — the value the insertion
  * assumes. A Gboard bump that moves this is asserted by preflight. */
 private const val CONTROLLER_INIT_REGISTER_COUNT = 13
 
-/** `const/4` encodes a 4-bit signed value, so it holds at most 7; larger args use `const/16`. */
+/** `const/4` encodes a 4-bit signed value (-8..7). Larger-or-more-negative args use `const/16`. */
 private const val MAX_CONST_4_VALUE = 7
+
+/** `const/16` encodes a 16-bit signed value; the emission does not reach below it. */
+private const val MAX_CONST_16_SAFE = 32767
 
 /** The bar-versus-overflow split, identified by what it does to its `List` parameter. */
 private fun Method.splitsAccessPoints(): Boolean {
@@ -127,10 +152,6 @@ private fun Method.splitsAccessPoints(): Boolean {
     return called.count { it == "Ljava/util/List;->subList(II)Ljava/util/List;" } == 2 &&
         called.any { it == "Ljava/lang/Math;->min(II)I" }
 }
-
-private fun Method.calledDescriptors(): List<String> =
-    implementation?.instructions?.toList().orEmpty()
-        .mapNotNull { ((it as? ReferenceInstruction)?.reference as? MethodReference)?.toString() }
 
 // -------------------------------------------------------------------------------------------
 // Where the call goes
@@ -149,8 +170,12 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
     check(buttons.isNotEmpty()) { "emitNativeToolbarButtons called with no buttons" }
 
     // Anchor the bar-controller class on the split method — shape-derived, not name-derived.
-    val split = methodsMatching { it.splitsAccessPoints() }.single()
-    val controllerType = split.definingClass
+    val splits = methodsMatching { it.splitsAccessPoints() }
+    check(splits.size == 1) {
+        "The bar-controller anchor moved: expected exactly one method that splits a List around " +
+            "subList+Math.min, found ${splits.size}: ${splits.map { it.toDescriptor() }}"
+    }
+    val controllerType = splits.single().definingClass
     val controllerClass = classDefByOrNull(controllerType)
         ?: error("$controllerType is not in the APK; the bar controller cannot be hooked")
 
@@ -158,8 +183,12 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
     // underneath us; what does not change is the *shape* — a (ApType, Z)V method on the
     // controller that Lays.put's into the registry map.
     val registerCall = resolveControllerRegisterCall(controllerClass)
-    val init = mutableInitOf(controllerType, controllerClass)
-    val initDescriptor = initDef(controllerType, controllerClass).toDescriptor()
+    val initDef = resolveInitDef(controllerType, controllerClass)
+    val initDescriptor = initDef.toDescriptor()
+    val init = mutableClassDefBy(controllerType).methods.single {
+        it.toDescriptor() == initDescriptor
+    }
+    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, initDescriptor)
 
     val tailIndex = init.implementation!!.instructions
         .indexOfLast { it.opcodeName() == "RETURN_VOID" }
@@ -169,8 +198,8 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
 
     // Three scratch registers cover everything a button's emission touches: v0 holds the builder
     // then the finished `mic`, v1 holds each argument in turn, and v2 is needed only when an
-    // action has an Int ordinal (the action instance sits in v1, the ordinal in v2).
-    // The receiver `p0` (v10 at this register count) is read as `g`'s target, never written.
+    // action has an Int ordinal (the action instance sits in v1, the ordinal in v2). The
+    // receiver `p0` (v10 at this register count) is read as `g`'s target, never written.
     validateScratchRegisters(
         scratch = listOf(0, 1, 2),
         avoid = listOf(10, 11, 12),
@@ -187,6 +216,7 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
  * map via `Lays.put`; others are similar in either/or. Shape + call-target together is the pin.
  */
 private fun resolveControllerRegisterCall(controllerClass: ClassDef): String {
+    val lAysPut = "Lays;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
     val candidates = controllerClass.methods.filter { method ->
         val params = method.parameterTypes.map(Any::toString)
         params.size == 2 &&
@@ -195,20 +225,19 @@ private fun resolveControllerRegisterCall(controllerClass: ClassDef): String {
             method.implementation?.instructions?.any { instruction ->
                 instruction.opcodeName() == "INVOKE_VIRTUAL" &&
                     ((instruction as? ReferenceInstruction)?.reference as? MethodReference)
-                        ?.toString() ==
-                    "Lays;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+                        ?.toString() == lAysPut
             } == true
     }
     check(candidates.size == 1) {
-        "Expected exactly one (*, Z)V method on ${controllerClass.type} that Ays.put's into " +
-            "the registry — the bar-controller's register call — but found ${candidates.size}: " +
+        "The bar controller's register call moved: expected exactly one (*, Z)V method on " +
+            "${controllerClass.type} that invokes Lays.put on `h`, found ${candidates.size}: " +
             candidates.map { it.toDescriptor() }
     }
     return candidates.single().toDescriptor()
 }
 
-/** The immutable `<init>(Context, ?)` declaration — found once, reused for descriptor + mutate. */
-private fun initDef(
+/** The immutable `<init>(Context, ?)` declaration; identified once and shared by the rest. */
+private fun resolveInitDef(
     controllerType: String,
     controllerClass: ClassDef,
 ): com.android.tools.smali.dexlib2.iface.Method {
@@ -220,19 +249,6 @@ private fun initDef(
         "$controllerType has no <init>(Context, ?) — the bar-controller constructor's shape " +
             "has changed and the hook point must be re-derived",
     )
-}
-
-/** The mutable `<init>(Context, ?)` of the bar controller, with its pin asserted. */
-private fun BytecodePatchContext.mutableInitOf(
-    controllerType: String,
-    controllerClass: ClassDef,
-): MutableMethod {
-    val definition = initDef(controllerType, controllerClass)
-    val init = mutableClassDefBy(controllerType).methods.single {
-        it.toDescriptor() == definition.toDescriptor()
-    }
-    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, definition.toDescriptor())
-    return init
 }
 
 // -------------------------------------------------------------------------------------------
@@ -277,11 +293,11 @@ private fun NativeToolbarButton.toSmali(
             iput-object v1, v0, ${builder.contentDescriptionField}
         """.trimIndent()
 
-    // v1: the Runnable instance. v2 (scratch, only when args exist): the ordinal load.
+    // v1: the Runnable instance. v2 (scratch, only when an ordinal is passed): the Int load.
     val argSetup = if (actionArgs.isEmpty()) ""
     else {
         val arg = actionArgs.single()
-        val constOp = if (arg <= MAX_CONST_4_VALUE) "const/4" else "const/16"
+        val constOp = if (arg in -8..MAX_CONST_4_VALUE) "const/4" else "const/16"
         "\n        $constOp v2, $arg"
     }
     val ctorRegisters = if (actionArgs.isEmpty()) "v1" else "v1, v2"

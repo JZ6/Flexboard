@@ -21,21 +21,20 @@ import dev.jz6.flexboard.extension.ime.ImeService;
  * and passing {@code android.R.id.copy} would mean hardcoding {@code 0x0102001b} in Kotlin. The ids
  * below are Flexboard's own, mapped to the framework's in {@link #menuAction()}, so the framework
  * constants stay symbolic in the one language that can name them. They are duplicated in
- * {@code TextActionsPatch.kt} and held in step by {@code check_shared_constants.py}.
+ * {@code ToolbarButtonsPatch.kt} and held in step by {@code check_shared_constants.py}.
  *
- * <p><b>The IME service lives in {@link ImeService}.</b> It used to be a static field here, back
- * when these three buttons were the only thing that needed it. Hotkeys need it too, so it moved
- * rather than being copied — see that class for why a static holder is the right shape at all.
+ * <p><b>The IME service lives in {@link ImeService}.</b> That class also carries the rationale for
+ * a static holder at all.
  */
 public final class TextAction implements Runnable {
 
-    /** Must match TEXT_ACTION_SELECT_ALL in TextActionsPatch.kt. */
+    /** Must match TEXT_ACTION_SELECT_ALL in ToolbarButtonsPatch.kt. */
     private static final int SELECT_ALL = 0;
 
-    /** Must match TEXT_ACTION_COPY in TextActionsPatch.kt. */
+    /** Must match TEXT_ACTION_COPY in ToolbarButtonsPatch.kt. */
     private static final int COPY = 1;
 
-    /** Must match TEXT_ACTION_PASTE in TextActionsPatch.kt. */
+    /** Must match TEXT_ACTION_PASTE in ToolbarButtonsPatch.kt. */
     private static final int PASTE = 2;
 
     private final int action;

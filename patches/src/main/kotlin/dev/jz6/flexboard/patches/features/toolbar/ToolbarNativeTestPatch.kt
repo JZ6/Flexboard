@@ -10,39 +10,14 @@ import dev.jz6.flexboard.patches.shared.resolveAccessPointBuilder
 /**
  * Registers a single <b>Test</b> button through Gboard's own access-point registry.
  *
- * ## Why this exists
+ * A canary for the native-registration shape. If this button appears, draggable through
+ * Customize and persists across a rebuild, the registration path is healthy; if it does not,
+ * the *shared* helper behind every toolbar patch is the thing to look at. Keeping it as a
+ * separate off-by-default patch means a user can isolate that layer without dragging in the
+ * user-facing buttons at the same time.
  *
- * Buttons injected by splicing the split method's list — the text actions, the custom hotkeys —
- * work visually but have never persisted through a customize session: the customize-write path
- * reads its commits out of the order manager's registered-provider list, and ours aren't in it.
- * On the next rebuild they snap back to the front regardless of where they were dragged.
- *
- * This patch is the proof the fix works: one button going through the same path native buttons
- * use, so everything Gboard's own customize machinery expects from a valid toolbar entry is
- * exercised, including save, reload, and reorder.
- *
- * ## How it goes native
- *
- * The full mechanism is documented on {@link NativeToolbarButton}. Read end-to-end:
- *
- *  - **Allowed-set:** a `string-array` resource holds every id Gboard accepts on the bar. The
- *    write filter is the only filter we face; the save side keeps whatever is handed to it. So
- *    the win is registering under a *dormant* id that's already allowed but never built by
- *    Gboard. `flag_editor` is the one used here; there are six candidates and any of them
- *    works.
- *  - **The registry:** `Lmlh.h` is an `ArrayMap` keyed by id. Its `g(mic, true)` method writes
- *    the definition *and* folds the id into the shown order in one call.
- *  - **The wiring:** `mhx.q(Runnable)` wraps a plain `java.lang.Runnable` as an
- *    `ACCESS_POINT_ACTION` key-press, which the IME dispatcher runs natively on tap. The
- *    runnable lives in the extension (so nothing obfuscated is named from Java) and is
- *    constructed with no arguments — see {@link TestAction}.
- *
- * Click commits "test" at the cursor — that is the whole point of the button as a test: if
- * the text appears, the click dispatch reached the extension without us having hooked any of
- * Gboard's callbacks.
- *
- * <b>Default-off.</b> Exposed in the patch list so the flow can be verified on device before
- * this shape replaces the split-list splice everywhere else.
+ * The full mechanism is documented on `NativeToolbarButton` in `shared/ToolbarRegistry.kt`.
+ * This patch is a 15-line call into it.
  */
 @Suppress("unused")
 val toolbarNativeTestPatch = bytecodePatch(
@@ -62,7 +37,9 @@ val toolbarNativeTestPatch = bytecodePatch(
             listOf(
                 NativeToolbarButton(
                     id = "flag_editor",
-                    icon = "0x7f080218",
+                    // Material auto_awesome — bundled and never drawn by Gboard itself, so the
+                    // canary is visually distinct from Select all (which uses `select_all`).
+                    icon = "0x7f0806fc",
                     labelLiteral = "Test",
                     actionCtor = TEST_ACTION_CTOR,
                 ),
