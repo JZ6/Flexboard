@@ -1,12 +1,21 @@
 # Roadmap
 
-toolbar still has major issues, gboard seems to crash when i click the 4 square icon to open the extended hotkey list, and then when i move hotkeys around, the order doesnt save properly and select all and copy paste somehow becomes the first 3 hotkeys again
+## Pending (investigated, needs implementation)
 
-hot bar order editing problems
+**Toolbar reorder persistence — register as providers.** Gboard's customize-write path reconstructs the saved order string from the registered-provider list — the `Lmjv`/`Lmjz` order hierarchy — and drops any id it doesn't know. Our injected buttons (`flexboard_select_all`, `flexboard_copy`, `flexboard_paste`, `flexboard_hotkey_N`) aren't providers, so they never appear in the order string, and every customize session forgets them. On rebuild, `merge()` can only place them canonicallly at the front (which is why it currently always does that — see `ToolbarMerge.mergeOrdered`). To fix: register our access points with Gboard's provider machinery via a bytecode patch, instead of injecting into the bar's rendered list after the fact. Then the customize-write path has them by construction, and drag-persistence just works.
 
-inline autofill not working
+**Toolbar crash on clicking the 4-square overflow icon.** Reproduces as a crash depending on state; likely the icons where a draw with our registered ids into Customize's key paths. Needs a device logcat to identify. Likely related to not persisting: the customize view expects reordable ids, ours are absent, and the difference in list contents likely crashes the section/commit handler with an unexpected value.
 
-Ideas, in no particular order and with no promises. Kept verbatim as written.
+## Earlier observations to not lose
+
+- `ToolbarMerge` previously fought itself: merged-by-pairs-approach produced duplicates and drift. Simplified to: always prepend, never read the order.
+- `Hotkey.labelAt` now returns "" instead of `null` when empty; `Hotkey.hasContent` and `hotkeySlotOf` in the merge filter empties from the register path. Empty slots must not reach the bar.
+- `?attr/colorControlNormal` does not resolve at recompile time; use framework attrs (`android:textColorPrimary`) or hard colors.
+- The icon `$0x7f...` in the hotkeys array needs nothing from the listed modes — they stay bundled in the APK and are just unused.
+- morphe-patcher's `addInstructionsWithLabels` (label-aware smali insertion) chokes on two sequential insertions into one method if labels are involved (`ArrayIndexOutOfBoundsException: length=0`). The fix is to remove labels from the inserted bytecode entirely (avoid `if-eqz`-generated `:absent` chains); branchless smali survives.
+- The settings Activity should render only enabled sections via markers — parked pending a decision; user's roadmap entry says "hotkeys and toolbar config still in flexboard settings when they arent patched; settings should only be added with the patches".
+
+# Roadmap entries written by the user verbatim.
 
 swipe length seem to be reversed? lower value takes more swipe to swipe multiple words on the delete key
 
