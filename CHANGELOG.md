@@ -1,3 +1,7 @@
+# [1.2.1-dev.9](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.8...v1.2.1-dev.9) (2026-08-21)
+
+* **Gboard:** Kotlin equality between Int and Long is always false
+
 # [1.2.1-dev.8](https://github.com/JZ6/Flexboard/compare/v1.2.1-dev.7...v1.2.1-dev.8) (2026-08-21)
 
 * **Gboard:** force the grammar check row on

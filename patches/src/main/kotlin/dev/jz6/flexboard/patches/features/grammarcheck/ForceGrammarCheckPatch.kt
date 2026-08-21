@@ -82,7 +82,7 @@ private fun MutableMethod.forceDefaultOn() {
     val tail = instructions.drop(keyIndex + 1)
     val defaultIndex = keyIndex + 1 + tail.indexOfFirst { instruction ->
         instruction is OneRegisterInstruction && when (instruction) {
-            is NarrowLiteralInstruction -> instruction.narrowLiteral
+            is NarrowLiteralInstruction -> instruction.narrowLiteral.toLong()
             is WideLiteralInstruction -> instruction.wideLiteral
             else -> null
         } == 0L
