@@ -45,6 +45,11 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  * absent from {@code pairs}; a saved entry for a since-emptied hotkey matches nothing and
  * vanishes, as it should.
  *
+ * <p><b>Composition.</b> The text-actions patch and the hotkeys patch each call this with their
+ * own pairs when both are applied. The second call sees the first's additions inside
+ * {@code incoming}, so any id not in the current pairs — a Gboard id, or one the sibling just
+ * placed — counts as an occupied position. That is what keeps the two merges composable.
+ *
  * <p><b>Foldables.</b> The inner screen keeps its own order string, written only once the user
  * has customized the inner bar. When it is empty we fall back to the main one — the same
  * inheritance Gboard's own migration performs.
@@ -58,8 +63,6 @@ public final class ToolbarMerge {
     private static final int ORDER_KEY_ID = 0x7f1409b0;
 
     private static final int ORDER_KEY_FOLDABLE_ID = 0x7f140a44;
-
-    private static final String FLEXBOARD_PREFIX = "flexboard_";
 
     private static final String TAG = "Flexboard";
 
@@ -107,15 +110,17 @@ public final class ToolbarMerge {
             }
             int index = indexOf(pairs, id);
             if (index >= 0 && !placed[index]) {
-                // After every Gboard entry seen so far (they sit in `out` in that relative
-                // order) plus every Flexboard button placed before this one (each insert
-                // shifted the tail down by one).
+                // After every existing entry seen so far (they sit in `out` in that relative
+                // order) plus every Flexboard button this merge placed before this one.
                 int position = Math.min(gboardSeen + inserted, out.size());
                 out.add(position, pairs.get(index + 1));
                 placed[index] = true;
                 inserted++;
                 anyPlaced = true;
-            } else if (!id.startsWith(FLEXBOARD_PREFIX)) {
+            } else {
+                // Any id not in this merge's pairs still occupies a position in `out`: a
+                // Gboard entry, or a button a sibling merge already placed. Counting it keeps
+                // the math right when two merges run back to back over the same saved order.
                 gboardSeen++;
             }
         }

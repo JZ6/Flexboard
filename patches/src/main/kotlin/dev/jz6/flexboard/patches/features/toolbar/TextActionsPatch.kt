@@ -90,21 +90,18 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * are Material's, which Gboard bundles — see [BUTTONS] for how they were found, given that every
  * drawable name in the app has been collapsed.
  *
- * ## Hotkeys
+ * ## Splitting from Custom Hotkeys
  *
- * The same button, with `commitText` in place of a context-menu id and nothing known at patch
- * time: the text is the user's, and so is whether the button exists at all. So six slots are
- * emitted, each guarded on the extension reporting that slot occupied, and each labelled with the
- * user's own snippet rather than a Gboard string — see [HOTKEY_ICONS] and
- * [AccessPointBuilder.labelField].
+ * This patch emits only the three text actions. Custom hotkey slots live in their own patch —
+ * [customHotkeysPatch] — so each feature can be toggled independently. Both insert into the
+ * same access-points split method and call `ToolbarMerge.merge` with their own pair lists; the
+ * merge composes them against one saved order string.
  */
 @Suppress("unused")
 val toolbarButtonsPatch = bytecodePatch(
     name = "Toolbar Buttons",
     description = "Add Select all, Copy and Paste buttons to the toolbar above the keyboard, so " +
-        "each is one tap instead of opening Gboard's text editing panel first. Adds six hotkey " +
-        "buttons too, each typing a string you set in Flexboard's settings — they only appear " +
-        "once you have filled one in.",
+        "each is one tap instead of opening Gboard's text editing panel first.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -112,8 +109,7 @@ val toolbarButtonsPatch = bytecodePatch(
 
     execute {
         val builder = resolveAccessPointBuilder()
-        publishInputMethodService()
-        prependToolbarButtons(builder)
+        emitToolbarButtons(builder, textActionsEmission(builder))
     }
 }
 
@@ -161,102 +157,19 @@ private val BUTTONS = listOf(
 )
 
 /**
- * How many hotkey slots exist.
- *
- * Fixed, because the emitted code is fixed: a button is built by a block of bytecode, and blocks
- * cannot be added at run time. Six is a compromise between a bar that can hold them and a settings
- * screen nobody scrolls. Slots are numbered from one, matching what the settings screen calls them.
- *
- * **Duplicated in `FlexboardSettingsActivity`** and held in step by `check_shared_constants.py`.
- */
-internal const val HOTKEY_SLOT_COUNT = 12
-
 /**
- * The icon each slot wears, and the whole of what tells six otherwise identical buttons apart on
- * the bar.
- *
- * **Gboard bundles no numbered glyphs**, so these are arbitrary markers rather than "1" through
- * "6": every published Material icon was matched against the APK's vector drawables, and of 2,170
- * only 29 shapes are present — the full table is in `docs/gboard-bindings.md`. These six are the
- * most distinct of those, and `content_cut` is genuinely spare rather than borrowed, since Gboard
- * bundles the scissors and draws them nowhere.
- *
- * Arbitrary markers are learnable because the settings screen renders each one beside the field
- * that fills it, so the star is chosen while looking at the star.
- *
- * **Duplicated in `FlexboardSettingsActivity`**, which needs the same ids to draw those previews.
+ * The icons and slots for the custom hotkeys live beside their patch in `CustomHotkeysPatch.kt`.
+ * The constants stay in that file because `check_shared_constants.py` scans the whole Kotlin
+ * tree — only the Java side needs them declared anywhere in the extension.
  */
-internal const val HOTKEY_ICON_1 = "0x7f080239" // star
 
-internal const val HOTKEY_ICON_2 = "0x7f0806fc" // auto_awesome
-internal const val HOTKEY_ICON_3 = "0x7f080215" // content_cut
-internal const val HOTKEY_ICON_4 = "0x7f08074e" // check_box
-internal const val HOTKEY_ICON_5 = "0x7f080733" // radio_button_unchecked
-internal const val HOTKEY_ICON_6 = "0x7f080219" // share
-
-internal const val HOTKEY_ICON_7 = "0x7f080239" // star (reused)
-internal const val HOTKEY_ICON_8 = "0x7f0806fc" // auto_awesome (reused)
-internal const val HOTKEY_ICON_9 = "0x7f080215" // content_cut (reused)
-internal const val HOTKEY_ICON_10 = "0x7f08074e" // check_box (reused)
-internal const val HOTKEY_ICON_11 = "0x7f080733" // radio_button_unchecked (reused)
-internal const val HOTKEY_ICON_12 = "0x7f080219" // share (reused)
-
-private val HOTKEY_ICONS = listOf(
-    HOTKEY_ICON_1,
-    HOTKEY_ICON_2,
-    HOTKEY_ICON_3,
-    HOTKEY_ICON_4,
-    HOTKEY_ICON_5,
-    HOTKEY_ICON_6,
-    HOTKEY_ICON_7,
-    HOTKEY_ICON_8,
-    HOTKEY_ICON_9,
-    HOTKEY_ICON_10,
-    HOTKEY_ICON_11,
-    HOTKEY_ICON_12,
-)
-
-/** The access-point id for a slot. Gboard keys ordering and user customisation off this string. */
-private fun hotkeyId(slot: Int) = "flexboard_hotkey_$slot"
-
-// -------------------------------------------------------------------------------------------
-// Anchors
-// -------------------------------------------------------------------------------------------
-
-/**
- * The three resource ids Gboard's text-editing access-point seed uses together, and which nothing
- * else in the app uses together. Resolved with `tools/apk/arsc.py`: the drawable is the panel's
- * icon, `0x7f140720` reads "Text editing", `0x7f141218` is its content description.
- *
- * These are **inputs to the derivation** — the values Gboard's own code hands the setters, used to
- * work out which of five `(I)V` setters is which. They are not what any button is given.
- */
 private const val SEED_ICON = 0x7f080546L
 private const val SEED_LABEL = 0x7f140720L
 private const val SEED_CONTENT_DESCRIPTION = 0x7f141218L
 
 private const val EXTENSION_CLASS = "Ldev/jz6/flexboard/extension/textaction/TextAction;"
 
-private const val IME_SERVICE_CLASS = "Ldev/jz6/flexboard/extension/ime/ImeService;"
-
-private const val SET_SERVICE =
-    "$IME_SERVICE_CLASS->setService(Landroid/inputmethodservice/InputMethodService;)V"
-
 private const val NEW_ACTION = "$EXTENSION_CLASS-><init>(I)V"
-
-private const val HOTKEY_CLASS = "Ldev/jz6/flexboard/extension/hotkey/Hotkey;"
-
-private const val NEW_HOTKEY = "$HOTKEY_CLASS-><init>(I)V"
-
-/**
- * Asked once per slot while the bar is being built. A null answer means the slot is empty, and the
- * emitted block branches past the entire button — which is how hotkeys stay invisible until used.
- */
-private const val HOTKEY_LABEL_AT = "$HOTKEY_CLASS->labelAt(I)Ljava/lang/String;"
-
-private const val HOTKEY_ICON_AT = "$HOTKEY_CLASS->iconAt(II)I"
-
-private const val INPUT_METHOD_SERVICE = "Landroid/inputmethodservice/InputMethodService;"
 
 private const val SUB_LIST = "Ljava/util/List;->subList(II)Ljava/util/List;"
 
@@ -276,10 +189,9 @@ private const val TOOLBAR_MERGE =
  * register layout, and R8 re-rolls register allocation on every Gboard build.
  */
 private const val SPLIT_REGISTER_COUNT = 7
-private const val ON_CREATE_REGISTER_COUNT = 12
 
 /** The builder API, every member of it derived. */
-private data class AccessPointBuilder(
+internal data class AccessPointBuilder(
     val newBuilder: String,
     val setId: String,
     val setIcon: String,
@@ -316,7 +228,7 @@ private const val PROPERTY_CONTENT_DESCRIPTION = " contentDescription"
 private val PROPERTIES = listOf(PROPERTY_ICON, PROPERTY_LABEL, PROPERTY_CONTENT_DESCRIPTION)
 
 /** One of the builder's resource-id setters, and what it writes. */
-private data class BuilderProperty(
+internal data class BuilderProperty(
     val setter: String,
     val bit: Long,
     /** The `int` field holding the resource id, which the literal field sits beside. */
@@ -328,14 +240,14 @@ private data class BuilderProperty(
 // -------------------------------------------------------------------------------------------
 
 /** Every class in the APK for which [predicate] holds. */
-private fun BytecodePatchContext.classesMatching(predicate: (ClassDef) -> Boolean): List<ClassDef> {
+internal fun BytecodePatchContext.classesMatching(predicate: (ClassDef) -> Boolean): List<ClassDef> {
     val found = mutableListOf<ClassDef>()
     classDefForEach { if (predicate(it)) found += it }
     return found
 }
 
 /** Every method in the APK for which [predicate] holds, in one pass over all classes. */
-private fun BytecodePatchContext.methodsMatching(predicate: (Method) -> Boolean): List<Method> {
+internal fun BytecodePatchContext.methodsMatching(predicate: (Method) -> Boolean): List<Method> {
     val found = mutableListOf<Method>()
     classDefForEach { classDef -> classDef.methods.filterTo(found, predicate) }
     return found
@@ -383,7 +295,7 @@ private fun Method.isAccessPointSeed(): Boolean {
  * is a literal written beside the label resource id, and writing it beside the *content
  * description* instead would leave every hotkey named "Text editing".
  */
-private fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilder {
+internal fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilder {
     val seeds = methodsMatching { it.isAccessPointSeed() }
 
     check(seeds.size == 1) {
@@ -575,36 +487,6 @@ private fun Method.resolveProperties(
 // -------------------------------------------------------------------------------------------
 
 /**
- * Hands the IME service to the extension.
- *
- * Derived as *the* class extending `android.inputmethodservice.InputMethodService`. There is
- * exactly one, and the assertion is what keeps that a fact — a second one appearing would mean the
- * buttons silently wire themselves to whichever came first.
- *
- * All of v0..v10 are dead at entry by backward liveness, so `p0` is read and nothing else is
- * touched.
- */
-private fun BytecodePatchContext.publishInputMethodService() {
-    val services = classesMatching { it.superclass == INPUT_METHOD_SERVICE }
-    check(services.size == 1) {
-        "Expected exactly one InputMethodService subclass, found ${services.size}: " +
-            "${services.map { it.type }}. The text actions need an unambiguous one."
-    }
-
-    val onCreate = services.single().methods.singleOrNull {
-        it.name == "onCreate" && it.parameterTypes.isEmpty() && it.returnType == "V"
-    } ?: error("${services.single().type} does not declare onCreate()V")
-
-    val method = mutableClassDefBy(services.single().type).methods.single {
-        it.toDescriptor() == onCreate.toDescriptor()
-    }
-
-    method.assertRegisterCount(ON_CREATE_REGISTER_COUNT, onCreate.toDescriptor())
-
-    method.addInstructions(0, "invoke-static { p0 }, $SET_SERVICE")
-}
-
-/**
  * Builds the buttons and merges them into the list the bar is built from.
  *
  * The target is derived by shape rather than name: the sole method taking a `List` that splits it
@@ -625,7 +507,7 @@ private fun BytecodePatchContext.publishInputMethodService() {
  * the fixed indices an injector would otherwise own. On a first run — no saved order — it
  * prepends the canonical set, which is what stock looked like before this change.
  */
-private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuilder) {
+internal fun BytecodePatchContext.emitToolbarButtons(builder: AccessPointBuilder, blocks: String) {
     val candidates = methodsMatching { it.splitsAccessPoints() }
 
     check(candidates.size == 1) {
@@ -641,16 +523,26 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
 
     method.assertRegisterCount(SPLIT_REGISTER_COUNT, split.toDescriptor())
 
-    val ids = BUTTONS.map { it.id } + (1..HOTKEY_SLOT_COUNT).map(::hotkeyId)
+    method.addInstructionsWithLabels(
+        0,
+        """
+            new-instance v0, Ljava/util/ArrayList;
+            invoke-direct { v0 }, Ljava/util/ArrayList;-><init>()V
+            $blocks
+            invoke-static { p1, v0 }, $TOOLBAR_MERGE
+            move-result-object p1
+        """,
+    )
+}
+
+private fun textActionsEmission(builder: AccessPointBuilder): String {
+    val ids = BUTTONS.map { it.id }
     check(ids.distinct().size == ids.size) {
         "Two buttons share an access-point id: $ids. Gboard keys ordering and user customisation " +
             "off that string, so a collision would lose one of them."
     }
-    check(HOTKEY_ICONS.size == HOTKEY_SLOT_COUNT) {
-        "${HOTKEY_ICONS.size} hotkey icons for $HOTKEY_SLOT_COUNT slots"
-    }
 
-    val built = BUTTONS.joinToString("\n") { button ->
+    return BUTTONS.joinToString("\n") { button ->
         """
             invoke-static { }, ${builder.newBuilder}
             move-result-object v1
@@ -686,73 +578,13 @@ private fun BytecodePatchContext.prependToolbarButtons(builder: AccessPointBuild
             move-result v3
         """
     }
-
-    val hotkeys = (1..HOTKEY_SLOT_COUNT).joinToString("\n") { slot ->
-        val absent = "flexboard_hotkey_${slot}_absent"
-        val constSlot = if (slot <= MAX_CONST_4_VALUE) "const/4" else "const/16"
-        """
-            $constSlot v3, $slot
-            invoke-static { v3 }, $HOTKEY_LABEL_AT
-            move-result-object v2
-            if-eqz v2, :$absent
-
-            invoke-static { }, ${builder.newBuilder}
-            move-result-object v1
-
-            const-string v3, "${hotkeyId(slot)}"
-            invoke-virtual { v1, v3 }, ${builder.setId}
-            invoke-interface { v0, v3 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
-            move-result v3
-
-            const v3, ${HOTKEY_ICONS[slot - 1]}
-            $constSlot v4, $slot
-            invoke-static { v4, v3 }, $HOTKEY_ICON_AT
-            move-result v3
-            invoke-virtual { v1, v3 }, ${builder.setIcon}
-
-            const/4 v3, 0x0
-            invoke-virtual { v1, v3 }, ${builder.setLabel}
-            invoke-virtual { v1, v3 }, ${builder.setContentDescription}
-            iput-object v2, v1, ${builder.labelField}
-            iput-object v2, v1, ${builder.contentDescriptionField}
-
-            new-instance v3, $HOTKEY_CLASS
-            $constSlot v4, $slot
-            invoke-direct { v3, v4 }, $NEW_HOTKEY
-            invoke-virtual { v1, v3 }, ${builder.setAction}
-
-            const/4 v3, 0x1
-            invoke-static { v3 }, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
-            move-result-object v3
-            const-string v4, "closeAction"
-            invoke-virtual { v1, v4, v3 }, ${builder.putExtra}
-
-            invoke-virtual { v1 }, ${builder.build}
-            move-result-object v2
-            invoke-interface { v0, v2 }, Ljava/util/List;->add(Ljava/lang/Object;)Z
-            move-result v3
-            :$absent
-        """
-    }
-
-    method.addInstructionsWithLabels(
-        0,
-        """
-            new-instance v0, Ljava/util/ArrayList;
-            invoke-direct { v0 }, Ljava/util/ArrayList;-><init>()V
-            $built
-            $hotkeys
-            invoke-static { p1, v0 }, $TOOLBAR_MERGE
-            move-result-object p1
-        """,
-    )
 }
 
 /** `const/4` encodes a 4-bit signed value, so it holds at most 7. Slots 8+ use `const/16`. */
 private const val MAX_CONST_4_VALUE = 7
 
 /** The bar-versus-overflow split, identified by what it does to its `List` parameter. */
-private fun Method.splitsAccessPoints(): Boolean {
+internal fun Method.splitsAccessPoints(): Boolean {
     if (parameterTypes.map(Any::toString) != listOf("Ljava/util/List;")) return false
     if (returnType != "V") return false
     val called = calledDescriptors()
