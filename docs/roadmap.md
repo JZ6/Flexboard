@@ -3,6 +3,8 @@
 
 # Roadmap entries written by the user verbatim.
 
+add current flexboard version
+
 readd hotkeys with the icons
 
 allow hotkey import export
@@ -31,6 +33,15 @@ ok now clean up the current changelog, remove all bump commits from the changelo
   datastore bridge into the same store the swipe patch reads. The hand-built Activity, its theme
   mirroring and the rename-patch retarget are deleted; old int-typed keys abandoned for
   `flexboard_swipe_*`. Mechanism and pins: [`docs/gboard-settings-hosting.md`](gboard-settings-hosting.md).
+
+- **"readd hotkeys with the icons" / "readd ability to change number of hotkeys on toolbar"**
+  (1.4.0-dev, native): twelve patch-owned ids, one conditional registration block per slot at the
+  bar controller's constructor tail; every button attribute read live from the same preference
+  store the settings screens write. The read filter (`Lmjv.c`) is bypassed ahead of its allowed-set
+  `contains` by an id-prefix check, so no ARSC array widening is needed. Icons are Gboard-bundled
+  drawables picked per slot from a `ListPreference` fed by a res/values array pair; the default
+  counts and per-slot icons are asserted by the constants checker. Still pending from the queue:
+  **import/export**.
 
 ## Historical: the dead merge-splice architecture (kept for context)
 
