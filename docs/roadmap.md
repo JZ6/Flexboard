@@ -3,15 +3,15 @@
 
 # Roadmap entries written by the user verbatim.
 
-add current flexboard version
+
 
 readd hotkeys with the icons
 
-allow hotkey import export
+add hotkey import export support 
 
-readd ability to change number of hotkeys on toolbar
+add current flexboard version to the bottom of flexboard settings 
 
-redo settings to use native gboard
+readd ability to change the max allowed number of hotkeys on toolbar, do it as natively as possible, we should only increase the max number of buttons allowed on the toolbar, but users can use less if they like, and this should work for both screens of a foldable phone as well
 
 some settings disabled like grammer check and ai writing tools, rambler mode etc
 

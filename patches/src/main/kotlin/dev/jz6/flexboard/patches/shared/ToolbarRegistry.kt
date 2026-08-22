@@ -386,11 +386,16 @@ internal fun BytecodePatchContext.emitNativeHotkeys(builder: AccessPointBuilder)
         what = initDescriptor,
     )
 
-    val emission = (1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
+    val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
         hotkeyBlock(slot, builder, registerCall)
-    }
+    } + "\n\nnop\n").trimIndent()
     // WithLabels: the slot blocks carry twelve distinct internal `:…skip_N` labels, which the
     // plain `addInstructions` rejects — same reason the scrub clamp uses the labelled variant.
+    // The trailing `nop` on the last line is not decoration: `addInstructionsWithLabels`
+    // (reversed-SubList-walk, `externalLabels[0]` on an empty array → `ArrayIndexOutOfBoundsException:
+    // length=0; index=0`) crashes the patcher whenever a branch targets an internal label that has
+    // no instruction after it *in the same emission*. Eleven of our labels bind to the next
+    // block's opening instruction, but the twelfth would be past-the-end — one `nop` is its home.
     init.addInstructionsWithLabels(tailIndex, emission)
 }
 
