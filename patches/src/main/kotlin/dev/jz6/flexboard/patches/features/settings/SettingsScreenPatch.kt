@@ -145,6 +145,15 @@ private fun writePatchResource(name: String, target: String, placeholders: Map<S
         require(token in xml) { "$source lacks the @$key@ placeholder it was supposed to carry" }
         xml = xml.replace(token, value)
     }
+    // Parse before write: a malformed file otherwise only surfaces thousands of lines into
+    // Morphe's resource-id pass ("expected: END_TAG ... resources @7141:1"), with no hint of
+    // which patch resource produced it. Failing here costs milliseconds and names the file.
+    try {
+        javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(java.io.ByteArrayInputStream(xml.toByteArray()))
+    } catch (e: Exception) {
+        throw IllegalStateException("$source is not well-formed XML: ${e.message}", e)
+    }
     context.get("$target/$name", true).writeText(xml)
 }
 
