@@ -62,6 +62,16 @@ hotkey slots if we want more than the two dormant ids still free. The patch is a
 string-array bag entry, and aapt2 will happily re-link it. Not implemented today because no
 patch consumes it.
 
+**Rolled back: the 1.4.0-dev.1–dev.5 native hotkeys.** The dex side was solid (conditional
+`Lmlh` blocks + the `Lmjv;->c` order-filter bypass), but the feature's per-slot ListPreference
+screens needed two string-array entries in `res/values/`, and values-file surgery failed twice
+inside Morphe's encode: once from arsclib minting a fake type out of the filename
+(`flexboard_hotkey_icons.xml` → type `flexboard_hotkey_icon`), once from a splice that left a
+second `<resources>` opening tag mid-file (parse died at `arrays.xml` line 7141). The whole
+stack was reset to the pre-hotkeys base. When hotkeys re-land: keep the dex half, and serve
+the slot pickers **without touching `res/values/`** — hardcode the icon choices in the
+extension's Java and build the lists at runtime.
+
 
 
 ## Native registration (being proven out — Parked)
