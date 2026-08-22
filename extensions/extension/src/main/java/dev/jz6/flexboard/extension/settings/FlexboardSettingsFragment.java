@@ -1,11 +1,8 @@
 package dev.jz6.flexboard.extension.settings;
 
 import android.content.Context;
-import android.inputmethodservice.InputMethodService;
 
 import com.google.android.libraries.inputmethod.preferencewidgets.CommonPreferenceFragment;
-
-import dev.jz6.flexboard.extension.ime.ImeService;
 
 /**
  * Flexboard's settings screen, hosted by Gboard's own {@code SettingsActivity}.
@@ -54,34 +51,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
      */
     @Override
     public int aB() {
-        Context context = processContext();
-        if (context == null) {
-            return 0;
-        }
-        return context.getResources()
-            .getIdentifier(SCREEN_NAME, "xml", context.getPackageName());
-    }
-
-    /**
-     * A Context in this process, best effort.
-     *
-     * <p>First choice is the IME service the base patch publishes: it is present whenever the
-     * keyboard has ever been up in this process, which is the ordinary path into Gboard's
-     * settings. The fallback covers settings opened cold — Gboard's entry point needs no service
-     * — by reflecting the framework's {@code ActivityThread.currentApplication()}. Both are this
-     * app's own objects; no Gboard symbol is named, so package rename and R8 are both irrelevant.
-     */
-    private static Context processContext() {
-        InputMethodService service = ImeService.get();
-        if (service != null) {
-            return service;
-        }
-        try {
-            return (Context) Class.forName("android.app.ActivityThread")
-                .getMethod("currentApplication")
-                .invoke(null);
-        } catch (ReflectiveOperationException | ClassCastException ignored) {
-            return null;
-        }
+        Context context = SettingsScreens.processContext();
+        return SettingsScreens.xmlId(context, SCREEN_NAME);
     }
 }
