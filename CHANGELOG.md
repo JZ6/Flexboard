@@ -1,3 +1,9 @@
+# [1.4.0-dev.1](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.0...v1.4.0-dev.1) (2026-08-22)
+
+* **Gboard:** docs: roadbook notes the hotkeys rollback and the rule for their return
+* **Gboard:** test: parse every patch-written resource file before handing it to Morphe
+* **Gboard:** feat: show the Flexboard version at the bottom of the settings screen
+
 # [1.4.0-dev.0](https://github.com/JZ6/Flexboard/compare/v1.3.0...v1.4.0-dev.0) (2026-08-22)
 
 * **Gboard:** fix: writePatchResource name/target concatenates the directory twice
