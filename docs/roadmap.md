@@ -22,6 +22,16 @@ increased tool bar size fit more buttons
 ok now clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
 
 
+## Done from the queue
+
+- **"redo settings to use native gboard"** (1.4.0-dev, after dev.2): the settings screen is hosted
+  by Gboard's own settings stack — the row's `android:fragment` instantiates an extension fragment
+  subclassing `CommonPreferenceFragment` (compile-only stub; see `stubs/`), the screen is a real
+  `res/xml/flexboard_settings.xml` of `InlineSliderPreference` rows, and values persist through the
+  datastore bridge into the same store the swipe patch reads. The hand-built Activity, its theme
+  mirroring and the rename-patch retarget are deleted; old int-typed keys abandoned for
+  `flexboard_swipe_*`. Mechanism and pins: [`docs/gboard-settings-hosting.md`](gboard-settings-hosting.md).
+
 ## Historical: the dead merge-splice architecture (kept for context)
 
 Under "Formerly broken / solved by native registration": the old design tried to splice extra

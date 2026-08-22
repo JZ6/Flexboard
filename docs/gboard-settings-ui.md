@@ -13,6 +13,14 @@ typing checkbox while the swipe gesture is enabled — preventing the conflict r
 to it. This is now implemented; the sections below are in the order they were worked out, so the
 dead ends are kept alongside what replaced them rather than deleted.
 
+> **Update (1.4.0):** the extension Activity this document builds up to is gone. The settings
+> screen is hosted natively now — the row names the extension's fragment via `android:fragment`
+> and Gboard's own settings stack does the rest; the values cross into the store through the
+> datastore bridge. Everything below about preference contexts is still true for the pieces that
+> write the store without the UI (the first-run seed), but read
+> [`gboard-settings-hosting.md`](gboard-settings-hosting.md) for the mechanism that superseded
+> the Activity.
+
 ## Why bother
 
 Flexboard writes the glide typing setting off while the gesture is on, and writes it back when
