@@ -31,6 +31,9 @@ SETTINGS_XML = ROOT / "patches/src/main/resources/xml/flexboard_settings.xml"
 PAIRS = [
     ("STEP_SCALE_KEY", "KEY_STEP_SCALE"),
     ("STEP_SCALE_DEFAULT", "STEP_SCALE_DEFAULT"),
+    ("HOTKEY_SLOTS", "SLOT_COUNT"),
+    ("HOTKEY_COUNT_KEY", "PREF_COUNT"),
+    ("HOTKEY_COUNT_DEFAULT", "COUNT_DEFAULT"),
     # The ordinals the patch hands the extension's constructor. The extension maps them to
     # android.R.id.* so the framework constants stay symbolic in the one language that can name
     # them -- which means the number crossing the boundary is meaningless on its own, and a drift
@@ -38,6 +41,13 @@ PAIRS = [
     ("TEXT_ACTION_SELECT_ALL", "SELECT_ALL"),
     ("TEXT_ACTION_COPY", "COPY"),
     ("TEXT_ACTION_PASTE", "PASTE"),
+]
+
+# Multi-element contracts: Kotlin carries the canonical hex id list for the per-slot defaults,
+# Java carries the same ids as int[] for array-indexed fallback. Same drift class as PAIRS but
+# element-wise.
+ARRAY_PAIRS = [
+    ("HOTKEY_DEFAULT_ICONS", "DEFAULT_ICONS"),
 ]
 
 # The slider contract between ScrubTuningPatch.kt and flexboard_settings.xml: the Kotlin name of
@@ -57,6 +67,11 @@ XML_ROWS = [
         "slider_min_value": "HOLD_DELAY_MIN",
         "slider_max_value": "HOLD_DELAY_MAX",
     }),
+    ("HOTKEY_COUNT_KEY", {
+        "android:defaultValue": "HOTKEY_COUNT_DEFAULT",
+        "slider_min_value": "HOTKEY_COUNT_MIN",
+        "slider_max_value": "HOTKEY_SLOTS",
+    }),
 ]
 
 # Hex is accepted because resource ids are written that way on both sides -- and on the Kotlin side
@@ -64,6 +79,22 @@ XML_ROWS = [
 NUMBER = r"0[xX][0-9a-fA-F]+|\d+"
 KOTLIN_CONST = re.compile(rf'internal const val (\w+) = (?:"([^"]*)"|({NUMBER}))')
 JAVA_CONST = re.compile(rf'private static final (?:String|int) (\w+) = (?:"([^"]*)"|({NUMBER}));')
+
+# Kotlin `internal val X = listOf("0x7f080239", "0x7f0806fc", …)`; Java
+# `private static final int[] X = new int[] { 2131231289, … }`. Comments are stripped before these
+# run, so per-element "// star" notes don't need to be part of the grammar (and trying to keep
+# them made the regex backtrack forever — see the 120s-timeout that prompted this shape).
+KOTLIN_LIST = re.compile(r'internal val (\w+) = listOf\(([^)]*)\)')
+KOTLIN_LIST_ELEMENT = re.compile(r'"(0x[0-9a-fA-F]+)"')
+JAVA_INT_ARRAY = re.compile(r'private static final int\[\] (\w+) = new int\[\] \{(.*?)\};', re.S)
+JAVA_INT_ARRAY_ELEMENT = re.compile(r'(0x[0-9a-fA-F]+|\d+)')
+
+
+def _collect_arrays(pattern, element_pattern, text):
+    out = {}
+    for name, body in pattern.findall(text):
+        out[name] = [int(v, 0) for v in element_pattern.findall(body)]
+    return out
 
 
 def _collect(pattern, text):
@@ -385,23 +416,42 @@ def _check_settings_xml(problems, kotlin):
                 )
 
 
-# A dotted extension class name (the settings fragment is referenced from a *resource* row, so no
-# descriptor string exists for it). Existence is all that is checked: the host does
+# A dotted extension class name (the settings fragments are referenced from *resource* rows, so
+# no descriptor string exists for them). Existence is all that is checked: the host does
 # Class.forName on this string, and a rename breaks only on a phone. The final component must
 # start uppercase so that package mentions ("…extension.settings") are not mistaken for classes.
-DOTTED_EXTENSION_CLASS = re.compile(r"dev\.jz6\.flexboard\.extension(?:\.\w+)*\.[A-Z]\w*")
+DOTTED_EXTENSION_CLASS = re.compile(r"dev\.jz6\.flexboard\.extension(?:\.\w+)*\.[A-Z]\w*(?:\$[A-Z]\w*)*")
+
+# The fragment names land in two places: Kotlin (interpolated into XML) and the patch resources
+# themselves. Both lanes are scanned — a rename that only updates one is the same silent break
+# the descriptor lane above was built for.
+EXTENSION_RESOURCES = ROOT / "patches/src/main/resources"
 
 
 def _check_dotted_extension_classes(problems):
+    sources = []
     for path in PATCHES.rglob("*.kt"):
+        sources.append(path)
+    for path in EXTENSION_RESOURCES.rglob("*.xml"):
+        sources.append(path)
+    for path in sources:
         text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
         for name in sorted(set(DOTTED_EXTENSION_CLASS.findall(text))):
-            source = EXTENSION_ROOT / (name.replace(".", os.sep) + ".java")
+            outer = name.split("$")[0]
+            source = EXTENSION_ROOT / (outer.replace(".", os.sep) + ".java")
             if not source.is_file():
                 problems.append(
                     f"  {path.name} names the extension class {name}, but "
                     f"{source.relative_to(ROOT)} does not exist"
                 )
+                continue
+            body = source.read_text()
+            for inner in name.split("$")[1:]:
+                if not re.search(rf'\bclass {re.escape(inner)}\b', body):
+                    problems.append(
+                        f"  {path.name} names {name}, but {source.name} declares no nested "
+                        f"{inner} — the host will instantiate nothing on that row"
+                    )
 
 def main():
     problems = []
@@ -425,7 +475,16 @@ def main():
     # TextAction, which is not a settings class at all. Collecting one file silently reported those
     # as undeclared.
     java, declared_in = {}, {}
+    java_arrays = {}
     for source in sorted(EXTENSION_ROOT.rglob("*.java")):
+        text_stripped = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", source.read_text()))
+        for name, value in _collect_arrays(JAVA_INT_ARRAY, JAVA_INT_ARRAY_ELEMENT, text_stripped).items():
+            if name in java_arrays and java_arrays[name] != value:
+                problems.append(
+                    f"  {name} is declared twice in the extension with different values"
+                )
+                continue
+            java_arrays[name] = value
         for name, value in _collect(JAVA_CONST, source.read_text()).items():
             if name in java and java[name] != value:
                 problems.append(
@@ -445,6 +504,23 @@ def main():
             problems.append(
                 f"  {kt_name} = {kt_value!r} but {java_name} = {java_value!r} in "
                 f"{declared_in[java_name]} — the patch and the extension disagree"
+            )
+
+    # Array contracts. Kotlin's lists are collected on the fly since only hotkeys carry one today.
+    kotlin_arrays = {}
+    for path in PATCHES.rglob("*.kt"):
+        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        kotlin_arrays.update(_collect_arrays(KOTLIN_LIST, KOTLIN_LIST_ELEMENT, text))
+    for kt_name, java_name in ARRAY_PAIRS:
+        kt_value, java_value = kotlin_arrays.get(kt_name), java_arrays.get(java_name)
+        if kt_value is None:
+            problems.append(f"  {kt_name} list is not declared in any patch")
+        elif java_value is None:
+            problems.append(f"  {java_name} array is not declared anywhere in the extension")
+        elif kt_value != java_value:
+            problems.append(
+                f"  {kt_name} has {len(kt_value)} ids but {java_name} has {len(java_value)}, "
+                f"or their contents differ ({kt_value!r} != {java_value!r})"
             )
 
     _check_extension_references(problems)

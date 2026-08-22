@@ -193,6 +193,16 @@ EXPECTED = {
     # The keycode Gboard wraps a Runnable in, and the dispatcher that runs it. Two other classes
     # test this keycode and decline it, so "something tests it" is not the check that matters.
     'buttons_runnable_keycode': -40007,
+    # ---- the twelve hotkeys
+    # Patch-owned ids — deliberately outside Gboard's allowed-set array and admitted through the
+    # read-filter bypass instead. A future Gboard claiming one of these names would collide with
+    # the registered definition at the toolbar registry. The prefix check below is what widens
+    # the filter; the ids here are what must stay out of Gboard's own table.
+    'native_hotkey_ids': [f'flexboard_hotkey_{i}' for i in range(1, 13)],
+    # The read filter's exact shape on 18.0.3: regs/ins counts and the sole contains call it's
+    # bypassed ahead of. These pins trip before the bypass is written past the loop's registers.
+    'hotkey_order_filter_registers': 8,
+    'hotkey_order_filter_ins': 3,
     # ---- the native settings screen
     # Unobfuscated names — Gboard's preference XML addresses both by class-name string, so R8 can
     # never move them. The attrs are read by literal name off NullNamespace; rename-safe the same
@@ -1427,25 +1437,32 @@ def run(dl, apk=None):
     # Each id the native path registers has to be dormant — nothing in Gboard's own dex should
     # reference it. A future Gboard version adopting one of them as a real handler would collide
     # silently at the registry — ours would clobber its entry in the controller's map.
-    for dorm_id in E['native_button_ids']:
-        id_refs = []
-        for dex in dl:
-            for _cls_name, _af, cls_data in dex.classes():
-                if not cls_data:
+    #
+    # One walk: scanning 16 ids individually was one full dex pass per id, which took minutes.
+    wanted = set(E['native_button_ids']) | set(E['native_hotkey_ids'])
+    found = set()
+    for dex in dl:
+        for _cls_name, _af, cls_data in dex.classes():
+            if not cls_data:
+                continue
+            for _m_name, _maf, m_off in dex.class_methods(cls_data):
+                if not m_off:
                     continue
-                for m_name, _maf, m_off in dex.class_methods(cls_data):
-                    if not m_off:
-                        continue
-                    try:
-                        mc = dex.code(m_off)
-                    except Exception:
-                        continue
-                    for _pc, _op, _mn, txt in dex.walk(mc):
-                        if txt and txt.strip("'\"") == dorm_id:
-                            id_refs.append(m_name)
-                            break
+                try:
+                    mc = dex.code(m_off)
+                except Exception:
+                    continue
+                remaining = wanted - found
+                if not remaining:
+                    break
+                for _pc, _op, _mn, txt in dex.walk(mc):
+                    if txt and txt.strip("'\"") in remaining:
+                        found.add(txt.strip("'\""))
+            if len(found) == len(wanted):
+                break
+    for dorm_id in wanted:
         check(f'native: {dorm_id!r} has no references in the dex (shadow-safe)',
-              not id_refs, f'referenced by {sorted(set(id_refs))}')
+              dorm_id not in found, f'referenced in the dex')
 
     # Every borrowed id has to be in the allowed-set string array, else the read filter strips it
     # from the persisted order. This check needs the ARSC table, so it only runs when the APK is
@@ -1466,6 +1483,15 @@ def run(dl, apk=None):
                 check(f'native: {dorm_id!r} is in the toolbar allowed-set array',
                       dorm_id in members,
                       f'array has {len(members)} members; {dorm_id!r} not among them')
+
+            # The hotkey ids are deliberately NOT in the array — they're admitted by the
+            # read-filter prefix bypass instead. If a future Gboard ever adds one of them to
+            # its own set with different meaning, that version collides with ours silently at
+            # the registry: fail loudly here while there's still time to pick a new namespace.
+            for hk_id in E['native_hotkey_ids']:
+                check(f'native: {hk_id!r} is NOT in the allowed-set array (patch-owned)',
+                      hk_id not in members,
+                      f'a future Gboard has claimed {hk_id!r} for its own handler')
         except Exception as exc:
             check('native: the toolbar allowed-set array is readable', False,
                   f'could not read from {apk}: {exc}')
@@ -1577,6 +1603,36 @@ def run(dl, apk=None):
         chain = superclass_chain(dl, host)
         check('settings: the host base descends from the ported Fragment chain',
               'Lad;' in chain and '(not in dex)' not in chain, str(chain[-2:]))
+
+    # ---- the toolbar order filter bypass
+    #
+    # The hotkeys are admitted by a prefix branch inserted ahead of the filter's `contains` call.
+    # What can go quietly wrong is the filter itself moving: the loop gains a register, the
+    # startsWith scratch lands on something live, and the keyboard's toolbar state glitches one
+    # restart later. These pins exist so a Gboard bump fails here, not on a phone.
+    filter_sig = 'Lmjv;->c([Ljava/lang/String;Lvol;Lvxe;)Lvvw;'
+    c, ins = body(dl, filter_sig)
+    if check('hotkeys: the order filter still exists', ins is not None, filter_sig):
+        check('hotkeys: its register count',
+              c['registers'] == E['hotkey_order_filter_registers'],
+              f'got {c["registers"]}')
+        check('hotkeys: its parameter words',
+              c['ins'] == E['hotkey_order_filter_ins'],
+              f'got {c["ins"]}')
+        contains = [pc for pc, n, a in ins
+                    if n.startswith('invoke') and 'Lvxe;->contains(' in (a or '')]
+        check('hotkeys: exactly one allowed-set contains call',
+              len(contains) == 1, f'found {len(contains)}')
+        # The bypass's scratch register (`v4`) must be the contains-call's own result register —
+        # that's how we know it's dead at insertion time on 18.0.3 rather than by assumption.
+        if len(contains) == 1:
+            after = [a for pc, n, a in ins if pc > contains[0] and n == 'move-result']
+            reg = None
+            if after:
+                m = re.match(r'v(\d+)', after[0].strip())
+                reg = int(m.group(1)) if m else None
+            check('hotkeys: the bypass scratch is written by move-result right after contains',
+                  reg == 4, f'contains result lands in v{reg}, expected v4')
 
     # ---- bypass signature
     sig_cls = B['sigcheck']
