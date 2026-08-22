@@ -1,7 +1,9 @@
 package dev.jz6.flexboard.patches.shared
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.patch.BytecodePatchContext
+import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.iface.ClassDef
 import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -214,8 +216,7 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
  * one method on the controller matches the `(ApType, Z)V` shape *and* writes into the registry
  * map via `Lays.put`; others are similar in either/or. Shape + call-target together is the pin.
  */
-private fun resolveControllerRegisterCall(controllerClass: ClassDef): String {
-    val lAysPut = "Lays;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+internal fun resolveControllerRegisterCall(controllerClass: ClassDef): String {    val lAysPut = "Lays;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
     val candidates = controllerClass.methods.filter { method ->
         val params = method.parameterTypes.map(Any::toString)
         params.size == 2 &&
@@ -236,7 +237,7 @@ private fun resolveControllerRegisterCall(controllerClass: ClassDef): String {
 }
 
 /** The immutable `<init>(Context, ?)` declaration; identified once and shared by the rest. */
-private fun resolveInitDef(
+internal fun resolveInitDef(
     controllerType: String,
     controllerClass: ClassDef,
 ): com.android.tools.smali.dexlib2.iface.Method {
@@ -325,3 +326,225 @@ private fun NativeToolbarButton.toSmali(
         invoke-virtual { p0, v0, v1 }, $registerCall
     """.trimIndent()
 }
+
+// -------------------------------------------------------------------------------------------
+// Hotkeys: twelve slots, each conditional on the user's live settings
+// -------------------------------------------------------------------------------------------
+
+/** The number of hotkey slots the toolbar can hold. */
+internal const val HOTKEY_SLOTS = 12
+
+/** `if-eqz` jumps here to skip a slot whose text hasn't been set, or whose slot exceeds the count. */
+private const val HOTKEY_SKIP_LABEL = "flexboard_hk_skip"
+
+/**
+ * Emits one conditional registration block per hotkey slot at the tail of the bar controller's
+ * `<init>`.
+ *
+ * Unlike [emitNativeToolbarButtons] — where the label, icon and id are constants picked at
+ * patch time — every attribute of a hotkey is read at toolbar-build time by the extension's
+ * `Hotkeys` class: the id's existence at all is gated by `shown`, and the icon/label/action are
+ * derived from the user's settings. The block the emulator builds is therefore identical in
+ * *shape* per slot but entirely runtime-populated.
+ *
+ * Registers (same wiring as the text-action buttons):
+ *  - `p0` is the receiver the register call is invoked on;
+ *  - `v0` holds the builder then the finished `mic`;
+ *  - `v1` carries each argument in turn;
+ *  - `v2` is the second Int passed into the action's constructor when it takes an ordinal;
+ *  - `v4` is the shown-guard's scratch — dead before and after the block's own use.
+ *
+ * All twelve blocks sit in one smali string: `addInstructions` parses the internal `:skip_…`
+ * labels once, and the label names are per-slot, so the assembler resolves each branch to its
+ * own block's end.
+ */
+internal fun BytecodePatchContext.emitNativeHotkeys(builder: AccessPointBuilder) {
+    val splits = methodsMatching { it.splitsAccessPoints() }
+    check(splits.size == 1) {
+        "The bar-controller anchor moved: expected exactly one method that splits a List around " +
+            "subList+Math.min, found ${splits.size}: ${splits.map { it.toDescriptor() }}"
+    }
+    val controllerType = splits.single().definingClass
+    val controllerClass = classDefByOrNull(controllerType)
+        ?: error("$controllerType is not in the APK; the bar controller cannot be hooked")
+    val registerCall = resolveControllerRegisterCall(controllerClass)
+    val initDef = resolveInitDef(controllerType, controllerClass)
+    val initDescriptor = initDef.toDescriptor()
+    val init = mutableClassDefBy(controllerType).methods.single {
+        it.toDescriptor() == initDescriptor
+    }
+    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, initDescriptor)
+
+    val tailIndex = init.implementation!!.instructions
+        .indexOfLast { it.opcodeName() == "RETURN_VOID" }
+    check(tailIndex >= 0) { "$initDescriptor has no return-void" }
+
+    // p1 is the constructor's Context argument at this register count; p0 is the receiver.
+    validateScratchRegisters(
+        scratch = listOf(0, 1, 2, 4),
+        avoid = listOf(10, 11, 12),
+        what = initDescriptor,
+    )
+
+    val emission = (1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
+        hotkeyBlock(slot, builder, registerCall)
+    }
+    // WithLabels: the slot blocks carry twelve distinct internal `:…skip_N` labels, which the
+    // plain `addInstructions` rejects — same reason the scrub clamp uses the labelled variant.
+    init.addInstructionsWithLabels(tailIndex, emission)
+}
+
+/** One slot's conditional registration block. The guard is a single forward jump. */
+private fun hotkeyBlock(
+    slot: Int,
+    builder: AccessPointBuilder,
+    registerCall: String,
+): String {
+    // const/4 only encodes -8..7; slots 8–12 need const/16.
+    val constOp = if (slot in -8..7) "const/4" else "const/16"
+
+    return """
+        $constOp v4, $slot
+        invoke-static { p1, v4 }, $HOTKEYS_SHOWN
+        move-result v4
+        if-eqz v4, :$HOTKEY_SKIP_LABEL$slot
+
+        invoke-static { }, ${builder.newBuilder}
+        move-result-object v0
+
+        const-string v1, "flexboard_hotkey_$slot"
+        invoke-virtual { v0, v1 }, ${builder.setId}
+
+        $constOp v1, $slot
+        invoke-static { p1, v1 }, $HOTKEYS_ICON
+        move-result v1
+        invoke-virtual { v0, v1 }, ${builder.setIcon}
+
+        const/4 v1, 0x0
+        invoke-virtual { v0, v1 }, ${builder.setLabel}
+        $constOp v1, $slot
+        invoke-static { p1, v1 }, $HOTKEYS_LABEL
+        move-result-object v1
+        iput-object v1, v0, ${builder.labelField}
+
+        const/4 v1, 0x0
+        invoke-virtual { v0, v1 }, ${builder.setContentDescription}
+        $constOp v1, $slot
+        invoke-static { p1, v1 }, $HOTKEYS_LABEL
+        move-result-object v1
+        iput-object v1, v0, ${builder.contentDescriptionField}
+
+        new-instance v1, $HOTKEY_CLASS
+        $constOp v2, $slot
+        invoke-direct { v1, v2 }, $HOTKEY_CTOR
+        invoke-virtual { v0, v1 }, ${builder.setAction}
+
+        invoke-virtual { v0 }, ${builder.build}
+        move-result-object v0
+
+        const/4 v1, 0x1
+        invoke-virtual { p0, v0, v1 }, $registerCall
+
+        :$HOTKEY_SKIP_LABEL$slot
+    """.trimIndent()
+}
+
+// Credit where it is due: these consts exist solely so the constants checker can see the
+// descriptor across the string-interpolation boundary and verify the Java side declares them.
+private const val HOTKEYS_CLASS = "Ldev/jz6/flexboard/extension/toolbar/Hotkeys;"
+private const val HOTKEYS_SHOWN = "$HOTKEYS_CLASS->shown(Landroid/content/Context;I)Z"
+private const val HOTKEYS_ICON = "$HOTKEYS_CLASS->iconOf(Landroid/content/Context;I)I"
+private const val HOTKEYS_LABEL = "$HOTKEYS_CLASS->labelOf(Landroid/content/Context;I)Ljava/lang/String;"
+private const val HOTKEY_CLASS = "Ldev/jz6/flexboard/extension/toolbar/Hotkey;"
+private const val HOTKEY_CTOR = "$HOTKEY_CLASS-><init>(I)V"
+
+// -------------------------------------------------------------------------------------------
+// The order-read filter: admit our ids
+// -------------------------------------------------------------------------------------------
+
+/** The string prefix every Flexboard-registered toolbar id uses. */
+internal const val FLEXBOARD_ID_PREFIX = "flexboard_"
+
+/**
+ * Widens the toolbar order manager's read filter to admit Flexboard ids.
+ *
+ * Stock, the filter is a loop over the persisted string array that keeps only entries the
+ * allowed set (`Lvxe`, read once from `res/array/0x7f0300dc`) contains:
+ *
+ * ```
+ *  9: aget-object v3, v5, v2         ; id = persisted[i]
+ * 17: if-eqz v3, -> 28               ; null id -> skip
+ * 19: invoke contains(v7, v3)        ; allowed set?
+ * 23: if-eqz v4, -> 28               ; not allowed -> skip
+ * 25: invoke add(v0, v3)             ; keep it
+ * 28: i++
+ * ```
+ *
+ * Two kinds of id must survive:
+ *  - the four text buttons, which borrow dormant ids from Gboard's own allowed set, and
+ *  - the twelve hotkeys, which can't — the set only has two dormant ids left.
+ *
+ * Rather than touching the ARSC, we insert one extra bypass right before the `contains` call:
+ * any id beginning `flexboard_` is treated as allowed. Our twelve hotkey ids pass; the four
+ * text-action ids (also `flexboard_`-prefixed in the read filter? no — they reuse *Gboard's*
+ * allowed-set ids, which pass the `contains` branch) stay untouched either way. No collision —
+ * the prefix is namespaced, and the preflight asserts none of them appear in Gboard's array so a
+ * future Gboard can't claim them from under us.
+ *
+ * Register safety: at the point of insertion the loop is live in `v0`–`v7`; `v4` is the
+ * `contains` result register's home — written right after our jump lands and dead in each
+ * iteration before then — so it doubles as the scratch for `startsWith`. `v3` (the id) is
+ * untouched.
+ */
+internal fun BytecodePatchContext.admitFlexboardToolbarIds() {
+    val filterOwner = "Lmjv;"
+    val candidates = methodsMatching { method ->
+        method.definingClass == filterOwner &&
+            method.parameterTypes.map(Any::toString) ==
+                listOf("[Ljava/lang/String;", "Lvol;", "Lvxe;") &&
+            method.returnType == "Lvvw;" &&
+            method.implementation != null
+    }
+    check(candidates.size == 1) {
+        "The toolbar order filter moved: expected exactly one $filterOwner method with " +
+            "([Ljava/lang/String;Lvol;Lvxe;)Lvvw;, found ${candidates.size}: " +
+            candidates.map { it.toDescriptor() }
+    }
+    val filter = candidates.single()
+    val mutable = mutableClassDefBy(filterOwner).methods.single {
+        it.toDescriptor() == filter.toDescriptor()
+    }
+    val instructions = mutable.implementation!!.instructions
+
+    val containsCall = "Lvxe;->contains(Ljava/lang/Object;)Z"
+    val containsIndex = instructions.indexOfFirst { instruction ->
+        instruction.opcodeName() == "INVOKE_VIRTUAL" &&
+            ((instruction as? ReferenceInstruction)?.reference as? MethodReference)
+                ?.toString() == containsCall
+    }
+    check(containsIndex >= 0) {
+        "$filterOwner.${filter.name}: no $containsCall call found — Gboard's order filter no " +
+            "longer consults the allowed set where this patch expects it"
+    }
+
+    // The add call is what contains' true-branch falls through to. From the loop's shape: the
+    // `move-result` and the skip jump sit between them.
+    val addIndex = containsIndex + 3
+    check(addIndex < instructions.size) {
+        "$filterOwner.${filter.name} is too short for the contain-check's follow-on instructions"
+    }
+
+    mutable.addInstructionsWithLabels(
+        containsIndex,
+        """
+        const-string v4, "$FLEXBOARD_ID_PREFIX"
+        invoke-virtual { v3, v4 }, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
+        move-result v4
+        if-nez v4, :$HOTKEY_PREFIX_ALLOWED_LABEL
+        """.trimIndent(),
+        ExternalLabel(HOTKEY_PREFIX_ALLOWED_LABEL, instructions[addIndex]),
+    )
+}
+
+/** Jump target for the id-admission bypass — the loop's "keep this id" instruction. */
+private const val HOTKEY_PREFIX_ALLOWED_LABEL = "flexboard_id_allowed"

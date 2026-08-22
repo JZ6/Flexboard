@@ -45,4 +45,90 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="Hotkeys">
+
+        <com.google.android.libraries.inputmethod.preferencewidgets.InlineSliderPreference
+            android:key="flexboard_hotkey_count"
+            android:title="Hotkeys on the toolbar"
+            android:summary="How many hotkey slots the toolbar shows, in slot order."
+            android:defaultValue="0"
+            slider_min_value="0"
+            slider_max_value="12"
+            slider_text_left="None"
+            slider_text_right="12" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot1"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 1" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot2"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 2" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot3"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 3" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot4"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 4" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot5"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 5" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot6"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 6" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot7"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 7" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot8"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 8" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot9"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 9" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot10"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 10" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot11"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 11" />
+
+        <Preference
+            android:fragment="dev.jz6.flexboard.extension.settings.FlexboardHotkeys$Slot12"
+            android:persistent="false"
+            android:summary="Text and icon."
+            android:title="Hotkey 12" />
+
+    </PreferenceCategory>
+
 </PreferenceScreen>

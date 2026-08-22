@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The hotkey icon picker's two halves, kept together so they cannot drift.
+
+  `flexboard_hotkey_icon_values` stores decimal strings of Gboard-bundled drawable ids — the
+  toolbar's `setIcon(I)V` takes a raw resource id, and the only handles that survive R8 +
+  aapt2 renaming are the ids themselves (their names are collapsed). `glyphs.py` catalogs which
+  Material shapes Gboard bundles; the ids read from them are pinned in preflight by their path
+  signatures.
+
+  The two arrays are consumed by the per-slot `ListPreference`s' `android:entries` /
+  `android:entryValues`, and every slot's default appears in the values array. If one array
+  grows a member the other must grow it too — their lengths are asserted together, per-build,
+  by the slot-screen generation in SettingsScreenPatch (which fails loudly on a mismatch).
+-->
+<resources>
+    <string-array name="flexboard_hotkey_icon_names">
+        <item>Star</item>
+        <item>Sparkles</item>
+        <item>Check circle</item>
+        <item>Done</item>
+        <item>Copy</item>
+        <item>Cut</item>
+        <item>Paste</item>
+        <item>Share</item>
+        <item>Open in new</item>
+        <item>Keyboard</item>
+        <item>Spellcheck</item>
+        <item>Help</item>
+        <item>Help outline</item>
+        <item>Error</item>
+        <item>Cancel</item>
+        <item>Visibility off</item>
+        <item>Arrow back</item>
+        <item>Arrow right</item>
+        <item>Close</item>
+        <item>Unfold more</item>
+    </string-array>
+    <string-array name="flexboard_hotkey_icon_values">
+        <item>2131231289</item>
+        <item>2131232508</item>
+        <item>2131232290</item>
+        <item>2131232291</item>
+        <item>2131231252</item>
+        <item>2131231253</item>
+        <item>2131231255</item>
+        <item>2131231257</item>
+        <item>2131232548</item>
+        <item>2131231744</item>
+        <item>2131232578</item>
+        <item>2131232532</item>
+        <item>2131232531</item>
+        <item>2131232440</item>
+        <item>2131232436</item>
+        <item>2131231690</item>
+        <item>2131232078</item>
+        <item>2131232505</item>
+        <item>2131231249</item>
+        <item>2131232587</item>
+    </string-array>
+</resources>

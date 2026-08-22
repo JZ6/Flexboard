@@ -71,6 +71,16 @@ internal val scrubSettingsScreenPatch = resourcePatch(
         // fragment resolves the id by name at runtime.
         writePatchResource("flexboard_settings.xml", "res/xml")
 
+        // The icon-picker arrays (names + drawable ids) feeding the per-slot ListPreferences.
+        writePatchResource("flexboard_hotkey_icons.xml", "res/values")
+
+        // One screen per hotkey slot, generated from one template: only the slot's number, its
+        // preference keys and its default icon change between them, so the patch writes twelve
+        // XML files rather than the repo carrying twelve copies of the same four lines.
+        for (slot in 1..HOTKEY_SLOTS) {
+            writeHotkeySlotScreen(slot)
+        }
+
         document(GBOARD_SETTINGS_XML).use { settings ->
             settings.addFlexboardEntry()
         }
@@ -132,6 +142,76 @@ private fun writePatchResource(name: String, target: String) {
         ?.bufferedReader()?.use { it.readText() }
         ?: error("$source not found in patch resources")
     context.get("$target/$name", true).writeText(xml)
+}
+
+// -------------------------------------------------------------------------------------------
+// The per-slot hotkey screens
+// -------------------------------------------------------------------------------------------
+
+/** The number of hotkey slots the toolbar supports. Mirrors `SLOT_COUNT` in `Hotkeys.java`. */
+private const val HOTKEY_SLOTS = 12
+
+/**
+ * Per-slot default icons, as Gboard-bundled drawable ids in smali-readable hex. Mirror the
+ * `DEFAULT_ICONS` array in `Hotkeys.java` — `check_shared_constants.py` compares the two per
+ * element, so a drift between patch-side defaults and extension-side fallbacks fails the build.
+ *
+ * The same ids also appear in the icon picker (as decimal strings in `flexboard_hotkey_icons.xml`)
+ * and in preflight, which re-derives each id by its vector path signature rather than trusting
+ * the number.
+ */
+internal val HOTKEY_DEFAULT_ICONS = listOf(
+    "0x7f080239", // star
+    "0x7f0806fc", // sparkles
+    "0x7f080622", // check_circle
+    "0x7f080623", // done
+    "0x7f080214", // content_copy
+    "0x7f080217", // content_paste
+    "0x7f080219", // share
+    "0x7f080724", // launch
+    "0x7f080742", // spellcheck
+    "0x7f080400", // keyboard
+    "0x7f080713", // help_outline
+    "0x7f0803ca", // visibility_off
+)
+
+/**
+ * The per-slot screen, between [`EditTextPreference` and `ListPreference`]. The slot is
+ * substituted three times: the resource name, each preference key, and its default icon. The
+ * picker row's entryValues come from `flexboard_hotkey_icons.xml`; its default must therefore be
+ * one of those ids, which the constants checker enforces.
+ *
+ * Both rows are plain androidx preferences inheriting Gboard's theme, so they take their look
+ * from the host's screen like every other row.
+ */
+private const val HOTKEY_SLOT_SCREEN = """<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    android:title="Hotkey %SLOT%">
+
+    <EditTextPreference
+        android:defaultValue=""
+        android:dialogTitle="Text to type"
+        android:key="flexboard_hotkey_%SLOT%_text"
+        android:title="Text" />
+
+    <ListPreference
+        android:defaultValue="%DEFAULT_ICON%"
+        android:entries="@array/flexboard_hotkey_icon_names"
+        android:entryValues="@array/flexboard_hotkey_icon_values"
+        android:key="flexboard_hotkey_%SLOT%_icon"
+        android:title="Icon" />
+
+</PreferenceScreen>
+"""
+
+context(context: ResourcePatchContext)
+private fun writeHotkeySlotScreen(slot: Int) {
+    val icon = HOTKEY_DEFAULT_ICONS[slot - 1]
+    val xml = HOTKEY_SLOT_SCREEN
+        .replace("%SLOT%", slot.toString())
+        // The ListPreference stores a String, so the slot default is the id's decimal form.
+        .replace("%DEFAULT_ICON%", Integer.parseInt(icon.substring(2), 16).toString())
+    context.get("res/xml/flexboard_hotkey_$slot.xml", true).writeText(xml)
 }
 
 private fun Document.addFlexboardEntry() {
