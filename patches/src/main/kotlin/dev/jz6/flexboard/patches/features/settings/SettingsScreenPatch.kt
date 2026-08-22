@@ -65,11 +65,11 @@ internal val scrubSettingsScreenPatch = resourcePatch(
     finalize {
         // The icon as a new drawable resource. aapt2 assigns its id during recompilation, and the
         // preference XML below references it by name.
-        writePatchResource("drawable/flexboard_settings_icon.xml", "res/drawable")
+        writePatchResource("flexboard_settings_icon.xml", "res/drawable")
 
         // The screen itself. Written under res/xml so aapt2 compiles it into the table; the
         // fragment resolves the id by name at runtime.
-        writePatchResource("xml/flexboard_settings.xml", "res/xml")
+        writePatchResource("flexboard_settings.xml", "res/xml")
 
         document(GBOARD_SETTINGS_XML).use { settings ->
             settings.addFlexboardEntry()
@@ -115,6 +115,11 @@ private const val ENTRY_SUMMARY = "Gesture settings"
 /**
  * Copies a patch resource from `patches/src/main/resources/` into the APK's `res/` tree so aapt2
  * compiles it and assigns a resource id.
+ *
+ * `name` is just the filename (`flexboard_settings_icon.xml`); the directory comes from `target`,
+ * because the two were accidentally concatenated once before — the source path ended up with
+ * `drawable/drawable/...` and the lookup threw, killing the entire finalize block and taking the
+ * settings row down with it. Keeping the directory in one place means `name` can never repeat it.
  *
  * Anything written this way is resolved by name at runtime via `getIdentifier`, so neither the
  * patch nor the extension needs to know the id aapt2 assigned — only the name.
