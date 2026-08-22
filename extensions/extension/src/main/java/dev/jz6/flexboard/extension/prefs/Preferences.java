@@ -38,9 +38,10 @@ import android.content.SharedPreferences;
  * code can ever run on. A guard would also be worse than useless — falling back would silently
  * return to reading the wrong file.
  *
- * <p><b>Why this is its own class.</b> It lived in {@code FlexboardSettingsActivity} while the
- * settings screen was the only writer. The hotkey actions read the same file from the keyboard
- * process, and a second copy of this reasoning is exactly how the two would drift back apart.
+ * <p><b>Why this is its own class.</b> It lived in the settings Activity back when the screen was
+ * an extension-owned frame writing this store by hand. The screen is a Gboard-hosted fragment now
+ * (see {@code FlexboardSettingsFragment}), but the seed in {@link Defaults} still writes through
+ * here, and the patches' in-smi readers target this same file — the reasoning stays in one place.
  */
 public final class Preferences {
 

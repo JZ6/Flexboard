@@ -19,3 +19,8 @@ pluginManagement {
 plugins {
     id("app.morphe.patches") version "1.3.3"
 }
+
+// The compile-time stand-in for Gboard's settings fragment base class. Lives outside
+// `extensions/` on purpose: the Morphe settings plugin treats every directory there as an
+// extension module. See stubs/build.gradle.kts and the stub class's own Javadoc.
+include(":stubs")

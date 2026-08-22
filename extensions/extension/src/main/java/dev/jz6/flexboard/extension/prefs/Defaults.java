@@ -33,11 +33,10 @@ import android.content.SharedPreferences;
  */
 public final class Defaults {
 
-    // Every constant below is named exactly as its counterpart in FlexboardSettingsActivity, which
-    // is not cosmetic: `check_shared_constants.py` collects constants across the whole extension
-    // and fails when one name carries two different values. So the number written here and the
-    // number that screen shows cannot drift apart without the build saying so — and this is the one
-    // that decides what a keyboard actually does.
+    // `check_shared_constants.py` collects constants across the whole extension and fails when one
+    // name carries two different values, so the seed cannot drift from the engine's fallback
+    // without the build saying so — and this is the one that decides what a keyboard actually
+    // does on first run.
 
     /** Must match STEP_SCALE_KEY / STEP_SCALE_DEFAULT in ScrubTuningPatch.kt. */
     private static final String KEY_STEP_SCALE = "flexboard_scrub_step_scale";
