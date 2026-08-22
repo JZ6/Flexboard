@@ -14,6 +14,8 @@ Everything the `docs/` findings rest on was produced with these three files.
 | `arsc.py` | Resource table reader — resource id to name and value, and the reverse lookup from a packed path back to its id |
 | `glyphs.py` | Matches the APK's stripped vector drawables against published Material Icons SVGs, by geometry rather than by name. |
 | `preflight.py` | Runs every patch-time assertion against a dex, so a moved binding fails here instead of on a phone |
+| `check_patch_resources.py` | Dress rehearsal of the resource half of a release: decodes the APK with arsclib (once, cached), replays the bundle's resource writes onto the tree, DOM-parses every touched file, then rebuilds the whole resource table. Fails on the desk exactly where Morphe would fail on the phone (bad type names, malformed XML). Cache: `~/.cache/flexboard`. |
+| `ArsclibRoundTrip.java` | 60-line java shim used by `check_patch_resources.py` (`decode`/`encode` modes); compiles on demand, needs only the pinned arsclib jar |
 
 ## Setup
 
