@@ -45,4 +45,15 @@
 
     </PreferenceCategory>
 
+    <!--
+      A disabled plain Preference at the bottom of the screen. The placeholder is filled in by
+      the patch before the file is written; the text then comes from gradle.properties through
+      flexboard_version.txt, baked by :patches:processResources. One hop, one value, nothing to
+      keep in step.
+    -->
+    <Preference
+        android:persistent="false"
+        android:selectable="false"
+        android:title="Flexboard @FLEXBOARD_VERSION@" />
+
 </PreferenceScreen>

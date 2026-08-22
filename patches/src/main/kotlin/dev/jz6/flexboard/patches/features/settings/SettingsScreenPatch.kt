@@ -68,8 +68,13 @@ internal val scrubSettingsScreenPatch = resourcePatch(
         writePatchResource("flexboard_settings_icon.xml", "res/drawable")
 
         // The screen itself. Written under res/xml so aapt2 compiles it into the table; the
-        // fragment resolves the id by name at runtime.
-        writePatchResource("flexboard_settings.xml", "res/xml")
+        // fragment resolves the id by name at runtime. The version placeholder in the footer
+        // row is filled from flexboard_version.txt, which :patches:processResources has already
+        // baked to the bundle's version, so the settings screen and Morphe Manager's about text
+        // can never disagree.
+        writePatchResource("flexboard_settings.xml", "res/xml", mapOf(
+            "FLEXBOARD_VERSION" to readVersion(),
+        ))
 
         document(GBOARD_SETTINGS_XML).use { settings ->
             settings.addFlexboardEntry()
@@ -125,13 +130,34 @@ private const val ENTRY_SUMMARY = "Gesture settings"
  * patch nor the extension needs to know the id aapt2 assigned — only the name.
  */
 context(context: ResourcePatchContext)
-private fun writePatchResource(name: String, target: String) {
+private fun writePatchResource(name: String, target: String) =
+    writePatchResource(name, target, emptyMap())
+
+context(context: ResourcePatchContext)
+private fun writePatchResource(name: String, target: String, placeholders: Map<String, String>) {
     val source = "${target.removePrefix("res/")}/$name"
-    val xml = {}.javaClass.classLoader
+    var xml = {}.javaClass.classLoader
         ?.getResourceAsStream(source)
         ?.bufferedReader()?.use { it.readText() }
         ?: error("$source not found in patch resources")
+    for ((key, value) in placeholders) {
+        val token = "@$key@"
+        require(token in xml) { "$source lacks the @$key@ placeholder it was supposed to carry" }
+        xml = xml.replace(token, value)
+    }
     context.get("$target/$name", true).writeText(xml)
+}
+
+/** The bundle's own version, baked into a patch resource by the build. */
+private fun readVersion(): String {
+    val text = {}.javaClass.classLoader
+        ?.getResourceAsStream("flexboard_version.txt")
+        ?.bufferedReader()?.use { it.readText() }?.trim()
+        ?: error("flexboard_version.txt not found in patch resources")
+    // `@VERSION@` surviving to here means the resource substitution did not run: the build path
+    // is assembler-only, not the Gradle project. Fail loudly rather than ship "Flexboard @VERSION@".
+    require(!text.startsWith("@")) { "flexboard_version.txt is still the placeholder itself" }
+    return text
 }
 
 private fun Document.addFlexboardEntry() {

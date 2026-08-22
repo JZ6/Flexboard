@@ -21,6 +21,16 @@ kotlin {
     }
 }
 
+// The footer label on the Flexboard settings screen shows the bundle's version, so the about
+// text Morphe shows is the text the settings screen shows — the two can never disagree by
+// construction. `version` arrives via gradle.properties, and `expand` substitutes it into
+// `flexboard_version.txt` during :patches:processResources.
+tasks.named<ProcessResources>("processResources") {
+    filesMatching("flexboard_version.txt") {
+        expand(mapOf("VERSION" to project.version.toString()))
+    }
+}
+
 // Separate configuration so gson is available at runtime for the
 // generatePatchesList task but never bundled into the APK.
 val patchListGeneratorClasspath = configurations.create("patchListGeneratorClasspath")
