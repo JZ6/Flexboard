@@ -406,8 +406,12 @@ jobs:
 
           echo "Verified: $RAW serves $VERSION and its download_url matches the built bundle."
 
+      # Build-provenance attestations are gated off on user-owned private repos for the same
+      # reason verify is: the attestation API refuses ("Feature not available for user-owned
+      # private repositories") before the artifact even matters. On the public origin this runs
+      # as before; on Flexboard1 it skips.
       - name: Attest
-        if: steps.decide.outputs.release == 'true'
+        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.private != 'true'
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: 'Morphe Patches ${{ steps.decide.outputs.tag }}'

@@ -21,29 +21,6 @@
 * **Gboard:** polish: neutral underline for hotkey text fields
 * **Gboard:** preflight: pin the toolbar order preference keys
 
-# 1.3.0-dev.1 (2026-08-21)
-
-* **Gboard:** refactor: toolbar buttons go native; drop the merge-splice architecture
-* **Gboard:** refactor: generalize native toolbar registration into NativeToolbarButton + emitNativeToolbarButtons
-* **Gboard:** feat: toolbar native test — register one button through Gboard's own AP registry
-* **Gboard:** docs: capture toolbar reorder findings — next step is provider registration
-* **Gboard:** fix: simplify toolbar merge to always prepend — drag persistence lands later
-* **Gboard:** chore: default the toolbar count patch off while reorder is worked out
-* **Gboard:** chore: default custom hotkeys off while the reorder crash is being isolated
-* **Gboard:** fix: hotkeySlotOf was called without being declared
-* **Gboard:** fix: drop empty-slot smali labels — merge filters them in the extension
-* **Gboard:** fix: import emitToolbarMergeCall in BasePatch
-* **Gboard:** fix: collapse the two-merge composition into one merge driven by the base patch
-* **Gboard:** feat: split hotkeys and text actions into separate patches
-* **Gboard:** fix: harden toolbar merge — never crash the keyboard over order placement
-* **Gboard:** fix: keep the conventional-commit type in release notes/' changelog
-* **Gboard:** fix: keep conventional-commit type in changelog bullets
-* **Gboard:** fix: Kotlin equality between Int and Long is always false
-* **Gboard:** feat: force the grammar check row on
-* **Gboard:** fix: suggest settings missing basePatch, correct comment reference
-* **Gboard:** polish: neutral underline for hotkey text fields
-* **Gboard:** preflight: pin the toolbar order preference keys
-
 # [1.2.2-dev.4](https://github.com/JZ6/Flexboard/compare/v1.2.2-dev.3...v1.2.2-dev.4) (2026-08-21)
 
 * **Gboard:** chore: default custom hotkeys off while the reorder crash is being isolated
@@ -248,9 +225,6 @@
 * **Gboard:** check a register really holds what the instruction using it needs
 * **Gboard:** add tools/promote, so a stable release cannot ship a stale build
 
-# [1.0.0-dev.1](https://github.com/JZ6/Flexboard/compare/v0.0.3-dev.3...v1.0.0-dev.1) (2026-08-17)
-
-* **Gboard:** No changes recorded.
 
 # [0.0.3-dev.3](https://github.com/JZ6/Flexboard/compare/v0.0.3-dev.2...v0.0.3-dev.3) (2026-08-16)
 
