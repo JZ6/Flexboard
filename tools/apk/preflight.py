@@ -193,6 +193,18 @@ EXPECTED = {
     # The keycode Gboard wraps a Runnable in, and the dispatcher that runs it. Two other classes
     # test this keycode and decline it, so "something tests it" is not the check that matters.
     'buttons_runnable_keycode': -40007,
+    # ---- the native settings screen
+    # Unobfuscated names — Gboard's preference XML addresses both by class-name string, so R8 can
+    # never move them. The attrs are read by literal name off NullNamespace; rename-safe the same
+    # way, which is what makes them pinnable at all.
+    'native_settings_host_fragment':
+        'Lcom/google/android/libraries/inputmethod/preferencewidgets/CommonPreferenceFragment;',
+    'native_settings_slider':
+        'Lcom/google/android/libraries/inputmethod/preferencewidgets/InlineSliderPreference;',
+    'native_settings_slider_attrs': [
+        'slider_min_value', 'slider_max_value', 'slider_scale',
+        'slider_unit', 'slider_text_left', 'slider_text_right',
+    ],
 }
 
 # --------------------------------------------------------------------------- dex helpers
@@ -212,6 +224,18 @@ def find_class(dl, name):
             if cname == name:
                 return d, sup, cd
     return None, None, None
+
+
+def class_access_flags(dl, name):
+    """The class_def_item's access flags, or None when the class is absent."""
+    import struct
+    for d in dl:
+        for i in range(d.cls_n):
+            ci, af, _su, _io, _sf, _ao, _cd, _sv = struct.unpack_from(
+                '<8I', d.b, d.cls_o + 32 * i)
+            if d.type(ci) == name:
+                return af
+    return None
 
 
 def class_fields(d, cd):
@@ -1500,6 +1524,59 @@ def run(dl, apk=None):
         except Exception as exc:
             check('prefs: the preference ids still name the right settings', False,
                   f'could not read resources from {apk}: {exc}')
+
+    # ---- the native settings host
+    #
+    # The settings screen is Gboard's own fragment stack extended by one extension class, so the
+    # pins are the seam that class docks onto: the base class must stay public and concrete with a
+    # public no-arg constructor and a concrete `aB()`, and the row widget must still read its
+    # attributes off the XML by literal name. A rename of any of it compiles the patch (the stub
+    # module sees its own copy) and then fails at tap time on the phone.
+    host = E['native_settings_host_fragment']
+    d_host, sup_host, cd_host = find_class(dl, host)
+    if check('settings: the fragment base class exists', cd_host is not None, host):
+        # PUBLIC without ABSTRACT is the whole contract: concrete-ness is what lets the extension
+        # subclass inherit every abstract-method implementation it will never see.
+        af = class_access_flags(dl, host)
+        check('settings: it is public and concrete',
+              af is not None and af & 0x1 == 1 and af & 0x400 == 0,
+              f'access={af is not None and hex(af)}')
+        methods = list(d_host.class_methods(cd_host))
+        abstracts = [m for m, af, co in methods if af & 0x400]
+        check('settings: no abstract methods anywhere on it',
+              not abstracts, str(abstracts))
+        ctors = [af for m, af, co in methods if m == f'{host}-><init>()V']
+        check('settings: a public no-arg constructor',
+              bool(ctors) and ctors[0] & 0x1 == 1,
+              f'access={ctors and hex(ctors[0])}')
+        ab = [ (af, co) for m, af, co in methods if m == f'{host}->aB()I']
+        check('settings: aB()I exists, public and concrete',
+              bool(ab) and ab[0][0] & 0x1 == 1 and ab[0][0] & 0x400 == 0 and ab[0][1] != 0,
+              f'access={ab and hex(ab[0][0])}')
+
+    slider = E['native_settings_slider']
+    d_sl, _sup_sl, cd_sl = find_class(dl, slider)
+    if check('settings: the inline slider preference exists', cd_sl is not None, slider):
+        ctor = f'{slider}-><init>({CONTEXT}Landroid/util/AttributeSet;)V'
+        c, ins = body(dl, ctor)
+        if check('settings: it keeps the XML-inflation constructor', ins is not None, ctor):
+            literals = {a.split(' ', 1)[1].strip("'") for pc, n, a in ins
+                        if n.startswith('const-string')}
+            missing = [a for a in E['native_settings_slider_attrs'] if a not in literals]
+            check('settings: its attributes are still read by literal name',
+                  not missing, f'missing {missing}')
+
+        # Persistence is what makes the whole screen real: the slider stores through these two,
+        # and the fragment-lifecycle datastore hook only exists for instances of the ported
+        # PreferenceFragmentCompat — our fragment's superclass chain.
+        for sig in ('Landroidx/preference/Preference;->ae(Ljava/lang/String;)Z',
+                    'Landroidx/preference/Preference;->w(Ljava/lang/String;)Ljava/lang/String;'):
+            _, ins2 = body(dl, sig)
+            check(f'settings: {sig.split("->")[1]} still on androidx Preference',
+                  ins2 is not None, sig)
+        chain = superclass_chain(dl, host)
+        check('settings: the host base descends from the ported Fragment chain',
+              'Lad;' in chain and '(not in dex)' not in chain, str(chain[-2:]))
 
     # ---- bypass signature
     sig_cls = B['sigcheck']
