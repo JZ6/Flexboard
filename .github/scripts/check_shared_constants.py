@@ -391,6 +391,67 @@ def _check_settings_xml(problems, kotlin):
 # start uppercase so that package mentions ("…extension.settings") are not mistaken for classes.
 DOTTED_EXTENSION_CLASS = re.compile(r"dev\.jz6\.flexboard\.extension(?:\.\w+)*\.[A-Z]\w*")
 
+# The emitted smali stages a key as `const-string v$x, "$SOME_KEY"` — the consumers of the
+# screen's keys are the injected readers, not extension Java.
+EMITTED_KEY_READ = re.compile(r'const-string\s+v\$\w+,\s*"\$(\w*KEY\w*)"')
+
+
+def _check_screen_contract(problems, kotlin):
+    """Coverage rules for every keyed row of flexboard_settings.xml, no per-row opt-out.
+
+    XML_ROWS asserts the rows it knows about, attribute by attribute. That leaves a silent lane:
+    adding a row nobody registered passes every check while the engine under it reads a key the
+    screen never writes, or a row typoed `…_hol_ms` writes a key nothing reads. These rules close
+    that: uniqueness, every key must be a declared patch constant, every key an emitted reader
+    stages must have a row, and any row that carries bounds or a default must be registered in
+    XML_ROWS so its attrs get asserted pair by pair.
+    """
+    keys = re.findall(r'android:key="([^"]+)"', SETTINGS_XML.read_text())
+    entries = _xml_entries(SETTINGS_XML.read_text())
+    for dup in {k for k in keys if keys.count(k) > 1}:
+        problems.append(f"  flexboard_settings.xml carries the key {dup!r} twice")
+
+    const_values = set(kotlin.values())
+    for key in set(keys):
+        if key not in const_values:
+            problems.append(
+                f"  flexboard_settings.xml row {key!r} is not the value of any patch constant — "
+                f"either the key is typoed or the constant it feeds was renamed"
+            )
+
+    # Staged in smali with no settings row by design: step-scale's KDoc pins "nothing uses a UI
+    # value for it" — the key stays int-typed against the pre-native Activity, and the engine
+    # just reads the seeded default. Declared here so the rule still covers keys nobody
+    # thought about.
+    stage_only = {"STEP_SCALE_KEY"}
+    staged = set()
+    for path in PATCHES.rglob("*.kt"):
+        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        for const_name in EMITTED_KEY_READ.findall(text):
+            staged.add((path.name, const_name))
+    for file_name, const_name in sorted(staged):
+        if const_name in stage_only:
+            continue
+        key = kotlin.get(const_name)
+        if key and key not in entries:
+            problems.append(
+                f"  {file_name}'s smali stages {key!r} for {const_name}, but the screen "
+                f"has no row that writes it — the slider would read the patch default forever"
+            )
+    registered = {kotlin.get(name) for name, _ in XML_ROWS}
+    registered.discard(None)
+    for key, attrs in entries.items():
+        if key in registered:
+            continue
+        bounded = [a for a in attrs if a in ("android:defaultValue", "slider_min_value",
+                                             "slider_max_value")]
+        if bounded:
+            problems.append(
+                f"  the {key!r} row carries {sorted(bounded)} but is not registered in "
+                f"XML_ROWS, so nothing asserts those literals against the engine's constants — "
+                f"add the row or drop the attribute"
+            )
+
 
 def _check_dotted_extension_classes(problems):
     for path in PATCHES.rglob("*.kt"):
@@ -450,6 +511,7 @@ def main():
     _check_extension_references(problems)
     _check_settings_xml(problems, kotlin)
     _check_dotted_extension_classes(problems)
+    _check_screen_contract(problems, kotlin)
 
     if problems:
         print("::error::The patches and the extension disagree about the preference contract:",
@@ -457,8 +519,8 @@ def main():
         print("\n".join(problems), file=sys.stderr)
         return 1
 
-    print(f"Patch, extension and settings XML agree on all {len(PAIRS)} shared constants "
-          f"and {len(XML_ROWS)} slider rows.")
+    print(f"Patch, extension and settings XML agree on all {len(PAIRS)} shared constants, "
+          f"{len(XML_ROWS)} slider rows, and every row-level coverage rule.")
     return 0
 
 
