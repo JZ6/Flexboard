@@ -1,3 +1,20 @@
+# [1.4.0-dev.1](https://github.com/JZ6/Flexboard/compare/v1.3.0...v1.4.0-dev.1) (2026-08-22)
+
+* **Gboard:** docs: roadmap marks the native hotkey round-trip done
+* **Gboard:** test: pin the hotkey seam in preflight and the constants checker
+* **Gboard:** feat: hotkeys return — patch half
+* **Gboard:** feat: hotkeys return — extension half
+* **Gboard:** fix: writePatchResource name/target concatenates the directory twice
+* **Gboard:** ci: skip build-provenance attestation on private repos
+* **Gboard:** docs: record the native settings-hosting mechanism
+* **Gboard:** test: pin the native-settings seam in preflight; checker lanes for the XML contract
+* **Gboard:** feat: host the settings screen as a native Gboard fragment (patch half)
+* **Gboard:** feat: host the settings screen as a native Gboard fragment (extension half)
+* **Gboard:** fix: drop duplicated palette constants in settings activity
+* **Gboard:** chore: drop an unused import
+* **Gboard:** chore: harden native toolbar emission and its checkers
+* **Gboard:** chore: remove Bigger Toolbar and Hotkeys — both are being rewritten natively
+
 # 1.3.0 (2026-08-21)
 
 * **Gboard:** refactor: toolbar buttons go native; drop the merge-splice architecture
