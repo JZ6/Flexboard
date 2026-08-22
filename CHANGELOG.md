@@ -1,3 +1,7 @@
+# [1.4.0-dev.2](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.1...v1.4.0-dev.2) (2026-08-22)
+
+* **Gboard:** fix: trailing internal label crashes the patcher's label resolution
+
 # [1.4.0-dev.1](https://github.com/JZ6/Flexboard/compare/v1.3.0...v1.4.0-dev.1) (2026-08-22)
 
 * **Gboard:** docs: roadmap marks the native hotkey round-trip done
