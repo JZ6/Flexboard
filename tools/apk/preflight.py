@@ -84,6 +84,10 @@ BINDINGS = {
     # return when the caller's digest cannot be computed -- an input, never an output. It is
     # tracked only because reading it is part of what identifies the check.
     'test_environment': 'Lrox;',
+    # The Phenotype flag holder whose <clinit> the grammar patch flips, and the flag factory it
+    # stores through. The class names move every build; the strings inside are what R8 cannot.
+    'grammar_flags': 'Ljpf;',
+    'flag_store': 'Lnxs;',
 }
 
 EXPECTED = {
@@ -124,6 +128,7 @@ EXPECTED = {
     ],
     'sigcheck_registers': 8,
     'sigcheck_returns': [6, 4, 3],
+    'grammar_clinit_registers': 4,
     'undo_scratch': [2, 3],
     'clamp_scratch': [5, 7, 9],
     'distance_scratch': [7, 8, 9],
@@ -1592,6 +1597,28 @@ def run(dl, apk=None):
             check(f'bypass: reads {fd}', fd in seen)
         c2, _ = body(dl, f'{sig_cls}->c({CONTEXT}Ljava/lang/String;)[B')
         check('bypass: digest method exists', c2 is not None)
+
+    # The grammar row flip: Ljpf's <clinit> initialises one Phenotype flag per
+    # const-string/const/4/factory triple, and the patch finds its site by the flag's name
+    # string and flips the zero that follows. The fingerprint asserts the class; these pins
+    # assert the two instructions the flip depends on.
+    grammar_cls = B['grammar_flags']
+    c, ins = body(dl, f'{grammar_cls}-><clinit>()V')
+    if check('grammar: flag-holder clinit exists', ins is not None):
+        check('grammar: clinit register count', c['registers'] == E['grammar_clinit_registers'],
+              f'got {c["registers"]}')
+        sites = [i for i, (_, n, a) in enumerate(ins)
+                 if n == 'const-string' and "'enable_grammar_checker'" in a]
+        if check('grammar: exactly one enable_grammar_checker flag', len(sites) == 1,
+                 str(len(sites))):
+            i = sites[0]
+            n1, a1 = ins[i + 1][1], ins[i + 1][2]
+            check('grammar: default is const/4 zero', n1 == 'const/4' and a1.rstrip().endswith('#0'),
+                  f'{n1} {a1}')
+            target = f"{B['flag_store']}->a(Ljava/lang/String;Z)Lnxp;"
+            n2, a2 = ins[i + 2][1], ins[i + 2][2]
+            check('grammar: stored through the flag factory',
+                  n2 == 'invoke-static' and target in a2, f'{n2} {a2}')
 
     failed = check.finish()
     print('resolved handler Context field: ', handler_ctx)
