@@ -11,12 +11,16 @@ internal object Constants {
     const val GBOARD_PATCHED_PACKAGE_NAME = "dev.jz6.com.google.android.inputmethod.latin"
 
     /**
-     * Flexboard's settings screen: declared in the manifest and launched from Gboard's settings by
-     * the settings patch, carried in the extension DEX, and re-targeted by the rename patch.
-     * Shared because those three have to agree on it exactly.
+     * Flexboard's settings screen: the fragment class carried in the extension DEX, named by the
+     * settings row's `android:fragment` attribute. Gboard's settings host instantiates it by
+     * class-name lookup, so the name is the whole registration — no manifest entry, no router.
+     * It names no package, so the rename patch has nothing to re-target.
+     *
+     * Checked by `check_shared_constants.py`: the class name carries a dotted extension reference,
+     * and that lane fails the build if the class it names is gone from the extension.
      */
-    const val SETTINGS_ACTIVITY_CLASS =
-        "dev.jz6.flexboard.extension.settings.FlexboardSettingsActivity"
+    const val SETTINGS_FRAGMENT_CLASS =
+        "dev.jz6.flexboard.extension.settings.FlexboardSettingsFragment"
 
     /** Gboard's top-level settings screen. One of the few resources that keeps its real name. */
     const val GBOARD_SETTINGS_XML = "res/xml/settings.xml"

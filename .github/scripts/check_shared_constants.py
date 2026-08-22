@@ -15,25 +15,22 @@ nothing on a phone.
     check_shared_constants.py        -> silent, or exits 1 listing every disagreement
 """
 
+import os
 import pathlib
 import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PATCHES = ROOT / "patches/src/main/kotlin"
+# The native settings screen. Rows in this XML are what persist the values the smali readers read,
+# so the key/default/bounds literals here are one side of the same contract the PAIRS below
+# covered when the screen was extension Java.
+SETTINGS_XML = ROOT / "patches/src/main/resources/xml/flexboard_settings.xml"
 # (Kotlin name, Java name). The names differ where each side reads more naturally on its own terms;
 # what has to match is the value.
 PAIRS = [
     ("STEP_SCALE_KEY", "KEY_STEP_SCALE"),
-    ("MAX_WORDS_KEY", "KEY_MAX_WORDS"),
-    ("HOLD_DELAY_KEY", "KEY_HOLD_DELAY"),
     ("STEP_SCALE_DEFAULT", "STEP_SCALE_DEFAULT"),
-    ("MAX_WORDS_DEFAULT", "MAX_WORDS_DEFAULT"),
-    # The slider's top position, and the "no limit" sentinel the clamp tests against. Split from the
-    # default when that moved to 1 — sharing them would have put the sentinel at 1 and disabled the
-    # cap at every setting.
-    ("MAX_WORDS_NO_LIMIT", "MAX_WORDS_MAX"),
-    ("HOLD_DELAY_DEFAULT", "HOLD_DELAY_DEFAULT"),
     # The ordinals the patch hands the extension's constructor. The extension maps them to
     # android.R.id.* so the framework constants stay symbolic in the one language that can name
     # them -- which means the number crossing the boundary is meaningless on its own, and a drift
@@ -41,6 +38,25 @@ PAIRS = [
     ("TEXT_ACTION_SELECT_ALL", "SELECT_ALL"),
     ("TEXT_ACTION_COPY", "COPY"),
     ("TEXT_ACTION_PASTE", "PASTE"),
+]
+
+# The slider contract between ScrubTuningPatch.kt and flexboard_settings.xml: the Kotlin name of
+# the key a row stores under, then the Kotlin names of the values the row's attributes have to
+# carry exactly. A change that moves one side — a key, a bound, a default — while leaving the
+# other silently decouples the slider from the number the engine uses.
+#
+# ("<kotlin const of key>", {"<xml attribute>": "<kotlin const>"})
+XML_ROWS = [
+    ("MAX_WORDS_KEY", {
+        "android:defaultValue": "MAX_WORDS_DEFAULT",
+        "slider_min_value": "MAX_WORDS_MIN",
+        "slider_max_value": "MAX_WORDS_NO_LIMIT",
+    }),
+    ("HOLD_DELAY_KEY", {
+        "android:defaultValue": "HOLD_DELAY_DEFAULT",
+        "slider_min_value": "HOLD_DELAY_MIN",
+        "slider_max_value": "HOLD_DELAY_MAX",
+    }),
 ]
 
 # Hex is accepted because resource ids are written that way on both sides -- and on the Kotlin side
@@ -320,6 +336,73 @@ def _check_extension_references(problems):
                 )
 
 
+def _xml_entries(text):
+    """{android:key: {attribute: value}} for each element in a settings XML resource."""
+    entries = {}
+    for element in re.findall(r"<([\w$.]+)\s+([^>]+?)/?>", text):
+        attrs = dict(re.findall(r'([\w:]+)="([^"]*)"', element[1]))
+        key = attrs.get("android:key")
+        if key:
+            entries[key] = attrs
+    return entries
+
+
+def _check_settings_xml(problems, kotlin):
+    """The native settings rows agree with the smali readers about keys, defaults and bounds.
+
+    Same silent-drift class as the preference keys this file started with: the XML compiles, the
+    smali assembles, the slider moves, and the number it writes is read back under a different key
+    or clamped by a different bound. Nothing fails until someone notices a setting doing nothing.
+    """
+    text = SETTINGS_XML.read_text()
+    entries = _xml_entries(text)
+    for key_const, attributes in XML_ROWS:
+        key = kotlin.get(key_const)
+        if key is None:
+            problems.append(f"  {key_const} is not declared in any patch")
+            continue
+        row = entries.get(key)
+        if row is None:
+            problems.append(
+                f"  {key_const} = {key!r} has no row in flexboard_settings.xml — the engine reads "
+                f"a key the screen never writes"
+            )
+            continue
+        for attribute, value_const in attributes.items():
+            wanted = kotlin.get(value_const)
+            if wanted is None:
+                problems.append(f"  {value_const} is not declared in any patch")
+                continue
+            actual = row.get(attribute)
+            if actual is None:
+                problems.append(
+                    f"  the {key!r} row in flexboard_settings.xml has no {attribute} attribute"
+                )
+            elif _normalised(actual) != _normalised(wanted):
+                problems.append(
+                    f"  the {key!r} row's {attribute} = {actual!r} but {value_const} = "
+                    f"{wanted!r} — the screen and the engine disagree"
+                )
+
+
+# A dotted extension class name (the settings fragment is referenced from a *resource* row, so no
+# descriptor string exists for it). Existence is all that is checked: the host does
+# Class.forName on this string, and a rename breaks only on a phone. The final component must
+# start uppercase so that package mentions ("…extension.settings") are not mistaken for classes.
+DOTTED_EXTENSION_CLASS = re.compile(r"dev\.jz6\.flexboard\.extension(?:\.\w+)*\.[A-Z]\w*")
+
+
+def _check_dotted_extension_classes(problems):
+    for path in PATCHES.rglob("*.kt"):
+        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        for name in sorted(set(DOTTED_EXTENSION_CLASS.findall(text))):
+            source = EXTENSION_ROOT / (name.replace(".", os.sep) + ".java")
+            if not source.is_file():
+                problems.append(
+                    f"  {path.name} names the extension class {name}, but "
+                    f"{source.relative_to(ROOT)} does not exist"
+                )
+
 def main():
     problems = []
     kotlin, kotlin_from = {}, {}
@@ -365,6 +448,8 @@ def main():
             )
 
     _check_extension_references(problems)
+    _check_settings_xml(problems, kotlin)
+    _check_dotted_extension_classes(problems)
 
     if problems:
         print("::error::The patches and the extension disagree about the preference contract:",
@@ -372,7 +457,8 @@ def main():
         print("\n".join(problems), file=sys.stderr)
         return 1
 
-    print(f"Patch and extension agree on all {len(PAIRS)} shared constants.")
+    print(f"Patch, extension and settings XML agree on all {len(PAIRS)} shared constants "
+          f"and {len(XML_ROWS)} slider rows.")
     return 0
 
 

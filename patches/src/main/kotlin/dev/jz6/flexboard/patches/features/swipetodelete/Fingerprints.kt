@@ -4,7 +4,6 @@ import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.patch.BytecodePatchContext
 import dev.jz6.flexboard.patches.shared.checkMethodExists
 import dev.jz6.flexboard.patches.shared.soleMethodCalling
-import dev.jz6.flexboard.patches.shared.soleMethodNotCalling
 
 /**
  * The scrub classes are not obfuscated, so every fingerprint here can name its class outright —
@@ -70,27 +69,27 @@ internal const val PREFERENCE_STORE_GET =
     "$PREFERENCE_STORE->I(Landroid/content/Context;)$PREFERENCE_STORE"
 internal const val PREFERENCE_GET_BOOLEAN = "$PREFERENCE_STORE->k(Ljava/lang/String;Z)Z"
 
-/** `Integer.parseInt`, which the *string*-valued sibling of the int getter calls and it does not. */
+/** `Integer.parseInt`, which the string-valued getter calls and the typed int getter does not. */
 private const val INTEGER_PARSE_INT = "Ljava/lang/Integer;->parseInt"
 
-/** What the id-keyed `contains` is really doing, and what its same-shaped sibling does not do. */
-private const val SHARED_PREFERENCES_CONTAINS = "Landroid/content/SharedPreferences;->contains"
-
 /**
- * The string-keyed `getInt`, resolved rather than named.
+ * The string-keyed getInt that **parses**.
  *
- * **Its signature is not unique.** Two methods on the store take `(String, I)` and return `I`: this
- * one, which goes through the typed getter, and a sibling that reads the preference as a *string*
- * and calls `Integer.parseInt` on it. Emitting the wrong one would compile, verify and run — it
- * would simply parse a value that was never stored as text — so the letter is derived from that
- * difference instead of written down.
+ * **Its signature is not unique.** Two methods on the store take `(String, I)` and return `I`:
+ * this one, which reads the preference as a *string* and runs it through `Integer.parseInt`, and a
+ * typed sibling that casts the stored value directly. The distinction is load-bearing in both
+ * directions: Flexboard's native settings rows (`InlineSliderPreference` on
+ * `res/xml/flexboard_settings.xml`) persist integer-as-string, which the typed getter would throw
+ * a `ClassCastException` on — and an int-typed leftover (the step-scale seed) makes this one
+ * throw either. Emitting the wrong candidate compiles, verifies, and crashes on the phone, so
+ * the letter is derived from that difference instead of written down.
  */
-internal fun BytecodePatchContext.resolvePreferenceGetInt(): String =
-    soleMethodNotCalling(
+internal fun BytecodePatchContext.resolvePreferenceGetParsedInt(): String =
+    soleMethodCalling(
         PREFERENCE_STORE,
         "(Ljava/lang/String;I)I",
         INTEGER_PARSE_INT,
-        "the string-keyed getInt",
+        "the store's string-keyed getInt that parses",
     )
 
 // There was a `resolvePreferenceContains` here, for the store's id-keyed `contains`, and it needed

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Flexboard's settings screen, inflated by Gboard's own settings host when the header row on the
+  root settings screen is tapped (the row's android:fragment names the extension fragment that
+  returns this resource's runtime id).
+
+  Rows are Gboard's own InlineSliderPreference — the widget the Morse-keyboard screen uses. Two
+  things are why:
+
+  - It reads its configuration by literal attribute name with a null namespace (slider_min_value,
+    slider_max_value, slider_scale, slider_display_scale, slider_unit, slider_text_left,
+    slider_text_right), so no new attribute resources are needed and aapt2 has nothing to link.
+  - It persists an integer-as-string (scale defaults to 1.0) through the PreferenceDataStore that
+    Gboard's fragment-lifecycle hook installs on every hosted fragment, which lands the value in
+    the same store the scrub patch reads with the store's string-parsing getInt.
+
+  The keys, defaults and bounds below are mirrored by constants in ScrubTuningPatch.kt, and
+  .github/scripts/check_shared_constants.py fails the build when the two drift. There is no
+  android:defaultValue more native than these literals: Gboard's own binaries carry that
+  attribute under the res/android namespace the same way.
+-->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    android:title="Flexboard">
+
+    <PreferenceCategory android:title="Swipe to delete">
+
+        <com.google.android.libraries.inputmethod.preferencewidgets.InlineSliderPreference
+            android:key="flexboard_swipe_max_words"
+            android:title="Words per swipe"
+            android:summary="The most one swipe can delete. Swiping back always restores them."
+            android:defaultValue="1"
+            slider_min_value="1"
+            slider_max_value="10"
+            slider_text_left="1"
+            slider_text_right="No limit" />
+
+        <com.google.android.libraries.inputmethod.preferencewidgets.InlineSliderPreference
+            android:key="flexboard_swipe_hold_ms"
+            android:title="Hold delay"
+            android:summary="How long the first key is held before the gesture counts as a swipe."
+            android:defaultValue="0"
+            slider_min_value="0"
+            slider_max_value="300"
+            slider_unit="ms" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

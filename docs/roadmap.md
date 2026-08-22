@@ -1,10 +1,26 @@
 # Roadmap
 
-## User queue (verbatim, work in progress underneath)
 
-mainly im looking to remove any old probelmatic code that may still be around, and improve the strucure where its necessary to prepare for new features, you can also delete the bigger tool bar and hotkeys patch code so we can rewrite from scratch later
-also check if all the commits we have made are necessary, a lot of it was trying to fix the old toolbar ordering that doesnt exist anymore since we switched to native buttons
-i dont need reviews to be done quickly, i care more about accuracy and carefulness when it comes to reviews and code implmentation
+# Roadmap entries written by the user verbatim.
+
+readd hotkeys with the icons
+
+allow hotkey import export
+
+readd ability to change number of hotkeys on toolbar
+
+redo settings to use native gboard
+
+some settings disabled like grammer check and ai writing tools, rambler mode etc
+
+flick up to undo autocorrect 
+
+gesture down on a to select all?
+
+increased tool bar size fit more buttons
+
+ok now clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
+
 
 ## Historical: the dead merge-splice architecture (kept for context)
 
@@ -35,26 +51,6 @@ hotkey slots if we want more than the two dormant ids still free. The patch is a
 `addStringArrayEntry` step inside `SettingsScreenPatch` (or its own patch); it is a
 string-array bag entry, and aapt2 will happily re-link it. Not implemented today because no
 patch consumes it.
-
-# Roadmap entries written by the user verbatim.
-
-readd hotkeys with the icons
-
-allow hotkey import export
-
-readd ability to change number of hotkeys on toolbar
-
-redo settings to use native gboard
-
-some settings disabled like grammer check and ai writing tools, rambler mode etc
-
-flick up to undo autocorrect 
-
-gesture down on a to select all?
-
-increased tool bar size fit more buttons
-
-ok now clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
 
 
 
