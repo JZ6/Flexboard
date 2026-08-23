@@ -24,9 +24,6 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  */
 public final class Hotkeys {
 
-    /** Must match HOTKEY_COUNT_KEY in the patch. */
-    private static final String PREF_COUNT = "flexboard_hotkey_count";
-
     /** One key per slot, as the settings XML rows generate. */
     private static final String PREF_TEXT_PREFIX = "flexboard_hotkey_";
     private static final String PREF_TEXT_SUFFIX = "_text";
@@ -34,9 +31,6 @@ public final class Hotkeys {
 
     /** Must match HOTKEY_SLOTS in the patch's ToolbarSlotsPatch and the XML's count maximum. */
     private static final int SLOT_COUNT = 12;
-
-    /** The count slider's out-of-box position: no hotkeys. */
-    private static final int COUNT_DEFAULT = 0;
 
     /** Toolbar labels cap out visually at about this many characters; clamp by code point. */
     private static final int LABEL_MAX = 12;
@@ -64,7 +58,10 @@ public final class Hotkeys {
 
     private Hotkeys() {}
 
-    /** The toolbar-built gate: slot in range, within the count, text set. */
+    /**
+     * The toolbar-built gate: slot in range, text set. Seeds give every slot its number on first
+     * run ("1"…"12"), and clearing the text is how a slot hides — there is no count slider.
+     */
     public static boolean shown(Context context, int slot) {
         if (slot < 1 || slot > SLOT_COUNT) {
             return false;
@@ -72,18 +69,7 @@ public final class Hotkeys {
         // The one funnel every accessor passes through on a toolbar rebuild — the only place
         // import/export needs to watch. Cheap: two store reads.
         maybeApplyBlob(context);
-        return slot <= count(context) && !textOf(context, slot).trim().isEmpty();
-    }
-
-    /** The count slider, clamped to the emitted slot range. */
-    public static int count(Context context) {
-        String raw = Preferences.of(context).getString(PREF_COUNT, Integer.toString(COUNT_DEFAULT));
-        try {
-            int value = Integer.parseInt(raw);
-            return Math.min(Math.max(value, 0), SLOT_COUNT);
-        } catch (NumberFormatException ignored) {
-            return COUNT_DEFAULT;
-        }
+        return !textOf(context, slot).trim().isEmpty();
     }
 
     /** The text the slot's tap commits. */
@@ -201,7 +187,6 @@ public final class Hotkeys {
         }
         String[] texts = new String[SLOT_COUNT + 1];
         int[] icons = new int[SLOT_COUNT + 1];
-        int highestSlot = 0;
         for (int i = 1; i < lines.length; i++) {
             String line = lines[i].trim();
             if (line.isEmpty()) {
@@ -228,21 +213,12 @@ public final class Hotkeys {
             }
             texts[slot] = unescape(fields[1]);
             icons[slot] = icon;
-            if (slot > highestSlot) {
-                highestSlot = slot;
-            }
         }
         SharedPreferences.Editor editor = Preferences.of(context).edit();
         for (int slot = 1; slot <= SLOT_COUNT; slot++) {
             String text = texts[slot];
             editor.putString(textKey(slot), text != null ? text : "");
             editor.putString(iconKey(slot), Integer.toString(texts[slot] != null ? icons[slot] : 0));
-        }
-        // Count only ever rises on import — clearing the user's slider because one paste
-        // happened is worse than leaving it. Paste-imported slots beyond the count stay hidden
-        // the way an untouched slot is.
-        if (highestSlot > count(context)) {
-            editor.putString(PREF_COUNT, Integer.toString(highestSlot));
         }
         editor.apply();
         return true;

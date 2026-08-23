@@ -38,10 +38,9 @@ PAIRS = [
     ("TEXT_ACTION_SELECT_ALL", "SELECT_ALL"),
     ("TEXT_ACTION_COPY", "COPY"),
     ("TEXT_ACTION_PASTE", "PASTE"),
-    # Hotkeys: the slot fan-out and the count slider's key/default moving with the extension.
+    # Hotkeys: the slot fan-out moving with the extension. (No count slider by design —
+    # placeholders ship; clearing a slot's text hides it.)
     ("HOTKEY_SLOTS", "SLOT_COUNT"),
-    ("HOTKEY_COUNT_KEY", "PREF_COUNT"),
-    ("HOTKEY_COUNT_DEFAULT", "COUNT_DEFAULT"),
 ]
 
 # The slider contract between ScrubTuningPatch.kt and flexboard_settings.xml: the Kotlin name of
@@ -60,11 +59,6 @@ XML_ROWS = [
         "android:defaultValue": "HOLD_DELAY_DEFAULT",
         "slider_min_value": "HOLD_DELAY_MIN",
         "slider_max_value": "HOLD_DELAY_MAX",
-    }),
-    ("HOTKEY_COUNT_KEY", {
-        "android:defaultValue": "HOTKEY_COUNT_DEFAULT",
-        "slider_min_value": "HOTKEY_COUNT_MIN",
-        "slider_max_value": "HOTKEY_SLOTS",
     }),
 ]
 

@@ -48,20 +48,11 @@
     <PreferenceCategory android:title="Hotkeys">
 
         <!--
-          How many slots register. Slot N > count never reaches the bar's registry at all, which
-          is why reorder and persistence stay Gboard's problem: an unregistered id isn't in the
-          order model to begin with (docs/toolbar-access-points.md).
+          No count slider by design: all twelve slots register as numbered placeholders on first
+          run, visible and discoverable, and clearing a slot's text is how you hide one. (The
+          slider asked users to understand the feature before seeing it; the placeholders show
+          it first.)
         -->
-        <com.google.android.libraries.inputmethod.preferencewidgets.InlineSliderPreference
-            android:key="flexboard_hotkey_count"
-            android:title="Slots"
-            android:summary="How many hotkey buttons the toolbar registers."
-            android:defaultValue="0"
-            slider_min_value="0"
-            slider_max_value="12"
-            slider_text_left="None"
-            slider_text_right="12" />
-
         <!--
           The whole hotkey state serialized as one pasteable string, refreshed by the extension
           whenever the toolbar rebuilds. Paste an export to import it; anything that is not an
