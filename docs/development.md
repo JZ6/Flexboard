@@ -200,6 +200,7 @@ everything CI would have told you, and CI builds the bundle anyway.
 | `.github/scripts/check_emission_lint.py` | smali block structure (trailing/dangling labels, const width) | interpolated values — those are computed at patch time |
 | `tools/apk/preflight.py` | bindings that moved or changed shape | Kotlin that does not compile; behaviour |
 | `tools/apk/check_patch_resources.py` | resource write/merge/encode failures, with arsclib itself | dex; needs the target APK, so it is local-only |
+| `./gradlew :driver:run --args="gboard.apk <bundle>.mpp out.apk"` | the whole pipeline, executed for real — the only gate that *runs* the patches. Needs a built bundle (any released/CI one); with an SDK installed, `patches/build/libs/*.mpp` works too | the artifact is unsigned and lacks the merged extension dex — it proves the pipeline, it is not for installing |
 | Morphe + a device | everything else | nothing — but it is the slowest loop |
 
 They are three different axes, and no two of them substitute for each other. `0.0.1-dev.1`

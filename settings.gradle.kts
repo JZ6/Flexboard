@@ -29,3 +29,7 @@ include(":stubs")
 // plus hand-written android.* stubs. CI's real extension build does not touch this module; see
 // extension-check/build.gradle.kts.
 include(":extension-check")
+
+// Applies a built bundle to the stock APK on the desk — Morphe Manager's patch pipeline, run
+// locally. See driver/ and docs/development.md's check matrix.
+include(":driver")
