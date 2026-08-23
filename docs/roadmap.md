@@ -80,6 +80,10 @@ import/export blob row (`3ba0de6`). Slot icons default from the bundled-glyph ta
 preflight; the icon **picker** waits for a working listener hook in the settings port —
 `IconListPreference` exists in the dex, that's the thread to pull.
 
+Device note: hotkey slots only register when the bar controller initializes, so a settings edit
+needs a keyboard cycle to take effect — force-stop is the deterministic rebuild. A
+prefs-listener rebuild (drop the force-stop entirely) is the natural follow-up.
+
 
 
 ## Native registration (being proven out — Parked)
