@@ -45,6 +45,67 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="Hotkeys">
+
+        <!--
+          How many slots register. Slot N > count never reaches the bar's registry at all, which
+          is why reorder and persistence stay Gboard's problem: an unregistered id isn't in the
+          order model to begin with (docs/toolbar-access-points.md).
+        -->
+        <com.google.android.libraries.inputmethod.preferencewidgets.InlineSliderPreference
+            android:key="flexboard_hotkey_count"
+            android:title="Slots"
+            android:summary="How many hotkey buttons the toolbar registers."
+            android:defaultValue="0"
+            slider_min_value="0"
+            slider_max_value="12"
+            slider_text_left="None"
+            slider_text_right="12" />
+
+        <!--
+          One plain text row per slot: what the tap commits. The EditTextPreference widget is
+          bundled by Gboard's androidx port, so the dialog is stock. A slot with no text passes
+          no shown-gate at toolbar build time, so blank rows simply don't render.
+        -->
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_1_text"
+            android:title="Hotkey 1" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_2_text"
+            android:title="Hotkey 2" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_3_text"
+            android:title="Hotkey 3" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_4_text"
+            android:title="Hotkey 4" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_5_text"
+            android:title="Hotkey 5" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_6_text"
+            android:title="Hotkey 6" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_7_text"
+            android:title="Hotkey 7" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_8_text"
+            android:title="Hotkey 8" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_9_text"
+            android:title="Hotkey 9" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_10_text"
+            android:title="Hotkey 10" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_11_text"
+            android:title="Hotkey 11" />
+        <androidx.preference.EditTextPreference
+            android:key="flexboard_hotkey_12_text"
+            android:title="Hotkey 12" />
+
+    </PreferenceCategory>
+
     <!--
       A disabled plain Preference at the bottom of the screen. The placeholder is filled in by
       the patch before the file is written; the text then comes from gradle.properties through

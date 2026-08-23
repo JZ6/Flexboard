@@ -3,6 +3,7 @@ package dev.jz6.flexboard.patches.features.toolbar
 import app.morphe.patcher.patch.ResourcePatchContext
 import app.morphe.patcher.patch.resourcePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.HOTKEY_SLOTS
 import dev.jz6.flexboard.patches.shared.assertWellFormedXml
 import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.spliceValues
@@ -35,8 +36,7 @@ val toolbarSlotsPatch = resourcePatch(
     finalize { widenAllowedIdSet() }
 }
 
-/** How many hotkey slots the widening admits. Mirrors the twelve rows the screen will carry. */
-internal const val HOTKEY_SLOTS = 12
+/** The slot count lives in shared/ToolbarRegistry.kt — the registry emits per-slot blocks and owns it. */
 
 private const val SLOT_STRINGS = "values/flexboard_toolbar_slots.xml"
 

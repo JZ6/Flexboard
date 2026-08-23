@@ -38,6 +38,10 @@ PAIRS = [
     ("TEXT_ACTION_SELECT_ALL", "SELECT_ALL"),
     ("TEXT_ACTION_COPY", "COPY"),
     ("TEXT_ACTION_PASTE", "PASTE"),
+    # Hotkeys: the slot fan-out and the count slider's key/default moving with the extension.
+    ("HOTKEY_SLOTS", "SLOT_COUNT"),
+    ("HOTKEY_COUNT_KEY", "PREF_COUNT"),
+    ("HOTKEY_COUNT_DEFAULT", "COUNT_DEFAULT"),
 ]
 
 # The slider contract between ScrubTuningPatch.kt and flexboard_settings.xml: the Kotlin name of
@@ -56,6 +60,11 @@ XML_ROWS = [
         "android:defaultValue": "HOLD_DELAY_DEFAULT",
         "slider_min_value": "HOLD_DELAY_MIN",
         "slider_max_value": "HOLD_DELAY_MAX",
+    }),
+    ("HOTKEY_COUNT_KEY", {
+        "android:defaultValue": "HOTKEY_COUNT_DEFAULT",
+        "slider_min_value": "HOTKEY_COUNT_MIN",
+        "slider_max_value": "HOTKEY_SLOTS",
     }),
 ]
 
@@ -412,12 +421,19 @@ def _check_screen_contract(problems, kotlin):
         problems.append(f"  flexboard_settings.xml carries the key {dup!r} twice")
 
     const_values = set(kotlin.values())
+    # A constant whose value ends with "_" declares a key *family*: generated keys like
+    # `flexboard_hotkey_7_text` are produced by code, so they can't all be literal const values —
+    # but they must begin with a family prefix an author committed to somewhere.
+    families = [v for v in const_values if isinstance(v, str) and v.endswith("_")]
     for key in set(keys):
-        if key not in const_values:
-            problems.append(
-                f"  flexboard_settings.xml row {key!r} is not the value of any patch constant — "
-                f"either the key is typoed or the constant it feeds was renamed"
-            )
+        if key in const_values:
+            continue
+        if any(key.startswith(family) for family in families):
+            continue
+        problems.append(
+            f"  flexboard_settings.xml row {key!r} is not the value of any patch constant — "
+            f"either the key is typoed or the constant it feeds was renamed"
+        )
 
     # Staged in smali with no settings row by design: step-scale's KDoc pins "nothing uses a UI
     # value for it" — the key stays int-typed against the pre-native Activity, and the engine
