@@ -4,17 +4,9 @@ import app.morphe.patcher.patch.bytecodePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.HOTKEY_ID_PREFIX  // const visible to the checker
 import dev.jz6.flexboard.patches.shared.basePatch
+import dev.jz6.flexboard.patches.shared.emitHotkeyRefresh
 import dev.jz6.flexboard.patches.shared.emitNativeHotkeys
 import dev.jz6.flexboard.patches.shared.resolveAccessPointBuilder
-
-/** The hotkey count slider's store key; the extension reads this back by hand. */
-internal const val HOTKEY_COUNT_KEY = "flexboard_hotkey_count"
-
-/** Never show hotkeys out of the box; the slider is the opt-in. */
-internal const val HOTKEY_COUNT_DEFAULT = 0
-
-/** The slider's floor. (The ceiling is HOTKEY_SLOTS in the shared registry.) */
-internal const val HOTKEY_COUNT_MIN = 0
 
 /**
  * Twelve toolbar buttons whose label, icon and action all come from settings — the patch emits
@@ -26,8 +18,8 @@ internal const val HOTKEY_COUNT_MIN = 0
 val toolbarHotkeysPatch = bytecodePatch(
     name = "Toolbar Hotkeys",
     description = "Adds twelve configurable hotkey slots to Gboard's toolbar — each commits a " +
-        "text of your choice on tap. Configured from the Flexboard settings row; off until the " +
-        "slot count slider moves above zero.",
+        "text of your choice on tap. Slots ship as numbered placeholders; clearing a slot's " +
+        "text hides it. Settings edits apply on the next keyboard open.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
@@ -37,6 +29,8 @@ val toolbarHotkeysPatch = bytecodePatch(
     dependsOn(toolbarSlotsPatch)
 
     execute {
-        emitNativeHotkeys(resolveAccessPointBuilder())
+        val builder = resolveAccessPointBuilder()
+        emitNativeHotkeys(builder)
+        emitHotkeyRefresh(builder)
     }
 }

@@ -465,3 +465,144 @@ private const val HOTKEY_CLASS = "Ldev/jz6/flexboard/extension/toolbar/Hotkey;"
 private const val HOTKEY_CTOR = "$HOTKEY_CLASS-><init>(I)V"
 
 private const val HOTKEY_SKIP_LABEL = "flexboard_hotkey_skip_"
+
+
+// -------------------------------------------------------------------------------------------
+// Refresh on every keyboard open
+// -------------------------------------------------------------------------------------------
+
+/**
+ * Emits one guarded re-registration block per slot at the tail of the toolbar module's
+ * start-input callback, so a settings edit takes effect on the next keyboard open instead of
+ * the next process start. The stock constructor emission stays — it seeds the session — and
+ * re-registration is safe by construction: the register call re-`put`s the entry into the
+ * registry map and the fold's dedupe set swallows the repeat.
+ *
+ * The hook is `Lmln.fn(Loru;LEditorInfo;ZLjava/util/Map;Lnve;)Z` — the module's
+ * onStartInputView, public final on 18.0.3 — inserted ahead of its tail `return`. At that
+ * point every local (v0..v7) is dead: only the return statement remains. The module's Context
+ * comes from `Lnvd;->ac()`, and the live bar controller is its Lmlh-typed field.
+ */
+internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder) {
+    // Same controller resolution as the constructor emission; the register call is shared.
+    val splits = methodsMatching { it.splitsAccessPoints() }
+    check(splits.size == 1) {
+        "The bar-controller anchor moved: expected exactly one method that splits a List around " +
+            "subList+Math.min, found ${splits.size}: ${splits.map { it.toDescriptor() }}"
+    }
+    val controllerType = splits.single().definingClass
+    val controllerClass = classDefByOrNull(controllerType)
+        ?: error("$controllerType is not in the APK; the bar controller cannot be hooked")
+    val registerCall = resolveControllerRegisterCall(controllerClass)
+
+    // The module carrying the start-input signature and exactly one controller field.
+    val modules = methodsMatching { it.signatureMatchesToolbarStartInput() }
+    check(modules.size == 1) {
+        "The toolbar module start-input anchor moved: expected exactly one " +
+            "(Loru;LEditorInfo;ZLjava/util/Map;Lnve;)Z method, found ${modules.size}: " +
+            modules.map { it.toDescriptor() }
+    }
+    val startDef = modules.single()
+    val moduleType = startDef.definingClass
+    val moduleClass = classDefByOrNull(moduleType)
+        ?: error("$moduleType is not in the APK; the toolbar module cannot be hooked")
+    val controllerFields = moduleClass.fields.filter { it.type == controllerType }.toList()
+    check(controllerFields.size == 1) {
+        "$moduleType should carry exactly one $controllerType field, found " +
+            controllerFields.map { "${it.definingClass}->${it.name}:${it.type}" }
+    }
+    val controllerField = controllerFields.single().let {
+        "${it.definingClass}->${it.name}:${it.type}"
+    }
+
+    val startDescriptor = startDef.toDescriptor()
+    val start = mutableClassDefBy(moduleType).methods.single {
+        it.toDescriptor() == startDescriptor
+    }
+    start.assertRegisterCount(START_INPUT_REGISTER_COUNT, startDescriptor)
+
+    val returnIndex = start.implementation!!.instructions
+        .indexOfLast { it.opcodeName().startsWith("RETURN") }
+    check(returnIndex >= 0) { "$startDescriptor has no return — shape moved" }
+
+    val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
+        hotkeyRefreshBlock(slot, builder, controllerField, registerCall)
+    } + "\n\nnop\n").trimIndent()
+    // Same trailing-label rule as the constructor emission: the nop houses the twelfth branch.
+    start.addInstructionsWithLabels(returnIndex, emission)
+}
+
+/** The toolbar module's start-input signature on 18.0.3 — one method in the whole build. */
+private fun Method.signatureMatchesToolbarStartInput(): Boolean =
+    returnType == "Z" &&
+        parameterTypes.map(Any::toString) == listOf(
+            "Loru;", "Landroid/view/inputmethod/EditorInfo;", "Z", "Ljava/util/Map;", "Lnve;",
+        )
+
+/** Same body as the constructor emission, with the module's context getter and the live
+ * controller field read in place of the constructor's parameters. */
+private fun hotkeyRefreshBlock(
+    slot: Int,
+    builder: AccessPointBuilder,
+    controllerField: String,
+    registerCall: String,
+): String {
+    // const/4 only encodes -8..7; slots 8–12 need const/16.
+    val constOp = if (slot in 1..7) "const/4" else "const/16"
+
+    return """
+        invoke-virtual { p0 }, $MODULE_CONTEXT
+        move-result-object v0
+        $constOp v1, $slot
+        invoke-static { v0, v1 }, $HOTKEYS_SHOWN
+        move-result v1
+        if-eqz v1, :${HOTKEY_REFRESH_LABEL}$slot
+
+        invoke-virtual { p0 }, $MODULE_CONTEXT
+        move-result-object v1
+        invoke-static { }, ${builder.newBuilder}
+        move-result-object v0
+
+        const-string v2, "$HOTKEY_ID_PREFIX$slot"
+        invoke-virtual { v0, v2 }, ${builder.setId}
+
+        $constOp v2, $slot
+        invoke-static { v1, v2 }, $HOTKEYS_ICON
+        move-result v2
+        invoke-virtual { v0, v2 }, ${builder.setIcon}
+
+        const/4 v2, 0x0
+        invoke-virtual { v0, v2 }, ${builder.setLabel}
+        $constOp v2, $slot
+        invoke-static { v1, v2 }, $HOTKEYS_LABEL
+        move-result-object v2
+        iput-object v2, v0, ${builder.labelField}
+
+        const/4 v2, 0x0
+        invoke-virtual { v0, v2 }, ${builder.setContentDescription}
+        $constOp v2, $slot
+        invoke-static { v1, v2 }, $HOTKEYS_LABEL
+        move-result-object v2
+        iput-object v2, v0, ${builder.contentDescriptionField}
+
+        new-instance v2, $HOTKEY_CLASS
+        $constOp v4, $slot
+        invoke-direct { v2, v4 }, $HOTKEY_CTOR
+        invoke-virtual { v0, v2 }, ${builder.setAction}
+
+        invoke-virtual { v0 }, ${builder.build}
+        move-result-object v0
+
+        iget-object v1, p0, $controllerField
+        const/4 v2, 0x1
+        invoke-virtual { v1, v0, v2 }, $registerCall
+
+        :${HOTKEY_REFRESH_LABEL}$slot
+    """.trimIndent()
+}
+
+private const val MODULE_CONTEXT = "Lnvd;->ac()Landroid/content/Context;"
+private const val HOTKEY_REFRESH_LABEL = "flexboard_hotkey_refresh_"
+
+/** `fn`'s register count on 18.0.3 — what the insertion assumes; pinned by preflight. */
+private const val START_INPUT_REGISTER_COUNT = 14

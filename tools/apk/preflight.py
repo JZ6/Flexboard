@@ -78,6 +78,9 @@ BINDINGS = {
     'undo_slot': 'Lqyc;',
     'committable': 'Lojt;',
     'sigcheck': 'Lrpv;',
+    'toolbar_module': 'Lmln;',
+    'bar_controller': 'Lmlh;',
+    'toolbar_module_base': 'Lnvd;',
     # Not a cached signature verdict, despite the company it keeps here. Lrox;->b:Z is the global
     # test-environment flag (Build.FINGERPRINT.equals("robolectric")), permanently false on a
     # device and read in ~40 unrelated places. The signature check reads it once, as the value to
@@ -170,6 +173,12 @@ EXPECTED = {
     # it twice changes the fold/filter semantics the widening design depends on.
     'order_helper_init': 'Lmku;-><init>(Landroid/content/Context;Lmxf;)V',
     'order_helper_init_registers': 7,
+    # The per-open refresh seam: the toolbar module's start-input method (fn — its obfuscated
+    # name is R8-moved every build; the descriptor is what it anchors on), its register count,
+    # and the tail return placement the refresh insertion depends on.
+    'toolbar_refresh_method':
+        'Lmln;->fn(Loru;Landroid/view/inputmethod/EditorInfo;ZLjava/util/Map;Lnve;)Z',
+    'toolbar_refresh_registers': 14,
     # The hotkey slots' default icons — twelve Gboard-bundled Material drawables from the glyphs
     # audit, calendar-stable within this build. Path-level provenance returns when the per-slot
     # icon picker does (IconListPreference is in the dex for it); until then, "still a drawable"
@@ -1525,6 +1534,32 @@ def run(dl, apk=None):
         stores = [a for _, n, a in ins
                   if n == 'iput-object' and a.rsplit(', ', 1)[-1].endswith(':Lvxe;')]
         check('native: one immutable set is stored', len(stores) == 1, str(stores))
+
+    # The per-open refresh seam (hotkeys re-register on every start-input): the module's
+    # start-input method, the register count its tail-insert assumes, the field the live bar
+    # controller rides on, and the module's Context getter.
+    refresh = E['toolbar_refresh_method']
+    c, ins = body(dl, refresh)
+    if check('native: toolbar start-input method exists',
+             ins is not None, refresh):
+        check('native: toolbar start-input register count',
+              c['registers'] == E['toolbar_refresh_registers'],
+              f'got {c["registers"]}')
+        check('native: toolbar start-input ends in a return',
+              ins and ins[-1][1].startswith('return'), ins[-1][1] if ins else '')
+    module_cls = B['toolbar_module']
+    fdesc = f"{module_cls}->s:{B['bar_controller']}"
+    field_hits = []
+    for dex in dl:
+        for typename, _af, cls_data in dex.classes():
+            if typename != module_cls:
+                continue
+            field_hits.extend(fd for fd, _static in class_fields(dex, cls_data) if fd == fdesc)
+    check('native: module carries its bar-controller field', len(field_hits) == 1,
+          f'found {len(field_hits)} matching {fdesc}')
+    getter = f"{B['toolbar_module_base']}->ac()Landroid/content/Context;"
+    c, ins = body(dl, getter)
+    check('native: module Context getter exists', ins is not None, getter)
 
 
     # Read superclasses straight out of each class_def rather than resolving every class through
