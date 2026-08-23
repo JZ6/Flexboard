@@ -7,6 +7,8 @@ readd hotkeys with the icons
 
 allow hotkey import export
 
+how does hotkeys work currently
+
 readd ability to change number of hotkeys on toolbar
 
 redo settings to use native gboard
