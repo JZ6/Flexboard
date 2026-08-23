@@ -58,11 +58,10 @@ each needs a fresh rewrite on the native registration helper. Bigger Toolbar ove
 gone. Hotkeys need enough dormant allowed-set ids to make it useful; past scope, see "widening
 0x7f0300dc" below.
 
-**Widen the allowed-set array when hotkeys return.** `0x7f0300dc` needs N extra entries for N
-hotkey slots if we want more than the two dormant ids still free. The patch is an
-`addStringArrayEntry` step inside `SettingsScreenPatch` (or its own patch); it is a
-string-array bag entry, and aapt2 will happily re-link it. Not implemented today because no
-patch consumes it.
+**Widen the allowed-set array when hotkeys return.** Researched and decided — mechanism,
+options and implementation plan in [`docs/toolbar-access-points.md`](toolbar-access-points.md):
+N new strings + N array items in `res/values`, zero dex change, both admission gates
+(registration fold in `Lmlh.g` and read filter in `Lmjv.c`) satisfied by construction.
 
 **Rolled back: the 1.4.0-dev.1–dev.5 native hotkeys.** The dex side was solid (conditional
 `Lmlh` blocks + the `Lmjv;->c` order-filter bypass), but the feature's per-slot ListPreference
