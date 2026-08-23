@@ -1,3 +1,8 @@
+# [1.4.0-dev.3](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.2...v1.4.0-dev.3) (2026-08-23)
+
+* **Gboard:** feat: widen Gboard's toolbar allowed-id set with the Flexboard ids
+* **Gboard:** docs: research how to admit unlimited toolbar buttons natively
+
 # [1.4.0-dev.2](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.1...v1.4.0-dev.2) (2026-08-23)
 
 * **Gboard:** docs: user queue adds hotkeys clarification and sdk-benefit questions
