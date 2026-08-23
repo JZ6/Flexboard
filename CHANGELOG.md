@@ -1,3 +1,10 @@
+# [1.4.0-dev.5](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.4...v1.4.0-dev.5) (2026-08-23)
+
+* **Gboard:** docs: refresh-on-open lands; count slider retired
+* **Gboard:** feat: drop the hotkey count slider — slots are numbered placeholders
+* **Gboard:** feat: hotkey slots re-register on every keyboard open
+* **Gboard:** docs: hotkeys register on controller init — settings edits need a keyboard cycle
+
 # [1.4.0-dev.4](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.3...v1.4.0-dev.4) (2026-08-23)
 
 * **Gboard:** test: pin the hotkey defaults table and the widened-array seam
