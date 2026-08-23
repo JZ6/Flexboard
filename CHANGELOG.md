@@ -1,3 +1,10 @@
+# [1.4.0-dev.4](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.3...v1.4.0-dev.4) (2026-08-23)
+
+* **Gboard:** test: pin the hotkey defaults table and the widened-array seam
+* **Gboard:** feat: hotkey import/export through a single edit-text row
+* **Gboard:** feat: hotkeys return — patch registration and settings rows
+* **Gboard:** feat: hotkeys return — the extension half
+
 # [1.4.0-dev.3](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.2...v1.4.0-dev.3) (2026-08-23)
 
 * **Gboard:** feat: widen Gboard's toolbar allowed-id set with the Flexboard ids
