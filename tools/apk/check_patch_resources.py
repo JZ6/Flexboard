@@ -69,12 +69,22 @@ COPY_WRITES = [
     ("xml/flexboard_settings.xml", "res/xml"),
 ]
 
-# Write sets that splice an existing decoded values file. EMPTY TODAY BY POLICY: values-file
-# surgery is what burned dev.3 and dev.4, and hotkeys re-land without res/values writes
-# (docs/roadmap.md). If a future bundle must merge into a values file, add it here --
-# ("values/whatever.xml", "res/values/arrays.xml") -- and the lane will replay the splice
-# against the real decoded target and run the full encode proof on it.
-VALUE_MERGES = []
+# Write sets that splice an existing decoded values file. Policy history: values-file surgery
+# burned dev.3/dev.4 and stayed banned through the hotkey rollback; the toolbar-slot widening
+# (docs/toolbar-access-points.md) is the first consumer back, mapped here explicitly. An
+# unmapped patch values file still fails the lane — the mapping is the review.
+VALUE_MERGES = [
+    # ToolbarSlotsPatch: the 12 admitted ids become strings, then array items.
+    ("values/flexboard_toolbar_slots.xml", "res/values/strings.xml"),
+]
+
+# Arrays the patch widens, replayed on the real decoded array: (sentinel id value whose
+# *referencing* string locates the holder array, how many ids get appended). Mirrors
+# widenAllowedIdSet() in ToolbarSlotsPatch.kt — the sentinel is a content pin precisely
+# because the array's name is obfuscated per build.
+ARRAY_WIDENINGS = [
+    ("editor_info", 12),
+]
 
 # Any patch resource under values/ that is NOT covered by VALUE_MERGES. Values files are
 # banned on this branch; surfacing one as an error is the lane doing its job.
@@ -310,19 +320,58 @@ def replay(scratch):
         source = REPO / "patches" / "src" / "main" / "resources" / source_rel
         our = source.read_text()
         inner = our.split("<resources>", 1)[1].rsplit("</resources>", 1)[0].strip()
-        dest = pkg_dir / target / source.name
+        new_names = re.findall(r'name="(flexboard_[a-z_0-9]+)"', inner)
+        dest = pkg_dir / target
         existing = dest.read_text() if dest.exists() else None
         if existing is None or "</resources>" not in existing:
             write_fresh(dest, '<?xml version="1.0" encoding="utf-8"?>\n'
                               f"<resources>\n{inner}\n</resources>\n")
         else:
-            marker = re.search(r'name="(flexboard_[a-z_0-9]+)"', inner)
-            if marker and marker.group(0) in existing:
+            marker = new_names[0] if new_names else ""
+            if marker and f'name="{marker}"' in existing:
                 continue
             write_fresh(dest, existing.rstrip()[: -len("</resources>")].rstrip()
                               + "\n" + inner + "\n</resources>\n")
         dom_parse(dest)
         touched.append(dest)
+        # PublicXmlManager.createPublicIdsFromValuesXml runs over every modified values file,
+        # handing each new name a public id; mirror it or the reference check below lies.
+        for new_name in new_names:
+            define_public_id(pkg_dir, "string", new_name)
+
+    # Array widening: mirror widenAllowedIdSet — resolve the sentinel id's string, find the one
+    # array referencing it, append the new ids as @string items.
+    arrays_xml = pkg_dir / "res" / "values" / "arrays.xml"
+    strings_xml = pkg_dir / "res" / "values" / "strings.xml"
+    if ARRAY_WIDENINGS and arrays_xml.exists():
+        arrays = arrays_xml.read_text()
+        strings = strings_xml.read_text() if strings_xml.exists() else ""
+        new_ids = re.findall(
+            r'name="(flexboard_hotkey_\d+)"',
+            (REPO / "patches" / "src" / "main" / "resources" / VALUE_MERGES[0][0]).read_text(),
+        )
+        for sentinel, count in ARRAY_WIDENINGS:
+            assert len(new_ids) == count, \
+                f"ARRAY_WIDENINGS wants {count} ids, the mapped values file carries {len(new_ids)}"
+            m = re.search(rf'<string name="([\w.]+)"[^>]*>{sentinel}</string>', strings)
+            if not m:
+                fail("replay", f"sentinel id {sentinel!r} resolves to no string — seam moved")
+            ref = f"@string/{m.group(1)}"
+            holders = [b for b in re.findall(r'(<array name="[^"]+">.*?</array>)', arrays, re.S)
+                       if ref in b]
+            if len(holders) != 1:
+                fail("replay", f"expected exactly one array referencing {ref}, got {len(holders)}")
+            holder = holders[0]
+            items = "\n".join(f"    <item>@string/{i}</item>" for i in new_ids)
+            widened = holder.replace("</array>", f"{items}\n  </array>")
+            old_count = holder.count("<item>")
+            arrays = arrays.replace(holder, widened)
+            delta = widened.count("<item>") - old_count
+            if delta != count:
+                fail("replay", f"widening added {delta} items, expected {count}")
+        write_fresh(arrays_xml, arrays)
+        dom_parse(arrays_xml)
+        touched.append(arrays_xml)
 
     for t in touched:
         print(f"replay: wrote {t.relative_to(pkg_dir)}")

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The ids Flexboard admits into Gboard's toolbar. One string per admitted access-point id, and
+  the string VALUE is the id itself on purpose: the runtime set is built from values, the
+  encoder needs names, and keeping them identical makes both directions a no-op lookup.
+
+  wired into res/values/strings.xml by ToolbarSlotsPatch, which then appends @string refs of
+  these names into the allowed-set array. Nothing here renders unless a patch also registers a
+  matching access point -- admission without registration is inert by Gboard's own design
+  (docs/toolbar-access-points.md).
+-->
+<resources>
+    <string name="flexboard_hotkey_1" translatable="false">flexboard_hotkey_1</string>
+    <string name="flexboard_hotkey_2" translatable="false">flexboard_hotkey_2</string>
+    <string name="flexboard_hotkey_3" translatable="false">flexboard_hotkey_3</string>
+    <string name="flexboard_hotkey_4" translatable="false">flexboard_hotkey_4</string>
+    <string name="flexboard_hotkey_5" translatable="false">flexboard_hotkey_5</string>
+    <string name="flexboard_hotkey_6" translatable="false">flexboard_hotkey_6</string>
+    <string name="flexboard_hotkey_7" translatable="false">flexboard_hotkey_7</string>
+    <string name="flexboard_hotkey_8" translatable="false">flexboard_hotkey_8</string>
+    <string name="flexboard_hotkey_9" translatable="false">flexboard_hotkey_9</string>
+    <string name="flexboard_hotkey_10" translatable="false">flexboard_hotkey_10</string>
+    <string name="flexboard_hotkey_11" translatable="false">flexboard_hotkey_11</string>
+    <string name="flexboard_hotkey_12" translatable="false">flexboard_hotkey_12</string>
+</resources>

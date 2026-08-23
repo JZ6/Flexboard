@@ -58,10 +58,10 @@ each needs a fresh rewrite on the native registration helper. Bigger Toolbar ove
 gone. Hotkeys need enough dormant allowed-set ids to make it useful; past scope, see "widening
 0x7f0300dc" below.
 
-**Widen the allowed-set array when hotkeys return.** Researched and decided — mechanism,
-options and implementation plan in [`docs/toolbar-access-points.md`](toolbar-access-points.md):
-N new strings + N array items in `res/values`, zero dex change, both admission gates
-(registration fold in `Lmlh.g` and read filter in `Lmjv.c`) satisfied by construction.
+**Widen the allowed-set array when hotkeys return.** Done — `ToolbarSlotsPatch` splices the
+twelve `flexboard_hotkey_N` ids into the allowed-set array via `res/values` (strings + items),
+zero dex change; research in [`docs/toolbar-access-points.md`](toolbar-access-points.md). Inert
+until a patch registers those ids — which is the hotkeys return, when it comes.
 
 **Rolled back: the 1.4.0-dev.1–dev.5 native hotkeys.** The dex side was solid (conditional
 `Lmlh` blocks + the `Lmjv;->c` order-filter bypass), but the feature's per-slot ListPreference

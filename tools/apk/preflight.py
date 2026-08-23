@@ -161,6 +161,15 @@ EXPECTED = {
     # the read filter drops the persisted order's mention of the button, which is the whole point
     # of native registration.
     'native_allowed_array': 0x7f0300dc,
+    # The widening feature (docs/toolbar-access-points.md) splices flexboard_* ids into this
+    # array in res/values — its size is the cheap whole-content canary, and the <init> that
+    # reads it exactly once into the allowed-id set is the dex seam the splice relies on.
+    'native_allowed_array_size': 43,
+    # Lmku.<init>: getResources().getStringArray(id) -> Lvxe.o(array) -> iput allowed set.
+    # The 43-entry array's one construction site; a bump that moves the read elsewhere or reads
+    # it twice changes the fold/filter semantics the widening design depends on.
+    'order_helper_init': 'Lmku;-><init>(Landroid/content/Context;Lmxf;)V',
+    'order_helper_init_registers': 7,
     # ---- text editing buttons
     # The three resource ids Gboard's text-editing access-point seed uses together. The patch finds
     # the seed by them and then reads the builder's setters out of it by the value each is handed,
@@ -1467,6 +1476,9 @@ def run(dl, apk=None):
             members = _read_string_array(data, table, tid, eidx) or []
             check('native: the toolbar allowed-set array is readable',
                   bool(members), 'bag walk returned nothing usable')
+            check('native: allowed-set array holds exactly the stock set',
+                  len(members) == E['native_allowed_array_size'],
+                  f'got {len(members)}, expected {E["native_allowed_array_size"]}')
             for dorm_id in E['native_button_ids']:
                 check(f'native: {dorm_id!r} is in the toolbar allowed-set array',
                       dorm_id in members,
@@ -1474,6 +1486,21 @@ def run(dl, apk=None):
         except Exception as exc:
             check('native: the toolbar allowed-set array is readable', False,
                   f'could not read from {apk}: {exc}')
+
+    # The widening splice relies on the allowed set being built exactly once, from exactly this
+    # constructor: getStringArray -> Lvxe immutable set -> one iput. A second reader or a move
+    # to a phenotype flag would both make the array half of the seam stale silently.
+    c, ins = body(dl, E['order_helper_init'])
+    if check('native: order-helper <init> exists for the allowed-set seam', ins is not None):
+        check('native: order-helper <init> register count',
+              c['registers'] == E['order_helper_init_registers'], f'got {c["registers"]}')
+        consts = [a for _, n, a in ins if n.startswith('const') and '0x7f0300dc' in a]
+        check('native: allowed-array id loaded once in <init>', len(consts) == 1, str(consts))
+        reads = [a for _, n, a in ins if 'getStringArray' in a]
+        check('native: one getStringArray call', len(reads) == 1, str(reads))
+        stores = [a for _, n, a in ins
+                  if n == 'iput-object' and a.rsplit(', ', 1)[-1].endswith(':Lvxe;')]
+        check('native: one immutable set is stored', len(stores) == 1, str(stores))
 
 
     # Read superclasses straight out of each class_def rather than resolving every class through
