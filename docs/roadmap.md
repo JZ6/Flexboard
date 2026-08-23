@@ -80,9 +80,10 @@ import/export blob row (`3ba0de6`). Slot icons default from the bundled-glyph ta
 preflight; the icon **picker** waits for a working listener hook in the settings port —
 `IconListPreference` exists in the dex, that's the thread to pull.
 
-Device note: hotkey slots only register when the bar controller initializes, so a settings edit
-needs a keyboard cycle to take effect — force-stop is the deterministic rebuild. A
-prefs-listener rebuild (drop the force-stop entirely) is the natural follow-up.
+Device note, resolved in dev.5: slots also re-register from the toolbar module's start-input
+callback (`Lmln.fn`), so a settings edit takes effect when the keyboard next opens. The
+constructor emission stays as the session seed. (The count slider went away too: slots ship as
+numbered placeholders, clear-text to hide.)
 
 
 
