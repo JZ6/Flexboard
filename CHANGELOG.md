@@ -1,3 +1,13 @@
+# [1.4.0-dev.2](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.1...v1.4.0-dev.2) (2026-08-23)
+
+* **Gboard:** docs: user queue adds hotkeys clarification and sdk-benefit questions
+* **Gboard:** test: run Morphe's whole patch pipeline on the desk with :driver
+* **Gboard:** test: compile the extension with plain javac, no SDK
+* **Gboard:** test: lint dex anchors and emitted smali before they reach a phone
+* **Gboard:** test: hold every settings row to the contract lanes
+* **Gboard:** test: pin the grammar flag-holder seam in preflight
+* **Gboard:** test: dress-rehearse the resource half of a release, on the desk
+
 # [1.4.0-dev.1](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.0...v1.4.0-dev.1) (2026-08-22)
 
 * **Gboard:** docs: roadbook notes the hotkeys rollback and the rule for their return
