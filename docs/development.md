@@ -194,7 +194,12 @@ everything CI would have told you, and CI builds the bundle anyway.
 | | catches | blind to |
 |---|---|---|
 | `:patches:compileKotlin` | syntax, types, unresolved references | anything about Gboard |
+| `:extension-check:compileJava` | extension Java (syntax, arity, imports) with plain javac, no SDK — the extension's own sources plus hand-written android.* stubs | android.jar-only surface beyond the stubs; behaviour |
+| `.github/scripts/check_shared_constants.py` | patch↔extension constant drift, settings-row coverage | values only referenced once |
+| `.github/scripts/check_dex_pins.py` | an obfuscated Gboard class literal with no preflight anchor | members (preflight pins those structurally per anchored class) |
+| `.github/scripts/check_emission_lint.py` | smali block structure (trailing/dangling labels, const width) | interpolated values — those are computed at patch time |
 | `tools/apk/preflight.py` | bindings that moved or changed shape | Kotlin that does not compile; behaviour |
+| `tools/apk/check_patch_resources.py` | resource write/merge/encode failures, with arsclib itself | dex; needs the target APK, so it is local-only |
 | Morphe + a device | everything else | nothing — but it is the slowest loop |
 
 They are three different axes, and no two of them substitute for each other. `0.0.1-dev.1`
