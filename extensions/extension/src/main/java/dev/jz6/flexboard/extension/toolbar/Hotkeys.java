@@ -44,7 +44,8 @@ public final class Hotkeys {
     /**
      * Per-slot icons when the user has never picked one: the first slot is a star, the second
      * sparkles, and so on. Gboard-bundled Material drawable ids, chosen from the twenty the
-     * glyphs audit catalogued.
+     * glyphs audit catalogued. Mirrored as hex literals by {@code hotkey_default_icons} in
+     * preflight — the two are edited together.
      */
     private static final int[] DEFAULT_ICONS = new int[] {
         2131231289, // star

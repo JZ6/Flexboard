@@ -73,6 +73,13 @@ stack was reset to the pre-hotkeys base. When hotkeys re-land: keep the dex half
 the slot pickers **without touching `res/values/`** — hardcode the icon choices in the
 extension's Java and build the lists at runtime.
 
+**Re-landed in 1.4.0-dev.4** on the widened allowed-set array instead of the filter bypass:
+extension core (`499af89`), registration + settings rows (`fc80d12`) — count slider,
+twelve inline text EditText rows, label/labelOf fixes and trailing-nop carried over — and the
+import/export blob row (`3ba0de6`). Slot icons default from the bundled-glyph table pinned in
+preflight; the icon **picker** waits for a working listener hook in the settings port —
+`IconListPreference` exists in the dex, that's the thread to pull.
+
 
 
 ## Native registration (being proven out — Parked)

@@ -170,6 +170,24 @@ EXPECTED = {
     # it twice changes the fold/filter semantics the widening design depends on.
     'order_helper_init': 'Lmku;-><init>(Landroid/content/Context;Lmxf;)V',
     'order_helper_init_registers': 7,
+    # The hotkey slots' default icons — twelve Gboard-bundled Material drawables from the glyphs
+    # audit, calendar-stable within this build. Path-level provenance returns when the per-slot
+    # icon picker does (IconListPreference is in the dex for it); until then, "still a drawable"
+    # is the pin that matters, because a missing one shows up empty at toolbar build.
+    'hotkey_default_icons': [
+        0x7f080239,  # star
+        0x7f0806fc,  # sparkles
+        0x7f080622,  # check circle
+        0x7f080623,  # done
+        0x7f080214,  # copy
+        0x7f080217,  # paste
+        0x7f080219,  # share
+        0x7f080724,  # open-in-new
+        0x7f080742,  # spellcheck
+        0x7f080400,  # keyboard
+        0x7f080713,  # help-outline
+        0x7f0803ca,  # visibility off
+    ],
     # ---- text editing buttons
     # The three resource ids Gboard's text-editing access-point seed uses together. The patch finds
     # the seed by them and then reads the builder's setters out of it by the value each is handed,
@@ -1479,6 +1497,12 @@ def run(dl, apk=None):
             check('native: allowed-set array holds exactly the stock set',
                   len(members) == E['native_allowed_array_size'],
                   f'got {len(members)}, expected {E["native_allowed_array_size"]}')
+            # The hotkeys' default icons must still be drawables in this build — a renumbering
+            # silently draws an empty button.
+            for icon_id in E['hotkey_default_icons']:
+                check(f'native: hotkey default icon {hex(icon_id)} still resolves to a drawable',
+                      str(table.name(icon_id) or '').startswith('drawable/'),
+                      f'got {table.name(icon_id)!r}')
             for dorm_id in E['native_button_ids']:
                 check(f'native: {dorm_id!r} is in the toolbar allowed-set array',
                       dorm_id in members,
