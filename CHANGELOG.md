@@ -1,3 +1,7 @@
+# [1.4.0-dev.9](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.8...v1.4.0-dev.9) (2026-08-24)
+
+* **Gboard:** refactor: hotkey icon drawables carry their symbol names
+
 # [1.4.0-dev.8](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.7...v1.4.0-dev.8) (2026-08-24)
 
 * **Gboard:** feat: default hotkey icons are the Flexboard vector pack from 8a25e2f

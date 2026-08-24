@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-08-24T05:35:03",
-  "description": "## 1.4.0-dev.8\n\n- feat: default hotkey icons are the Flexboard vector pack from 8a25e2f\n- docs: hotkey visibility contract — set text shows at open, clear removes at restart",
-  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v1.4.0-dev.8/patches-1.4.0-dev.8.mpp",
+  "created_at": "2026-08-24T05:43:49",
+  "description": "## 1.4.0-dev.9\n\n- refactor: hotkey icon drawables carry their symbol names",
+  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v1.4.0-dev.9/patches-1.4.0-dev.9.mpp",
   "signature_download_url": "",
-  "version": "1.4.0-dev.8"
+  "version": "1.4.0-dev.9"
 }
