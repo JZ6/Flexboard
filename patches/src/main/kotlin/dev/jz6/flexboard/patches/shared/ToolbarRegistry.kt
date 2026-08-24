@@ -495,13 +495,20 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
         ?: error("$controllerType is not in the APK; the bar controller cannot be hooked")
     val registerCall = resolveControllerRegisterCall(controllerClass)
 
-    // The module carrying the start-input signature and exactly one controller field.
-    val modules = methodsMatching { it.signatureMatchesToolbarStartInput() }
-    check(modules.size == 1) {
-        "The toolbar module start-input anchor moved: expected exactly one " +
-            "(Loru;LEditorInfo;ZLjava/util/Map;Lnve;)Z method, found ${modules.size}: " +
-            modules.map { it.toDescriptor() }
+    // The start-input signature is the *module-wide* base API (Lnvd) — dozens of modules
+    // declare it. What singles out the toolbar module is that it also OWNS the bar controller:
+    // one field of the controller's type. Both conditions together identify it uniquely.
+    val owning = methodsMatching { it.signatureMatchesToolbarStartInput() }
+        .filter { moduleMethod ->
+            val cls = classDefByOrNull(moduleMethod.definingClass) ?: return@filter false
+            cls.fields.any { it.type == controllerType }
+        }
+    check(owning.size == 1) {
+        "The toolbar module start-input anchor moved: expected exactly one start-input method " +
+            "on a class that also fields the bar controller, found ${owning.size}: " +
+            owning.map { it.toDescriptor() }
     }
+    val modules = owning
     val startDef = modules.single()
     val moduleType = startDef.definingClass
     val moduleClass = classDefByOrNull(moduleType)
@@ -532,7 +539,8 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
     start.addInstructionsWithLabels(returnIndex, emission)
 }
 
-/** The toolbar module's start-input signature on 18.0.3 — one method in the whole build. */
+/** The module-wide start-input signature (declared per module; dozens match — see the caller
+ * for the bar-controller-field narrowing that makes it unique). */
 private fun Method.signatureMatchesToolbarStartInput(): Boolean =
     returnType == "Z" &&
         parameterTypes.map(Any::toString) == listOf(

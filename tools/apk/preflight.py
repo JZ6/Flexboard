@@ -1550,13 +1550,25 @@ def run(dl, apk=None):
     module_cls = B['toolbar_module']
     fdesc = f"{module_cls}->s:{B['bar_controller']}"
     field_hits = []
+    modules_with_field = []
+    fn_sig = '(Loru;Landroid/view/inputmethod/EditorInfo;ZLjava/util/Map;Lnve;)Z'
     for dex in dl:
         for typename, _af, cls_data in dex.classes():
-            if typename != module_cls:
+            if not cls_data:
                 continue
-            field_hits.extend(fd for fd, _static in class_fields(dex, cls_data) if fd == fdesc)
+            if typename == module_cls:
+                field_hits.extend(fd for fd, _static in class_fields(dex, cls_data) if fd == fdesc)
+            declares_fn = any(mn.endswith(f'->fn{fn_sig}')
+                              for mn, _maf, _co in dex.class_methods(cls_data))
+            if declares_fn and any(fd.endswith(f':{B["bar_controller"]}')
+                                   for fd, _st in class_fields(dex, cls_data)):
+                modules_with_field.append(typename)
     check('native: module carries its bar-controller field', len(field_hits) == 1,
           f'found {len(field_hits)} matching {fdesc}')
+    # The patch resolves the toolbar module by "declares fn(...)Z AND has a bar-controller
+    # field" * because the bare signature is the module-wide base API (75 modules on 18.0.3).
+    check('native: the fn+controller-field selector uniquely resolves to the toolbar module',
+          modules_with_field == [module_cls], str(modules_with_field))
     getter = f"{B['toolbar_module_base']}->ac()Landroid/content/Context;"
     c, ins = body(dl, getter)
     check('native: module Context getter exists', ins is not None, getter)
