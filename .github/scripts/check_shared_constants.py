@@ -215,6 +215,17 @@ def _declares(body, class_name, member, params, returns, needs_static):
     return False
 
 
+def _collect_body(name):
+    """The raw initializer text of a named list/array, whichever of the patch or extension of it
+    it lives in. Used to compare members *in order*, which the per-const maps can't express."""
+    for path in sorted(PATCHES.rglob("*.kt")) + sorted(EXTENSION_ROOT.rglob("*.java")):
+        m = re.search(rf"\b{name}\s*=\s*(?:listOf|new String\[\])\s*({{|\()"
+                      r"(.*?)(\}|\))", path.read_text(), re.S)
+        if m:
+            return m.group(2)
+    return ""
+
+
 def _check_extension_references(problems):
     for path in PATCHES.rglob("*.kt"):
         # Comments first: KDoc talking about a member descriptor is not an emission of it, and
@@ -505,6 +516,16 @@ def main():
                 )
                 continue
             java[name], declared_in[name] = value, source.name
+
+    # The hotkey default-icon order, held in lockstep across the patch's drawable loop and the
+    # extension's defaults table: Kotlin names the symbol, Java the flexboard_icon_<symbol>.
+    kt_syms = re.findall(r'"([a-z_]+)"', _collect_body("HOTKEY_DEFAULT_SYMBOLS"))
+    java_names = re.findall(r'"flexboard_icon_([a-z_]+)"', _collect_body("DEFAULT_ICON_NAMES"))
+    if kt_syms != java_names:
+        problems.append(
+            f"  hotkey default icon order drifted: patch says {kt_syms}, "
+            f"extension says {java_names}"
+        )
 
     for kt_name, java_name in PAIRS:
         kt_value, java_value = kotlin.get(kt_name), java.get(java_name)

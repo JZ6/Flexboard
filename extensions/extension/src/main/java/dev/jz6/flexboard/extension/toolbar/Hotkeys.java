@@ -36,26 +36,24 @@ public final class Hotkeys {
     private static final int LABEL_MAX = 12;
 
     /**
-     * Default icon per slot: our own vector drawables, written into the APK by the settings
-     * patch and resolved by NAME at runtime (getIdentifier), so aapt2's numbering never leaves
-     * the device it was baked on. See "flexboard_hotkey_icon_<slot>".
-     *
-     * Must keep length parity with the patch side's HOTKEY_SLOTS (the constants checker
-     * cross-verifies against the SLOT table).
+     * Default icon per slot: the Flexboard vector pack, resolved by NAME at runtime
+     * (getIdentifier), so aapt2's numbering never leaves the device it was baked on. Names match
+     * the symbol each holds — slot order mirrors HOTKEY_DEFAULT_SYMBOLS in
+     * SettingsScreenPatch.kt, locked in step by the constants checker.
      */
     private static final String[] DEFAULT_ICON_NAMES = new String[] {
-        "flexboard_hotkey_icon_1",
-        "flexboard_hotkey_icon_2",
-        "flexboard_hotkey_icon_3",
-        "flexboard_hotkey_icon_4",
-        "flexboard_hotkey_icon_5",
-        "flexboard_hotkey_icon_6",
-        "flexboard_hotkey_icon_7",
-        "flexboard_hotkey_icon_8",
-        "flexboard_hotkey_icon_9",
-        "flexboard_hotkey_icon_10",
-        "flexboard_hotkey_icon_11",
-        "flexboard_hotkey_icon_12",
+        "flexboard_icon_alternate_email",
+        "flexboard_icon_password",
+        "flexboard_icon_phone_enabled",
+        "flexboard_icon_local_post_office",
+        "flexboard_icon_home_pin",
+        "flexboard_icon_work",
+        "flexboard_icon_favorite",
+        "flexboard_icon_kid_star",
+        "flexboard_icon_credit_card",
+        "flexboard_icon_hexagon",
+        "flexboard_icon_hive",
+        "flexboard_icon_sports_soccer",
     };
 
     private Hotkeys() {}

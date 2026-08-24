@@ -69,10 +69,14 @@ COPY_WRITES = [
     ("xml/flexboard_settings.xml", "res/xml"),
 ] + [
     # The hotkey icon pack the settings screen writes wholesale into res/drawable:
-    # twelve per-slot defaults plus the candidates set.
+    # twelve per-slot symbol defaults plus the candidates set.
     (f"drawable/{name}.xml", "res/drawable")
     for name in (
-        [f"flexboard_hotkey_icon_{n}" for n in range(1, 13)]
+        ["flexboard_icon_" + s for s in (
+            "alternate_email", "password", "phone_enabled", "local_post_office",
+            "home_pin", "work", "favorite", "kid_star", "credit_card",
+            "hexagon", "hive", "sports_soccer",
+        )]
         + ["flexboard_icon_snowflake", "flexboard_icon_token"]
         + [f"flexboard_icon_counter_{n}" for n in range(1, 10)]
     )

@@ -57,6 +57,15 @@ import org.w3c.dom.Document
  * Gboard's 33,287 entries do, and the settings screens are among them. That is the only reason
  * this patch can address them; see the addressability note in `docs/development.md`.
  */
+/** The default symbol per hotkey slot, in slot order. Kept as one list with the drawables loop
+ * below; the Java side (Hotkeys.DEFAULT_ICON_NAMES) carries the same order — the constants
+ * checker verifies both stay in step. */
+internal val HOTKEY_DEFAULT_SYMBOLS = listOf(
+    "alternate_email", "password", "phone_enabled", "local_post_office",
+    "home_pin", "work", "favorite", "kid_star", "credit_card",
+    "hexagon", "hive", "sports_soccer",
+)
+
 internal val scrubSettingsScreenPatch = resourcePatch(
     description = "Adds a Flexboard entry to Gboard's settings that opens Flexboard's own screen.",
 ) {
@@ -67,12 +76,13 @@ internal val scrubSettingsScreenPatch = resourcePatch(
         // preference XML below references it by name.
         writePatchResource("flexboard_settings_icon.xml", "res/drawable")
 
-        // The hotkey icon pack: the twelve per-slot defaults plus the wider candidates set
-        // (snowflake, token, counter_1..9). All resolve by name at runtime through getIdentifier,
-        // so aapt2's numbering never leaks into preferences — a blob exported on one device
-        // round-trips on another.
-        for (slot in 1..12) {
-            writePatchResource("flexboard_hotkey_icon_$slot.xml", "res/drawable")
+        // The hotkey icon pack: the twelve per-slot defaults (named for the symbol they hold,
+        // slot order is the DEFAULT_ICON_NAMES table in Hotkeys.java) plus the wider candidates
+        // set (snowflake, token, counter_1..9). All resolve by name at runtime through
+        // getIdentifier, so aapt2's numbering never leaks into preferences — a blob exported on
+        // one device round-trips on another.
+        for (symbol in HOTKEY_DEFAULT_SYMBOLS) {
+            writePatchResource("flexboard_icon_$symbol.xml", "res/drawable")
         }
         writePatchResource("flexboard_icon_snowflake.xml", "res/drawable")
         writePatchResource("flexboard_icon_token.xml", "res/drawable")
