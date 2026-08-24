@@ -36,24 +36,26 @@ public final class Hotkeys {
     private static final int LABEL_MAX = 12;
 
     /**
-     * Per-slot icons when the user has never picked one: the first slot is a star, the second
-     * sparkles, and so on. Gboard-bundled Material drawable ids, chosen from the twenty the
-     * glyphs audit catalogued. Mirrored as hex literals by {@code hotkey_default_icons} in
-     * preflight — the two are edited together.
+     * Default icon per slot: our own vector drawables, written into the APK by the settings
+     * patch and resolved by NAME at runtime (getIdentifier), so aapt2's numbering never leaves
+     * the device it was baked on. See "flexboard_hotkey_icon_<slot>".
+     *
+     * Must keep length parity with the patch side's HOTKEY_SLOTS (the constants checker
+     * cross-verifies against the SLOT table).
      */
-    private static final int[] DEFAULT_ICONS = new int[] {
-        2131231289, // star
-        2131232508, // sparkles
-        2131232290, // check circle
-        2131232291, // done
-        2131231252, // copy
-        2131231255, // paste
-        2131231257, // share
-        2131232548, // open-in-new
-        2131232578, // spellcheck
-        2131231744, // keyboard
-        2131232531, // help-outline
-        2131231690, // visibility off
+    private static final String[] DEFAULT_ICON_NAMES = new String[] {
+        "flexboard_hotkey_icon_1",
+        "flexboard_hotkey_icon_2",
+        "flexboard_hotkey_icon_3",
+        "flexboard_hotkey_icon_4",
+        "flexboard_hotkey_icon_5",
+        "flexboard_hotkey_icon_6",
+        "flexboard_hotkey_icon_7",
+        "flexboard_hotkey_icon_8",
+        "flexboard_hotkey_icon_9",
+        "flexboard_hotkey_icon_10",
+        "flexboard_hotkey_icon_11",
+        "flexboard_hotkey_icon_12",
     };
 
     private Hotkeys() {}
@@ -77,15 +79,38 @@ public final class Hotkeys {
         return Preferences.of(context).getString(textKey(slot), "");
     }
 
-    /** The drawable id the slot renders with; the bundled default when unset or unparsable. */
+    /**
+     * The drawable id the slot renders with. The stored token is resolved by name (a
+     * flexboard_* vector) first; a plain decimal token still works, which is how blobs from
+     * the bundled-id era (dev.7 and earlier) degrade gracefully rather than blanking.
+     */
     public static int iconOf(Context context, int slot) {
-        String fallback = Integer.toString(DEFAULT_ICONS[slot - 1]);
-        String raw = Preferences.of(context).getString(iconKey(slot), fallback);
-        try {
-            return Integer.parseInt(raw);
-        } catch (NumberFormatException ignored) {
-            return DEFAULT_ICONS[slot - 1];
+        String raw = Preferences.of(context).getString(iconKey(slot), "");
+        int resolved = resolveIcon(context, raw);
+        if (resolved != 0) {
+            return resolved;
         }
+        return resolveIcon(context, DEFAULT_ICON_NAMES[slot - 1]);
+    }
+
+    /** name -> getIdentifier, digits -> as-is, anything else -> 0 (caller falls back). */
+    private static int resolveIcon(Context context, String token) {
+        if (token == null || token.isEmpty()) {
+            return 0;
+        }
+        try {
+            int id = Integer.parseInt(token.trim());
+            return id > 0 ? id : 0;
+        } catch (NumberFormatException ignored) {
+            // not decimal: treat as a drawable name
+        }
+        return context.getResources().getIdentifier(token.trim(), "drawable", context.getPackageName());
+    }
+
+    /** What the export row carries per slot: the raw token as stored, default name when unset. */
+    private static String iconTokenOf(Context context, int slot) {
+        String raw = Preferences.of(context).getString(iconKey(slot), "");
+        return raw.isEmpty() ? DEFAULT_ICON_NAMES[slot - 1] : raw;
     }
 
     /**
@@ -159,7 +184,8 @@ public final class Hotkeys {
             .apply();
     }
 
-    /** One line per occupied slot: slot number, tab, escaped text, tab, icon resource id. */
+    /** One line per occupied slot: slot number, tab, escaped text, tab, icon token (a
+     * drawable name today, a decimal id on blobs exported by dev.7 and earlier). */
     private static String serialize(Context context) {
         StringBuilder out = new StringBuilder(BLOB_VERSION).append('\n');
         for (int slot = 1; slot <= SLOT_COUNT; slot++) {
@@ -169,7 +195,7 @@ public final class Hotkeys {
             }
             out.append(slot).append('\t')
                 .append(escape(text)).append('\t')
-                .append(iconOf(context, slot))
+                .append(iconTokenOf(context, slot))
                 .append('\n');
         }
         return out.toString();
@@ -186,7 +212,7 @@ public final class Hotkeys {
             return false;
         }
         String[] texts = new String[SLOT_COUNT + 1];
-        int[] icons = new int[SLOT_COUNT + 1];
+        String[] icons = new String[SLOT_COUNT + 1];
         for (int i = 1; i < lines.length; i++) {
             String line = lines[i].trim();
             if (line.isEmpty()) {
@@ -205,10 +231,8 @@ public final class Hotkeys {
             if (slot < 1 || slot > SLOT_COUNT || texts[slot] != null) {
                 return false;
             }
-            int icon;
-            try {
-                icon = Integer.parseInt(fields[2].trim());
-            } catch (NumberFormatException e) {
+            String icon = fields[2].trim();
+            if (icon.isEmpty()) {
                 return false;
             }
             texts[slot] = unescape(fields[1]);
@@ -218,7 +242,9 @@ public final class Hotkeys {
         for (int slot = 1; slot <= SLOT_COUNT; slot++) {
             String text = texts[slot];
             editor.putString(textKey(slot), text != null ? text : "");
-            editor.putString(iconKey(slot), Integer.toString(texts[slot] != null ? icons[slot] : 0));
+            if (texts[slot] != null && icons[slot] != null) {
+                editor.putString(iconKey(slot), icons[slot]);
+            }
         }
         editor.apply();
         return true;

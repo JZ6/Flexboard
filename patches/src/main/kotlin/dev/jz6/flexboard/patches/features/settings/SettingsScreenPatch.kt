@@ -67,6 +67,19 @@ internal val scrubSettingsScreenPatch = resourcePatch(
         // preference XML below references it by name.
         writePatchResource("flexboard_settings_icon.xml", "res/drawable")
 
+        // The hotkey icon pack: the twelve per-slot defaults plus the wider candidates set
+        // (snowflake, token, counter_1..9). All resolve by name at runtime through getIdentifier,
+        // so aapt2's numbering never leaks into preferences — a blob exported on one device
+        // round-trips on another.
+        for (slot in 1..12) {
+            writePatchResource("flexboard_hotkey_icon_$slot.xml", "res/drawable")
+        }
+        writePatchResource("flexboard_icon_snowflake.xml", "res/drawable")
+        writePatchResource("flexboard_icon_token.xml", "res/drawable")
+        for (n in 1..9) {
+            writePatchResource("flexboard_icon_counter_$n.xml", "res/drawable")
+        }
+
         // The screen itself. Written under res/xml so aapt2 compiles it into the table; the
         // fragment resolves the id by name at runtime. The version placeholder in the footer
         // row is filled from flexboard_version.txt, which :patches:processResources has already

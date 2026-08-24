@@ -67,6 +67,15 @@ ET.register_namespace("android", ANDROID_NS)
 COPY_WRITES = [
     ("drawable/flexboard_settings_icon.xml", "res/drawable"),
     ("xml/flexboard_settings.xml", "res/xml"),
+] + [
+    # The hotkey icon pack the settings screen writes wholesale into res/drawable:
+    # twelve per-slot defaults plus the candidates set.
+    (f"drawable/{name}.xml", "res/drawable")
+    for name in (
+        [f"flexboard_hotkey_icon_{n}" for n in range(1, 13)]
+        + ["flexboard_icon_snowflake", "flexboard_icon_token"]
+        + [f"flexboard_icon_counter_{n}" for n in range(1, 10)]
+    )
 ]
 
 # Write sets that splice an existing decoded values file. Policy history: values-file surgery
