@@ -191,16 +191,16 @@ The list above is kept as written; this notes which of it has landed, rather tha
   the colours follow it including Material You, and the metrics match androidx preference rows.
 - **can we make the backspace swipe work as before without being limited to max 1 word delete** — a
   swipe starting on the backspace key keeps Gboard's distance per word and is not capped.
-- **increased tool bar size fit more buttons** — *Bigger Toolbar*, a 3–12 slider for the number of
-  icons on the access points bar. Shipped in `1.1.0-dev.1` and did nothing, withheld in
-  `1.1.0-dev.2`, rebuilt against the right target: it had been raising the bar's *capacity*, which
-  the count is computed from but not bound by. The count itself is now overridden, above both of the
-  gates that were discarding the capacity. Also covers **max tool icon slider isnt working**.
+- **increased tool bar size fit more buttons** — *Bigger Toolbar*, raise-only slider for the
+  bar's capacity (the max Gboard allows before pushing to overflow). Deferred to a later release;
+  the mechanism and seam are researched in [`docs/toolbar-capacity.md`](toolbar-capacity.md) —
+  one stock-capacity tail patch plus staging Gboard's own count prefs. Also covers **max tool
+  icon slider isnt working**.
 
-- **tool bar amount used to be different between inner and outer screen of a fold** — it was, and
-  the first cut of *Bigger Toolbar* flattened it: Gboard picks its count preference by device class,
-  a fold changes class when it opens, and overriding at entry returned before that choice. There are
-  now two sliders, the second applying only while unfolded and falling back to the first.
+- **tool bar amount used to be different between inner and outer screen of a fold** — covered
+  natively by the capacity plan: Gboard already branches the count preference by device class
+  (`foldable_access_points_count_on_bar` vs `access_points_count_on_bar`), and the first cut of
+  (deferred) *Bigger Toolbar* writes both, so inner/outer tracks one slider each.
 
 - **add select all copy paste hotkeys** — *Text Editing Buttons* puts one-tap **Select all**,
   **Copy** and **Paste** on the toolbar. Cut is not built; it is the same shape again, one entry in

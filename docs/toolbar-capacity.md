@@ -9,13 +9,15 @@ completely stock.
 
 1. **Hard ceiling per bar instance** — `AccessPointsBar.<init>`:
    ```smali
-   v2 = a.getInt(2, 5)                 # XML styleable default = 5
+   v2 = a.getInt(2, 5)                 # XML styleable attribute, per-layout; 5 is only the FALLBACK
    v4 = config_max_access_points(long) # phenotype flag, sysprop: ro.com.google.ime.top_icon_num
    if (v4 in 3..8) m = v4 else m = v2  # flag valid only inside [3,8]
    ```
-   So the ceiling is 5 by default, up to 8 via a phenotype flag nothing sets (flag default `-1`,
-   no sync on patched builds — same family as the grammar row). Redundant with what the patch
-   needs: the entire value lands in field `m` at `iput` on pc 72.
+   The stock ceiling is device-dependent: the styleable attribute is set per layout resource, so
+   phones get 5 by fallback while foldables/tablets ship bigger numbers from their larger layout
+   XMLs (a foldable's inner screen shows far more than 5 on stock). The phenotype flag is a
+   secondary knob that bounces outside [3,8]. Either way, the final value lands in field `m` at
+   `iput` on pc 72 — one assignment, one seam.
 2. **The shown count** — `Lmku.b(I)I` ("definedCountOnBar" in their own log line):
    reads the *user* preference (`access_points_count_on_bar`, or
    `foldable_access_points_count_on_bar` when the device class says foldable — Gboard already
@@ -55,7 +57,8 @@ overflow drawer as their own escape hatch. No geometry work belongs to this patc
 2. **Patch**: one smali tail insert after `iput m` in the bar ctor: call the extension, compare,
    keep the larger. Scratch registers from preflight verification at that insertion point.
 3. **Settings**: one InlineSlider row "Slots on the toolbar (max)" under the existing Flexboard
-   screen. defaults to the stock 5.
+   screen. default 0 = "stock, don't raise" — stock is device-dependent (phones 5, large screens
+   more), so the slider only ever ADDS headroom.
 
 ## Why not the phenotype flag itself
 
@@ -75,6 +78,7 @@ rename `AccessPointsBar`.
 
 ## Rollout
 
-One user-visible patch, default on, default slider 5; dev release, device test is: stock bar
-unchanged at slider=5, slider=8 shows up to 8 with more dragged in from customize, foldable outer
-screen unchanged, inner screen same, overflow drawer unchanged.
+One user-visible patch, default on, default slider 0 (= stock, no raise). Device test: stock bar
+unchanged at 0 on phone and foldable alike; slider=12 shows up to 12 as more are dragged in from
+customize on both screens; overflow drawer unchanged. NOT IMPLEMENTED YET — this doc is the plan;
+the seam and pins above are what the implementation patch must preserve.
