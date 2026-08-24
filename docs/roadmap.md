@@ -3,6 +3,10 @@
 
 # Roadmap entries written by the user verbatim.
 
+fix import export
+
+remove hold delay setting, just keep at 0ms
+
 readd hotkeys with the icons
 
 allow hotkey import export
