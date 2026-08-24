@@ -45,32 +45,12 @@ public final class Defaults {
 
     private Defaults() {}
 
-    /** The slot fan-out — mirrors HOTKEY_SLOTS on the patch side. */
-    private static final int HOTKEY_SLOTS = 12;
-
     /** Called from patched bytecode at Gboard's Application start. */
     public static void seed(Context context) {
         SharedPreferences preferences = Preferences.of(context);
 
         if (!preferences.contains(KEY_STEP_SCALE)) {
             preferences.edit().putInt(KEY_STEP_SCALE, STEP_SCALE_DEFAULT).apply();
-        }
-
-        // Hotkey placeholders: twelve numbered buttons out of the box, so the feature is
-        // discoverable without reading anything. "Delete the text" is the documented way to
-        // hide a slot, which is also why the seed only ever fills an unset key.
-        SharedPreferences.Editor editor = null;
-        for (int slot = 1; slot <= HOTKEY_SLOTS; slot++) {
-            String key = "flexboard_hotkey_" + slot + "_text";
-            if (!preferences.contains(key)) {
-                if (editor == null) {
-                    editor = preferences.edit();
-                }
-                editor.putString(key, Integer.toString(slot));
-            }
-        }
-        if (editor != null) {
-            editor.apply();
         }
     }
 }

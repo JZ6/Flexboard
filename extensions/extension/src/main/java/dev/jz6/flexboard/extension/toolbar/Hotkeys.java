@@ -59,8 +59,8 @@ public final class Hotkeys {
     private Hotkeys() {}
 
     /**
-     * The toolbar-built gate: slot in range, text set. Seeds give every slot its number on first
-     * run ("1"…"12"), and clearing the text is how a slot hides — there is no count slider.
+     * The toolbar-built gate: slot in range, text set. Slots start empty and invisible;
+     * typing a text is how one appears, clearing it is how it goes away.
      */
     public static boolean shown(Context context, int slot) {
         if (slot < 1 || slot > SLOT_COUNT) {

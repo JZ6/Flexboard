@@ -48,10 +48,8 @@
     <PreferenceCategory android:title="Hotkeys">
 
         <!--
-          No count slider by design: all twelve slots register as numbered placeholders on first
-          run, visible and discoverable, and clearing a slot's text is how you hide one. (The
-          slider asked users to understand the feature before seeing it; the placeholders show
-          it first.)
+          No count slider by design: a slot appears the moment its text is set and disappears
+          when the text is cleared. That's the whole visibility rule — nothing to configure.
         -->
         <!--
           The whole hotkey state serialized as one pasteable string, refreshed by the extension
