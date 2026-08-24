@@ -1,3 +1,8 @@
+# [1.4.0-dev.8](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.7...v1.4.0-dev.8) (2026-08-24)
+
+* **Gboard:** feat: default hotkey icons are the Flexboard vector pack from 8a25e2f
+* **Gboard:** docs: hotkey visibility contract — set text shows at open, clear removes at restart
+
 # [1.4.0-dev.7](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.6...v1.4.0-dev.7) (2026-08-24)
 
 * **Gboard:** feat: hotkey slots appear only when the user types a value
