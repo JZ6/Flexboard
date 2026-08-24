@@ -48,8 +48,9 @@
     <PreferenceCategory android:title="Hotkeys">
 
         <!--
-          No count slider by design: a slot appears the moment its text is set and disappears
-          when the text is cleared. That's the whole visibility rule — nothing to configure.
+          No count slider by design: a slot appears when its text is set (the gate is read at
+          toolbar build time) and clears take effect on the next keyboard start — the registry
+          has no mid-session un-register, and a lagging label is simpler than one.
         -->
         <!--
           The whole hotkey state serialized as one pasteable string, refreshed by the extension
