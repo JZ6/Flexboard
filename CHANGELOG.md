@@ -1,3 +1,7 @@
+# [1.4.0-dev.7](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.6...v1.4.0-dev.7) (2026-08-24)
+
+* **Gboard:** feat: hotkey slots appear only when the user types a value
+
 # [1.4.0-dev.6](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.5...v1.4.0-dev.6) (2026-08-24)
 
 * **Gboard:** fix: toolbar module anchor needs the controller field, not just the signature
