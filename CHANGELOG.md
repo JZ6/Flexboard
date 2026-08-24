@@ -1,3 +1,7 @@
+# [1.4.0-dev.6](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.5...v1.4.0-dev.6) (2026-08-24)
+
+* **Gboard:** fix: toolbar module anchor needs the controller field, not just the signature
+
 # [1.4.0-dev.5](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.4...v1.4.0-dev.5) (2026-08-23)
 
 * **Gboard:** docs: refresh-on-open lands; count slider retired
