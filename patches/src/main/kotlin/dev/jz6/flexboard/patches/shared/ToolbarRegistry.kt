@@ -395,7 +395,7 @@ internal fun BytecodePatchContext.emitNativeHotkeys(builder: AccessPointBuilder)
     )
 
     val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
-        hotkeyBlock(slot, builder, canvas.registerCall)
+        hotkeyBlock(slot, builder, HOTKEY_CTOR_SITE, canvas.registerCall)
     } + "\n\nnop\n").trimIndent()
     // WithLabels: the slot blocks carry twelve distinct internal `:…skip_N` labels, which the
     // plain `addInstructions` rejects. The trailing `nop` is not decoration:
@@ -407,58 +407,126 @@ internal fun BytecodePatchContext.emitNativeHotkeys(builder: AccessPointBuilder)
     init.addInstructionsWithLabels(tailIndex, emission)
 }
 
+/**
+ * The per-site differences between the two homes of one emission shape: the controller
+ * `<init>` (context arrives as the constructor's `p1`; the register call rides `p0`) and the
+ * start-input refresh (context comes off the module's own getter; the register call rides the
+ * module's held controller field). Everything else — the guard, the builder chain, the label —
+ * is one template, so a fix to the block shape cannot land in one site and not the other.
+ *
+ * Registers are fixed per site and both sites use scratch {v0,v1,v2,v4} only, disjoint from the
+ * pinned parameters of either hook (validated next to each insertion).
+ */
+private class HotkeySite(
+    /** Skip-label prefix; the slot number is appended by the template. */
+    val labelPrefix: String,
+    /** Instructions loading the Context into [ctx]; empty when the hook hands one over. */
+    val prelude: String,
+    /** Register naming the Context for the shown/icon/label calls (`p1` or a local like `v1`). */
+    val ctx: String,
+    /** Scratch register for the slot constant and the guard result. Must differ from [ctx]. */
+    val guard: String,
+    /** Register each builder argument is staged in (the icon id, the label string, the action). */
+    val arg: String,
+    /** Register the Hotkey constructor's ordinal is staged in. */
+    val ordinal: String,
+    /** Instructions staging the register call's receiver into [receiver]; empty for the ctor. */
+    val tailLoad: String,
+    /** Register the register call is invoked on. */
+    val receiver: String,
+)
+
+private val HOTKEY_CTOR_SITE = HotkeySite(
+    labelPrefix = HOTKEY_SKIP_LABEL,
+    prelude = "",
+    ctx = "p1",
+    guard = "v4",
+    arg = "v1",
+    ordinal = "v2",
+    tailLoad = "",
+    receiver = "p0",
+)
+
+private fun hotkeyRefreshSite(controllerField: String) = HotkeySite(
+    labelPrefix = HOTKEY_REFRESH_LABEL,
+    prelude = """
+        invoke-virtual { p0 }, $MODULE_CONTEXT
+        move-result-object v1
+    """.trimIndent(),
+    ctx = "v1",
+    guard = "v0",
+    arg = "v2",
+    ordinal = "v4",
+    tailLoad = "iget-object v1, p0, $controllerField",
+    receiver = "v1",
+)
+
 /** One slot's conditional registration block. The guard is a single forward jump. */
 private fun hotkeyBlock(
     slot: Int,
     builder: AccessPointBuilder,
+    site: HotkeySite,
     registerCall: String,
 ): String {
     // const/4 only encodes -8..7; slots 8–12 need const/16.
     val constOp = if (slot in 1..7) "const/4" else "const/16"
+    // Plain unbraced names in the template: `${site.x}` inside an invoke's `{ ... }` would put a
+    // `}` mid-register-list, and the constants checker's emitted-call parser would silently stop
+    // seeing the extension invocations it exists to verify.
+    val pre = site.prelude
+    val lab = site.labelPrefix
+    val ctx = site.ctx
+    val g = site.guard
+    val a = site.arg
+    val ord = site.ordinal
+    val tail = site.tailLoad
+    val recv = site.receiver
 
     return """
-        $constOp v4, $slot
-        invoke-static { p1, v4 }, $HOTKEYS_SHOWN
-        move-result v4
-        if-eqz v4, :$HOTKEY_SKIP_LABEL$slot
+        $pre
+        $constOp $g, $slot
+        invoke-static { $ctx, $g }, $HOTKEYS_SHOWN
+        move-result $g
+        if-eqz $g, :$lab$slot
 
         invoke-static { }, ${builder.newBuilder}
         move-result-object v0
 
-        const-string v1, "$HOTKEY_ID_PREFIX$slot"
-        invoke-virtual { v0, v1 }, ${builder.setId}
+        const-string $a, "$HOTKEY_ID_PREFIX$slot"
+        invoke-virtual { v0, $a }, ${builder.setId}
 
-        $constOp v1, $slot
-        invoke-static { p1, v1 }, $HOTKEYS_ICON
-        move-result v1
-        invoke-virtual { v0, v1 }, ${builder.setIcon}
+        $constOp $a, $slot
+        invoke-static { $ctx, $a }, $HOTKEYS_ICON
+        move-result $a
+        invoke-virtual { v0, $a }, ${builder.setIcon}
 
-        const/4 v1, 0x0
-        invoke-virtual { v0, v1 }, ${builder.setLabel}
-        $constOp v1, $slot
-        invoke-static { p1, v1 }, $HOTKEYS_LABEL
-        move-result-object v1
-        iput-object v1, v0, ${builder.labelField}
+        const/4 $a, 0x0
+        invoke-virtual { v0, $a }, ${builder.setLabel}
+        $constOp $a, $slot
+        invoke-static { $ctx, $a }, $HOTKEYS_LABEL
+        move-result-object $a
+        iput-object $a, v0, ${builder.labelField}
 
-        const/4 v1, 0x0
-        invoke-virtual { v0, v1 }, ${builder.setContentDescription}
-        $constOp v1, $slot
-        invoke-static { p1, v1 }, $HOTKEYS_LABEL
-        move-result-object v1
-        iput-object v1, v0, ${builder.contentDescriptionField}
+        const/4 $a, 0x0
+        invoke-virtual { v0, $a }, ${builder.setContentDescription}
+        $constOp $a, $slot
+        invoke-static { $ctx, $a }, $HOTKEYS_LABEL
+        move-result-object $a
+        iput-object $a, v0, ${builder.contentDescriptionField}
 
-        new-instance v1, $HOTKEY_CLASS
-        $constOp v2, $slot
-        invoke-direct { v1, v2 }, $HOTKEY_CTOR
-        invoke-virtual { v0, v1 }, ${builder.setAction}
+        new-instance $a, $HOTKEY_CLASS
+        $constOp $ord, $slot
+        invoke-direct { $a, $ord }, $HOTKEY_CTOR
+        invoke-virtual { v0, $a }, ${builder.setAction}
 
         invoke-virtual { v0 }, ${builder.build}
         move-result-object v0
 
-        const/4 v1, 0x1
-        invoke-virtual { p0, v0, v1 }, $registerCall
+        $tail
+        const/4 $a, 0x1
+        invoke-virtual { $recv, v0, $a }, $registerCall
 
-        :$HOTKEY_SKIP_LABEL$slot
+        :$lab$slot
     """.trimIndent()
 }
 
@@ -531,8 +599,9 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
         .indexOfLast { it.opcodeName().startsWith("RETURN") }
     check(returnIndex >= 0) { "$startDescriptor has no return — shape moved" }
 
+    val refreshSite = hotkeyRefreshSite(controllerField)
     val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
-        hotkeyRefreshBlock(slot, builder, controllerField, canvas.registerCall)
+        hotkeyBlock(slot, builder, refreshSite, canvas.registerCall)
     } + "\n\nnop\n").trimIndent()
     // Same trailing-label rule as the constructor emission: the nop houses the twelfth branch.
     start.addInstructionsWithLabels(returnIndex, emission)
@@ -545,68 +614,6 @@ private fun Method.signatureMatchesToolbarStartInput(): Boolean =
         parameterTypes.map(Any::toString) == listOf(
             "Loru;", "Landroid/view/inputmethod/EditorInfo;", "Z", "Ljava/util/Map;", "Lnve;",
         )
-
-/** Same body as the constructor emission, with the module's context getter and the live
- * controller field read in place of the constructor's parameters. */
-private fun hotkeyRefreshBlock(
-    slot: Int,
-    builder: AccessPointBuilder,
-    controllerField: String,
-    registerCall: String,
-): String {
-    // const/4 only encodes -8..7; slots 8–12 need const/16.
-    val constOp = if (slot in 1..7) "const/4" else "const/16"
-
-    return """
-        invoke-virtual { p0 }, $MODULE_CONTEXT
-        move-result-object v0
-        $constOp v1, $slot
-        invoke-static { v0, v1 }, $HOTKEYS_SHOWN
-        move-result v1
-        if-eqz v1, :${HOTKEY_REFRESH_LABEL}$slot
-
-        invoke-virtual { p0 }, $MODULE_CONTEXT
-        move-result-object v1
-        invoke-static { }, ${builder.newBuilder}
-        move-result-object v0
-
-        const-string v2, "$HOTKEY_ID_PREFIX$slot"
-        invoke-virtual { v0, v2 }, ${builder.setId}
-
-        $constOp v2, $slot
-        invoke-static { v1, v2 }, $HOTKEYS_ICON
-        move-result v2
-        invoke-virtual { v0, v2 }, ${builder.setIcon}
-
-        const/4 v2, 0x0
-        invoke-virtual { v0, v2 }, ${builder.setLabel}
-        $constOp v2, $slot
-        invoke-static { v1, v2 }, $HOTKEYS_LABEL
-        move-result-object v2
-        iput-object v2, v0, ${builder.labelField}
-
-        const/4 v2, 0x0
-        invoke-virtual { v0, v2 }, ${builder.setContentDescription}
-        $constOp v2, $slot
-        invoke-static { v1, v2 }, $HOTKEYS_LABEL
-        move-result-object v2
-        iput-object v2, v0, ${builder.contentDescriptionField}
-
-        new-instance v2, $HOTKEY_CLASS
-        $constOp v4, $slot
-        invoke-direct { v2, v4 }, $HOTKEY_CTOR
-        invoke-virtual { v0, v2 }, ${builder.setAction}
-
-        invoke-virtual { v0 }, ${builder.build}
-        move-result-object v0
-
-        iget-object v1, p0, $controllerField
-        const/4 v2, 0x1
-        invoke-virtual { v1, v0, v2 }, $registerCall
-
-        :${HOTKEY_REFRESH_LABEL}$slot
-    """.trimIndent()
-}
 
 private const val MODULE_CONTEXT = "Lnvd;->ac()Landroid/content/Context;"
 private const val HOTKEY_REFRESH_LABEL = "flexboard_hotkey_refresh_"

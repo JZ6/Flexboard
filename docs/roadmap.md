@@ -4,16 +4,6 @@
 # Roadmap entries written by the user verbatim.
 
 
-dislike the way icon selection works
-
-export button should also popup a text box showing whats exported
-
-import also should have a popup
-
-allow hotkey import export
-
-how does hotkeys work currently
-
 some settings disabled like grammer check and ai writing tools, rambler mode etc
 
 flick up to undo autocorrect 
@@ -22,7 +12,7 @@ gesture down on a to select all?
 
 increased tool bar size fit more buttons
 
- clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
+clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
 
 
 ## Done from the queue
