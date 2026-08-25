@@ -178,6 +178,49 @@ hotkey patch returns in native form.
 
 **Toolbar crash on clicking the 4-square overflow icon.** Reproduces as a crash depending on state; likely the icons where a draw with our registered ids into Customize's key paths. Needs a device logcat to identify. Likely related to not persisting: the customize view expects reordable ids, ours are absent, and the difference in list contents likely crashes the section/commit handler with an unexpected value.
 
+## Parked: grey out settings rows for un-ticked patches
+
+Replaces the older "conditional settings sections" idea (dead: re-deriving patch selection at
+build time; shared-file finalize ordering between patches would be a new, unproven assumption;
+checkers would have to weaken their exact row sets). **This design keeps the static screen and
+verifies everything statically — the only runtime question is which probe says a feature is in.**
+
+Why it was kicked down the road in Aug 2026: worth doing, not urgent — the only always-visible
+inert row today is the swipe slider, and the hotkeys block *works* even with its engine unticked
+(it accumulates prefs that go live on a later tick).
+
+**Step 1 — how the screen knows what was patched in (per feature):**
+
+- *Hotkeys: free probe, zero patch code.* `ToolbarSlotsPatch` splices `flexboard_hotkey_N`
+  strings into resources, so `getIdentifier("flexboard_hotkey_1", "string", pkg) != 0` at
+  runtime == hotkeys are in the APK. Nothing to write, nothing to stale.
+- *Swipe (and anything without a resource probe): store marker.* The feature patch seeds
+  `flexboard_feature_swipe=1` from the app-start hook (the `SeedDefaultsPatch` shape: one
+  fingerprint-anchored call into an extension writer). Known caveat: repatching *without* the
+  feature leaves the marker behind (prefs survive). Parked decision: acceptable on the dev
+  channel; if it ever matters, version the marker value with a build stamp.
+
+**Step 2 — what "greyed" renders as (two tiers):**
+
+- *Tier 1 — text-disabled, zero new dex surface:* the existing first-tap sync pass
+  (`FlexboardSettingsFragment.syncRowIconsOnce`, post-popup-build version) also reads the
+  probes; rows whose feature is absent get a summary like "needs the Swipe to Delete patch"
+  and `aA` short-circuits them (still returns true — no dialog, no cycle). No new pinned
+  letters, fragment already falls through `d()` nulls safely. ~40 extension lines + the marker
+  seed; checker contract untouched (rows always exist).
+- *Tier 2 — visual disable:* `setEnabled(false)` on the port — findable the way `n`/`N` were
+  (`performClick`'s `ac()Z` reads the enabled field; the letter writing it is one `(... Z)V`
+  away). Adds exactly one preflight pin. Real grey, at the cost of a bind-flash: rows look
+  enabled from inflation until the first sync pass, because the port offers no row-bind hook
+  the stub can override (same staleness story as the icons — accepted there too).
+
+Do NOT weaken the checker lanes to build this: the row-count pin and key-family rules keep exact
+sets; greyness is a runtime decision read off properties that don't touch the XML.
+
+Trigger to revisit Tier 2 or conditional sections for real: the screen collecting several more
+always-visible sections, or a feature whose inert rows actively mislead (user moves a slider,
+nothing happens, no hint why).
+
 ## Earlier observations to not lose
 
 - `ToolbarMerge` previously fought itself: merged-by-pairs-approach produced duplicates and drift. Simplified to: always prepend, never read the order.
