@@ -18,8 +18,9 @@ import dev.jz6.flexboard.patches.shared.resolveAccessPointBuilder
 val toolbarHotkeysPatch = bytecodePatch(
     name = "Toolbar Hotkeys",
     description = "Adds twelve configurable hotkey slots to Gboard's toolbar — each commits a " +
-        "text of your choice on tap. A slot appears when its text is set and hides when it's cleared; " +
-        "settings edits apply on the next keyboard open.",
+        "text of your choice on tap. A slot appears when its text is set; when cleared it hides " +
+        "at the next toolbar rebuild (rotate, switch IME, or restart — there's no mid-session " +
+        "un-register). Text and icon edits apply on the next keyboard open.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 

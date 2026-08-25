@@ -107,9 +107,9 @@ internal data class NativeToolbarButton(
                 "emitted today, and the shape that needs more is also the place to generalize this"
         }
         actionArgs.forEach { arg ->
-            require(arg in -8..MAX_CONST_16_SAFE) {
-                "actionArgs on $id contains $arg — const/4 only encodes -8..7 and const/16 only " +
-                    "down to -32768; outside that range the emitted smali fails to assemble"
+            require(arg in -32768..MAX_CONST_16_SAFE) {
+                "actionArgs on $id contains $arg — the emission picks const/4 in -8..7 and " +
+                    "const/16 down to -32768; outside that range the smali fails to assemble"
             }
         }
         labelLiteral?.let { requireSmaliSafe(it, "labelLiteral", id) }

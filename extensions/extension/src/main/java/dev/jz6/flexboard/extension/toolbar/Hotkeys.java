@@ -13,10 +13,12 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  *
  * <p>Every slot has two keys — {@code flexboard_hotkey_N_text} (the string the tap commits) and
  * {@code flexboard_hotkey_N_icon} (a bundled vector's drawable <i>name</i>; decimal ids from
- * dev.7-and-earlier exports still resolve but are no longer written). A slot registers only when
- * its text is set, so an unused slot draws nothing and clearing the text takes the button away on
- * the next keyboard start. Slot N hiding also skips registration, so reordering stays Gboard's
- * (docs/toolbar-access-points.md).
+ * dev.7-and-earlier exports still parse, validated against this build before use). A slot
+ * registers only when its text is set — an unused slot draws nothing — and clearing the text
+ * takes the button away at the next bar-controller rebuild (rotation, an IME switch, a restart):
+ * the registry has no mid-session un-register, while text and icon edits go live on the next
+ * keyboard open through the start-input re-registration. Slot N hiding skips registration, so
+ * reordering stays Gboard's (docs/toolbar-access-points.md).
  *
  * <p>All values are strings because the screen's rows persist through Gboard's androidx port,
  * which writes them as text; readers here parse defensively and fall back to the default the
@@ -134,14 +136,30 @@ public final class Hotkeys {
         return resolveIcon(context, DEFAULT_ICON_NAMES[slot - 1]);
     }
 
-    /** name -> getIdentifier, digits -> as-is, anything else -> 0 (caller falls back). */
+    /**
+     * name → getIdentifier, decimal → as-is, anything else → 0 (caller falls back).
+     *
+     * <p>A decimal token is a build-local resource id, kept only so dev.7-and-earlier exports
+     * still parse — but the number must be validated on <i>this</i> build before use: a renumbered
+     * Gboard turns the same value into a different resource or none at all, and
+     * {@code getDrawable(badId)} throws rather than returning null. Any doubt answers 0 and the
+     * caller's default takes over — the toolbar build and the settings sync both ride this path.
+     */
     private static int resolveIcon(Context context, String token) {
         if (token == null || token.isEmpty()) {
             return 0;
         }
         try {
             int id = Integer.parseInt(token.trim());
-            return id > 0 ? id : 0;
+            if (id <= 0) {
+                return 0;
+            }
+            try {
+                return "drawable".equals(context.getResources().getResourceTypeName(id))
+                        ? id : 0;
+            } catch (android.content.res.Resources.NotFoundException stale) {
+                return 0;
+            }
         } catch (NumberFormatException ignored) {
             // not decimal: treat as a drawable name
         }

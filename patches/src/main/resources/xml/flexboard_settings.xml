@@ -40,8 +40,10 @@
 
         <!--
           No count slider by design: a slot appears when its text is set (the gate is read at
-          toolbar build time) and clears take effect on the next keyboard start — the registry
-          has no mid-session un-register, and a lagging label is simpler than one.
+          toolbar build time). Clearing takes it away at the next bar-controller rebuild —
+          rotation, an IME switch, a restart — because the registry has no mid-session
+          un-register, and a lagging button is simpler than one. Text and icon edits apply on
+          the next keyboard open through the start-input refresh.
         -->
         <!--
           One plain text row per slot: what the tap commits. The EditTextPreference widget is

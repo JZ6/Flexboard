@@ -473,6 +473,20 @@ def _check_screen_contract(problems, kotlin):
                 f"add the row or drop the attribute"
             )
 
+    # The per-slot fan-out has a count, not just a family: the screen must carry exactly
+    # HOTKEY_SLOTS text rows and the same icon rows, numbered 1..N. The family rule above can't
+    # see it — a 13th row is a dead control, an 11th is a slot with no editor.
+    slot_count = int(kotlin.get("HOTKEY_SLOTS", "0"))
+    for suffix in ("_text", "_icon"):
+        want = {f"flexboard_hotkey_{n}{suffix}" for n in range(1, slot_count + 1)}
+        got = {k for k in keys if re.fullmatch(rf"flexboard_hotkey_\d+{suffix}", k)}
+        if got != want:
+            problems.append(
+                f"  flexboard_settings.xml should carry exactly the {slot_count} "
+                f"flexboard_hotkey_1..{slot_count}{suffix} rows; "
+                f"missing {sorted(want - got)}, extra {sorted(got - want)}"
+            )
+
 
 def _check_dotted_extension_classes(problems):
     for path in PATCHES.rglob("*.kt"):

@@ -1532,6 +1532,15 @@ def run(dl, apk=None):
               f'got {c["registers"]}')
         check('native: toolbar start-input ends in a return',
               ins and ins[-1][1].startswith('return'), ins[-1][1] if ins else '')
+        # The refresh emission owns v0/v1/v2/v4 at the tail. Insertion sits ahead of the final
+        # return, so the return's *operand* must be a parameter slot: a future build that leaves
+        # the value in v0..v4 would have it clobbered by our blocks, with every other pin green.
+        if ins:
+            tail_regs = regs(ins[-1][2])
+            check('native: the start-input return reads a parameter slot',
+                  bool(tail_regs)
+                  and all(r >= c['registers'] - c['ins'] for r in tail_regs),
+                  f'tail reads v{tail_regs}; the refresh emission owns v0/v1/v2/v4')
     module_cls = B['toolbar_module']
     fdesc = f"{module_cls}->s:{B['bar_controller']}"
     field_hits = []

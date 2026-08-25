@@ -9,4 +9,12 @@ public class Resources {
     public int getIdentifier(String name, String defType, String defPackage) {
         return 0;
     }
+
+    public String getResourceTypeName(int resid) {
+        return null;
+    }
+
+    /** Thrown by the id-addressed lookups when the id names nothing on this build. */
+    public static class NotFoundException extends RuntimeException {
+    }
 }
