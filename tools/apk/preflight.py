@@ -179,24 +179,9 @@ EXPECTED = {
     'toolbar_refresh_method':
         'Lmln;->fn(Loru;Landroid/view/inputmethod/EditorInfo;ZLjava/util/Map;Lnve;)Z',
     'toolbar_refresh_registers': 14,
-    # The hotkey slots' default icons — twelve Gboard-bundled Material drawables from the glyphs
-    # audit, calendar-stable within this build. Path-level provenance returns when the per-slot
-    # icon picker does (IconListPreference is in the dex for it); until then, "still a drawable"
-    # is the pin that matters, because a missing one shows up empty at toolbar build.
-    'hotkey_default_icons': [
-        0x7f080239,  # star
-        0x7f0806fc,  # sparkles
-        0x7f080622,  # check circle
-        0x7f080623,  # done
-        0x7f080214,  # copy
-        0x7f080217,  # paste
-        0x7f080219,  # share
-        0x7f080724,  # open-in-new
-        0x7f080742,  # spellcheck
-        0x7f080400,  # keyboard
-        0x7f080713,  # help-outline
-        0x7f0803ca,  # visibility off
-    ],
+    # The hotkey default icons live by name now: the picker cycles the Flexboard vector pack
+    # through getIdentifier, so the id table this used to pin has no consumer left and its
+    # false alarms on a renumbering would guard nothing.
     # ---- text editing buttons
     # The three resource ids Gboard's text-editing access-point seed uses together. The patch finds
     # the seed by them and then reads the builder's setters out of it by the value each is handed,
@@ -246,6 +231,12 @@ EXPECTED = {
         'slider_min_value', 'slider_max_value', 'slider_scale',
         'slider_unit', 'slider_text_left', 'slider_text_right',
     ],
+    # The click dispatch the extension's settings fragment overrides (the ported
+    # onPreferenceTreeClick) and the preference manager it is reached through. Obfuscated
+    # letters, moved by R8 every build — run() pins the *shapes* behind them, which is what
+    # tells "renamed" apart from "removed" on a bump.
+    'native_settings_tree_listener': 'Lcdr;',
+    'native_settings_manager': 'Lcdw;',
 }
 
 # --------------------------------------------------------------------------- dex helpers
@@ -1506,12 +1497,6 @@ def run(dl, apk=None):
             check('native: allowed-set array holds exactly the stock set',
                   len(members) == E['native_allowed_array_size'],
                   f'got {len(members)}, expected {E["native_allowed_array_size"]}')
-            # The hotkeys' default icons must still be drawables in this build — a renumbering
-            # silently draws an empty button.
-            for icon_id in E['hotkey_default_icons']:
-                check(f'native: hotkey default icon {hex(icon_id)} still resolves to a drawable',
-                      str(table.name(icon_id) or '').startswith('drawable/'),
-                      f'got {table.name(icon_id)!r}')
             for dorm_id in E['native_button_ids']:
                 check(f'native: {dorm_id!r} is in the toolbar allowed-set array',
                       dorm_id in members,
@@ -1680,6 +1665,73 @@ def run(dl, apk=None):
         chain = superclass_chain(dl, host)
         check('settings: the host base descends from the ported Fragment chain',
               'Lad;' in chain and '(not in dex)' not in chain, str(chain[-2:]))
+
+    # ---- the extension's click seam: aA dispatch and the row letters
+    #
+    # The settings fragment overrides aA (the ported onPreferenceTreeClick) and rewrites tapped
+    # rows through three obfuscated letters: t (findPreference), n (setSummary), N (setIcon).
+    # The letters are R8 output and re-rolled every build, so what is pinned is the *shape*
+    # behind each — a rename fails here instead of as a NoSuchMethodError at tap time, which is
+    # exactly how unobfuscated getKey()/setSummary() calls once shipped broken: getKey is a
+    # one-instruction getter, R8 inlines those outright, and nothing below can pin a method that
+    # no longer exists at all.
+    pref = 'Landroidx/preference/Preference;'
+    tree_listener = E['native_settings_tree_listener']
+    manager = E['native_settings_manager']
+    chain = superclass_chain(dl, host)
+    if check('settings: the tree listener is on the host fragment chain',
+             tree_listener in chain, str(chain)):
+        d_tl, _sup_tl, cd_tl = find_class(dl, tree_listener)
+        a_a = [(m, af, co) for m, af, co in d_tl.class_methods(cd_tl)
+               if m == f'{tree_listener}->aA({pref})Z']
+        check('settings: aA(Preference)Z on the tree listener, public and concrete',
+              bool(a_a) and a_a[0][1] & 0x1 == 1 and a_a[0][1] & 0x400 == 0
+              and a_a[0][2] != 0,
+              f'access={a_a and hex(a_a[0][1])}')
+
+    # The click path itself, with no name of its own: performClick's port reads the hosted
+    # fragment off the manager and invokes aA through it. Every letter above could exist while
+    # this wiring moves, which would compile and then dispatch nothing anywhere.
+    c, ins = body(dl, f'{pref}->I()V')
+    if check('settings: the ported performClick exists', ins is not None):
+        calls = [a.split(', ')[-1] for _pc, mn, a in ins if mn.startswith('invoke')]
+        aA_calls = [a for a in calls if a.startswith(f'{tree_listener}->aA(')]
+        check('settings: performClick dispatches to aA exactly once',
+              len(aA_calls) == 1, str(aA_calls))
+        reads = [a.rsplit(', ', 1)[-1] for _pc, mn, a in ins if mn.startswith('iget')]
+        check('settings: performClick reads the manager and hosted-fragment fields',
+              f'{pref}->k:{manager}' in reads
+              and f'{manager}->d:{tree_listener}' in reads,
+              str(reads))
+
+    # t(String) — findPreference. With no getKey to dispatch on, a row is identified by asking
+    # the tree for its key and comparing identity, so this letter is what every intercepted
+    # click depends on. The shape: read the manager field, delegate to its key lookup.
+    c, ins = body(dl, f'{pref}->t(Ljava/lang/String;){pref}')
+    if check('settings: t(String)Preference exists', ins is not None):
+        refs = [a.rsplit(', ', 1)[-1] for _pc, _mn, a in ins]
+        check('settings: t delegates to the manager key lookup',
+              f'{pref}->k:{manager}' in refs
+              and f'{manager}->d(Ljava/lang/CharSequence;){pref}' in refs,
+              str(refs))
+
+    # n(CharSequence) — setSummary, told apart from its sibling setter by the throw only it
+    # carries; the string is the anchor because R8 cannot rename it.
+    c, ins = body(dl, f'{pref}->n(Ljava/lang/CharSequence;)V')
+    if check('settings: n(CharSequence)V exists', ins is not None):
+        strings = [a for _pc, mn, a in ins if mn.startswith('const-string')]
+        check("settings: n is the provider-guarded summary setter",
+              any('SummaryProvider' in a for a in strings), str(strings))
+
+    # N(Drawable) — setIcon: writes the icon field, clears the resource id, notifies. Both field
+    # writes are the identity; a rename that left them behind would draw nothing on a cycle.
+    c, ins = body(dl, f'{pref}->N(Landroid/graphics/drawable/Drawable;)V')
+    if check('settings: N(Drawable)V exists', ins is not None):
+        writes = [a.rsplit(', ', 1)[-1] for _pc, mn, a in ins if mn.startswith('iput')]
+        check('settings: N writes the icon field and clears the resource id',
+              f'{pref}->c:Landroid/graphics/drawable/Drawable;' in writes
+              and f'{pref}->b:I' in writes,
+              str(writes))
 
     # ---- bypass signature
     sig_cls = B['sigcheck']

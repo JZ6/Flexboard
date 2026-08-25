@@ -103,8 +103,55 @@ two keys are new (`flexboard_swipe_*`) instead of migrated.
 `android:defaultValue` is the ordinary androidx mechanism (written under the `res/android`
 namespace, as Gboard's own binaries carry it) and persists once, on first bind.
 
+## Intercepting row clicks
+
+The screen's rows are all stock widgets, but a row whose tap must run Flexboard code — the
+per-slot Icon rows, the Export/Import buttons — is intercepted in the hosted fragment's
+`aA(Landroidx/preference/Preference;)Z`, the port of `PreferenceFragmentCompat.
+onPreferenceTreeClick`:
+
+```
+Preference.I()V                    the ported performClick
+  -> o:Lcdi                        per-row listener, if the XML set one
+  -> k:Lcdw  (the manager)  -> .d:Lcdr   the hosted fragment
+       -> Lcdr;->aA(Preference)Z   virtual — our override runs first
+  -> s:Landroid/content/Intent;    fallback when aA returns false
+```
+
+`super.aA(preference)` keeps the untouched rows (the EditText dialogs, anything that navigates)
+working — it is the base implementation, not a null default.
+
+The obfuscated surface this rides on, all pinned by body shape in preflight's settings section:
+
+| letter | is the ported | identified by |
+|---|---|---|
+| `Lcdr;->aA(Preference)Z` | `onPreferenceTreeClick` | on the host's superclass chain; called once from `I()V` |
+| `Preference;->t(String)Preference` | `findPreference` | reads manager field `k`, delegates to `Lcdw;->d(CharSequence)` |
+| `Preference;->n(CharSequence)V` | `setSummary` | throws `"Preference already has a SummaryProvider set."` |
+| `Preference;->N(Drawable)V` | `setIcon` | writes field `c:…Drawable;`, clears `b:I`, notifies |
+
+**There is no `getKey`.** R8 inlines one-instruction getters out of the dex entirely — `66`
+methods survive on `Preference` and none of them returns the key. Do not compile dispatch code
+against `getKey()`/`setSummary(…)`: it links clean and then dies on device (the dev.10 framing
+of exactly that mistake is why this table exists). A row is identified by asking the tree for
+its key and comparing identity: `tapped.t("flexboard_hotkey_3_icon") == tapped`.
+
+Rows also cannot refresh at bind time — no bind-hook letter is known to the stub — so the
+settings fragment re-draws the icon rows from the store on the *first intercepted tap* of each
+screen instance (`syncRowIconsOnce`). Between opening the screen and the first tap, an icon row
+shows its XML default; the toolbar itself always reflects the store.
+
 ## Failure checklist
 
+- Row tap does nothing at all (no dialog, no outcome text) → the click chain moved: preflight's
+  `settings: performClick dispatches to aA…` checks name the seam. An `aA` that exists but is
+  never called is invisible until tapped, which is why the caller is pinned, not just the letter.
+- Row tap crashes `NoSuchMethodError` → a row-letter (`t`/`n`/`N`) was renamed by a Gboard bump;
+  preflight's settings section pins each by shape. Never dispatch on `getKey()` — it does not
+  exist in the dex (see "Intercepting row clicks").
+- Icon row tap changes the summary but not the toolbar picture → the write went to a key the
+  toolbar emission does not read (`Hotkeys.iconKey` is the single source; the row's XML key
+  must equal it).
 - Row tap crashes with `Fragment$InstantiationException` → the class name on the row does not
   match the extension class, or the constructor/visibility contract broke.
 - Screen opens blank → `aB()` returned 0 (no Context, or the resource name in the XML and the

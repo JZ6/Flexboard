@@ -4,6 +4,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.drawable.Drawable;
 
 import dev.jz6.flexboard.extension.prefs.Preferences;
 
@@ -34,6 +35,11 @@ public final class Hotkeys {
     /** Must match HOTKEY_SLOTS in the patch's ToolbarSlotsPatch and the XML's count maximum. */
     private static final int SLOT_COUNT = 12;
 
+    /** The slot count, for screens that iterate every row. */
+    public static int slotCount() {
+        return SLOT_COUNT;
+    }
+
     /** Toolbar labels cap out visually at about this many characters; clamp by code point. */
     private static final int LABEL_MAX = 12;
 
@@ -57,6 +63,37 @@ public final class Hotkeys {
         "flexboard_icon_hive",
         "flexboard_icon_sports_soccer",
     };
+
+    /**
+     * The rest of the bundled pack, after the slot defaults — the back half of the picker's
+     * cycle. The patch side mirrors this list as {@code HOTKEY_EXTRA_SYMBOLS} in
+     * {@code SettingsScreenPatch.kt}; the constants checker holds the two in step.
+     */
+    private static final String[] EXTRA_ICON_NAMES = new String[] {
+        "flexboard_icon_snowflake",
+        "flexboard_icon_token",
+        "flexboard_icon_counter_1",
+        "flexboard_icon_counter_2",
+        "flexboard_icon_counter_3",
+        "flexboard_icon_counter_4",
+        "flexboard_icon_counter_5",
+        "flexboard_icon_counter_6",
+        "flexboard_icon_counter_7",
+        "flexboard_icon_counter_8",
+        "flexboard_icon_counter_9",
+    };
+
+    /**
+     * The picker's cycle, in tap order: the twelve slot defaults first, then the extras. A slot's
+     * default is therefore always one tap's distance from the start of the table, which is what
+     * {@link #cycleIcon} leans on for its reset-to-default behaviour on unrecognised state.
+     */
+    private static final String[] ICON_CHOICES;
+    static {
+        ICON_CHOICES = new String[SLOT_COUNT + EXTRA_ICON_NAMES.length];
+        System.arraycopy(DEFAULT_ICON_NAMES, 0, ICON_CHOICES, 0, SLOT_COUNT);
+        System.arraycopy(EXTRA_ICON_NAMES, 0, ICON_CHOICES, SLOT_COUNT, EXTRA_ICON_NAMES.length);
+    }
 
     private Hotkeys() {}
 
@@ -104,10 +141,58 @@ public final class Hotkeys {
         return context.getResources().getIdentifier(token.trim(), "drawable", context.getPackageName());
     }
 
-    /** What the export row carries per slot: the raw token as stored, default name when unset. */
-    private static String iconTokenOf(Context context, int slot) {
+    /**
+     * The slot's effective icon token: the stored override when set, the slot's default name
+     * otherwise. This is what the export blob carries, and what the settings screen redraws a
+     * row from after a cycle or an import.
+     */
+    public static String currentIconToken(Context context, int slot) {
         String raw = Preferences.of(context).getString(iconKey(slot), "");
         return raw.isEmpty() ? DEFAULT_ICON_NAMES[slot - 1] : raw;
+    }
+
+    /**
+     * The drawable a settings row should show for a token, or {@code null} when it resolves to
+     * nothing on this build — the row keeps its XML icon rather than blanking.
+     */
+    public static Drawable drawableOf(Context context, String token) {
+        int id = resolveIcon(context, token);
+        return id != 0 ? context.getDrawable(id) : null;
+    }
+
+    /**
+     * The token as it appears under a settings row: the prefix and underscores are plumbing the
+     * user gains nothing from — {@code flexboard_icon_kid_star} reads as "kid star".
+     */
+    public static String displayName(String token) {
+        String name = token.startsWith("flexboard_icon_")
+                ? token.substring("flexboard_icon_".length()) : token;
+        return name.replace('_', ' ');
+    }
+
+    /**
+     * Advances a slot's icon one entry around {@link #ICON_CHOICES} and answers the new token, so
+     * the tapped row can redraw itself. A slot whose stored token names nothing bundled — a
+     * decimal id out of a dev.7-and-earlier export — restarts at the slot's own default, which
+     * makes "one tap back to normal" the single fallback for every unrecognised state.
+     */
+    public static String cycleIcon(Context context, int slot) {
+        int at = indexOfChoice(currentIconToken(context, slot));
+        if (at < 0) {
+            at = indexOfChoice(DEFAULT_ICON_NAMES[slot - 1]) - 1;
+        }
+        String next = ICON_CHOICES[(at + 1) % ICON_CHOICES.length];
+        Preferences.of(context).edit().putString(iconKey(slot), next).apply();
+        return next;
+    }
+
+    private static int indexOfChoice(String token) {
+        for (int i = 0; i < ICON_CHOICES.length; i++) {
+            if (ICON_CHOICES[i].equals(token)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -124,11 +209,16 @@ public final class Hotkeys {
         return text.substring(0, cut) + "…";
     }
 
-    private static String textKey(int slot) {
+    /**
+     * The full store key of a slot's text/icon. The settings screen addresses its rows with
+     * these exact strings, so they are public to keep the key format single-sourced — a typo
+     * here would be a silently dead row, and nothing else would say so.
+     */
+    public static String textKey(int slot) {
         return PREF_TEXT_PREFIX + slot + PREF_TEXT_SUFFIX;
     }
 
-    private static String iconKey(int slot) {
+    public static String iconKey(int slot) {
         return PREF_TEXT_PREFIX + slot + PREF_ICON_SUFFIX;
     }
 
@@ -201,7 +291,7 @@ public final class Hotkeys {
             }
             out.append(slot).append('\t')
                 .append(escape(text)).append('\t')
-                .append(iconTokenOf(context, slot))
+                .append(currentIconToken(context, slot))
                 .append('\n');
         }
         return out.toString();

@@ -33,4 +33,8 @@ public abstract class Context {
     public Object getSystemService(String name) {
         return null;
     }
+
+    public android.graphics.drawable.Drawable getDrawable(int id) {
+        return null;
+    }
 }

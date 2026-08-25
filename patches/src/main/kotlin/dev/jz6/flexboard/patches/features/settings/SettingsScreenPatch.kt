@@ -66,6 +66,14 @@ internal val HOTKEY_DEFAULT_SYMBOLS = listOf(
     "hexagon", "hive", "sports_soccer",
 )
 
+/** The pack's remainder beyond the slot defaults — the back half of the per-slot icon picker's
+ * cycle, in tap order. Java mirrors it as Hotkeys.EXTRA_ICON_NAMES, same checker. */
+internal val HOTKEY_EXTRA_SYMBOLS = listOf(
+    "snowflake", "token",
+    "counter_1", "counter_2", "counter_3", "counter_4", "counter_5",
+    "counter_6", "counter_7", "counter_8", "counter_9",
+)
+
 internal val scrubSettingsScreenPatch = resourcePatch(
     description = "Adds a Flexboard entry to Gboard's settings that opens Flexboard's own screen.",
 ) {
@@ -76,18 +84,12 @@ internal val scrubSettingsScreenPatch = resourcePatch(
         // preference XML below references it by name.
         writePatchResource("flexboard_settings_icon.xml", "res/drawable")
 
-        // The hotkey icon pack: the twelve per-slot defaults (named for the symbol they hold,
-        // slot order is the DEFAULT_ICON_NAMES table in Hotkeys.java) plus the wider candidates
-        // set (snowflake, token, counter_1..9). All resolve by name at runtime through
-        // getIdentifier, so aapt2's numbering never leaks into preferences — a blob exported on
-        // one device round-trips on another.
-        for (symbol in HOTKEY_DEFAULT_SYMBOLS) {
+        // The hotkey icon pack: the twelve per-slot defaults plus the picker's extras, both
+        // symbol lists above. All resolve by name at runtime through getIdentifier, so aapt2's
+        // numbering never leaks into preferences — a blob exported on one device round-trips on
+        // another, and the picker's cycle table needs no resource ids of its own.
+        for (symbol in HOTKEY_DEFAULT_SYMBOLS + HOTKEY_EXTRA_SYMBOLS) {
             writePatchResource("flexboard_icon_$symbol.xml", "res/drawable")
-        }
-        writePatchResource("flexboard_icon_snowflake.xml", "res/drawable")
-        writePatchResource("flexboard_icon_token.xml", "res/drawable")
-        for (n in 1..9) {
-            writePatchResource("flexboard_icon_counter_$n.xml", "res/drawable")
         }
 
         // The screen itself. Written under res/xml so aapt2 compiles it into the table; the

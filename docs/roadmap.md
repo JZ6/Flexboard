@@ -3,19 +3,12 @@
 
 # Roadmap entries written by the user verbatim.
 
-fix import export
-
-remove hold delay setting, just keep at 0ms
 
 readd hotkeys with the icons
 
 allow hotkey import export
 
 how does hotkeys work currently
-
-readd ability to change number of hotkeys on toolbar
-
-redo settings to use native gboard
 
 some settings disabled like grammer check and ai writing tools, rambler mode etc
 
@@ -25,7 +18,7 @@ gesture down on a to select all?
 
 increased tool bar size fit more buttons
 
-ok now clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
+ clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
 
 
 ## Done from the queue
@@ -80,9 +73,14 @@ extension's Java and build the lists at runtime.
 **Re-landed in 1.4.0-dev.4** on the widened allowed-set array instead of the filter bypass:
 extension core (`499af89`), registration + settings rows (`fc80d12`) — count slider,
 twelve inline text EditText rows, label/labelOf fixes and trailing-nop carried over — and the
-import/export blob row (`3ba0de6`). Slot icons default from the bundled-glyph table pinned in
-preflight; the icon **picker** waits for a working listener hook in the settings port —
-`IconListPreference` exists in the dex, that's the thread to pull.
+import/export blob row (`3ba0de6`), later replaced by real Export/Import buttons. Slot icons
+default from the bundled-glyph table and are user-changeable again: a per-slot **Icon** row
+cycles the bundled pack on each tap, wired through the ported click hook (`aA`) that finally
+exists — first as the button dispatch, verified end to end by preflight's settings section.
+The planned `IconListPreference` grid was skipped: its icon list arrives through the extras
+*Bundle*, which no XML inflater in the port populates, and its arrays would have put names back
+into `res/values/`; the cycle row runs on letters already pinned and touches only the screen's
+own XML.
 
 Device note, resolved in dev.5: slots also re-register from the toolbar module's start-input
 callback (`Lmln.fn`), so a settings edit takes effect when the keyboard next opens. The

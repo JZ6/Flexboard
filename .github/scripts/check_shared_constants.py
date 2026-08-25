@@ -527,6 +527,17 @@ def main():
             f"extension says {java_names}"
         )
 
+    # Same rule for the picker's back half: the patch writes the extra drawables, the extension
+    # cycles past the defaults through them in the same order. (Digits appear in counter_*, so
+    # this pattern admits them where the defaults' does not.)
+    kt_extra = re.findall(r'"([a-z0-9_]+)"', _collect_body("HOTKEY_EXTRA_SYMBOLS"))
+    java_extra = re.findall(r'"flexboard_icon_([a-z0-9_]+)"', _collect_body("EXTRA_ICON_NAMES"))
+    if kt_extra != java_extra:
+        problems.append(
+            f"  hotkey picker extra-icon order drifted: patch says {kt_extra}, "
+            f"extension says {java_extra}"
+        )
+
     for kt_name, java_name in PAIRS:
         kt_value, java_value = kotlin.get(kt_name), java.get(java_name)
         if kt_value is None:
