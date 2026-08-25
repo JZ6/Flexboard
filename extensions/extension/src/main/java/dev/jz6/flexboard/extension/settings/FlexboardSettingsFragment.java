@@ -312,7 +312,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         String outcome = Hotkeys.importFromClipboard(context);
         row.n(outcome);
         if (outcome.startsWith("imported")) {
-            redrawAllRows(context);
+            onImportApplied(context);
         }
     }
 
@@ -331,7 +331,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
                 String outcome = Hotkeys.importFromText(ui, blob);
                 row.n(outcome);
                 if (outcome.startsWith("imported")) {
-                    redrawAllRows(ui);
+                    onImportApplied(ui);
                 }
             })
             .setNegativeButton("Cancel", null)
@@ -386,6 +386,29 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             return;
         }
         iconsSynced = true;
+        redrawAllRows(context);
+    }
+
+    /**
+     * After a blob lands: push each slot's text through its row's own persistence lane
+     * ({@code EditTextPreference.i}, the ported setText), then repaint the icons.
+     *
+     * <p>The blob write goes to the SharedPreferences file directly, but a row's dialog reads
+     * through the datastore bridge into Gboard's store, whose in-memory view never hears about
+     * our file write — the import took effect for the toolbar while the settings rows kept
+     * showing the pre-import text. {@code i} writes the same value through the bridge (and
+     * persists, so both lanes agree from then on), which is also why the fallback clipboard path
+     * needs it identically. {@code ae} alone would do the persist half, but it is protected —
+     * the stub deliberately omits it so that call fails to compile rather than to link on device.
+     */
+    private void onImportApplied(Context context) {
+        for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
+            androidx.preference.Preference row = d(Hotkeys.textKey(slot));
+            if (row instanceof androidx.preference.EditTextPreference) {
+                ((androidx.preference.EditTextPreference) row)
+                    .i(Hotkeys.textOf(context, slot));
+            }
+        }
         redrawAllRows(context);
     }
 
