@@ -1,3 +1,7 @@
+# [2.0.0-dev.2](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.1...v2.0.0-dev.2) (2026-08-25)
+
+* **Gboard:** fix: after an import, the settings rows keep showing the old text
+
 # [2.0.0-dev.1](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.0...v2.0.0-dev.1) (2026-08-25)
 
 * **Gboard:** refactor: one hotkey emission template, two site configs
