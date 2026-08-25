@@ -62,8 +62,9 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
  * See `docs/motion-event-handlers.md` for how the engine was derived.
  */
 internal val scrubTuningPatch = bytecodePatch(
-    description = "Reads the swipe length, word cap and hold delay from Gboard's preference " +
-        "store, so the scrub engine's feel can be adjusted from its settings.",
+    description = "Reads the swipe length and word cap from Gboard's preference " +
+        "store, so the scrub engine's feel can be adjusted from its settings. " +
+        "Hold delay is fixed at 0 — its settings row was dropped; everyone wants hold-none.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 

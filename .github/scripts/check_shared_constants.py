@@ -55,11 +55,6 @@ XML_ROWS = [
         "slider_min_value": "MAX_WORDS_MIN",
         "slider_max_value": "MAX_WORDS_NO_LIMIT",
     }),
-    ("HOLD_DELAY_KEY", {
-        "android:defaultValue": "HOLD_DELAY_DEFAULT",
-        "slider_min_value": "HOLD_DELAY_MIN",
-        "slider_max_value": "HOLD_DELAY_MAX",
-    }),
 ]
 
 # Hex is accepted because resource ids are written that way on both sides -- and on the Kotlin side
@@ -444,7 +439,12 @@ def _check_screen_contract(problems, kotlin):
     # value for it" — the key stays int-typed against the pre-native Activity, and the engine
     # just reads the seeded default. Declared here so the rule still covers keys nobody
     # thought about.
-    stage_only = {"STEP_SCALE_KEY"}
+    # Staged in smali with no settings row by design: step-scale's KDoc pins "nothing uses a UI
+    # value for it" — the key stays int-typed against the pre-native Activity, and the engine
+    # just reads the seeded default. HOLD_DELAY_KEY joins it — the row was dropped ("default 0,
+    # nobody wants a delay") while the smali read stays so blobless users get exactly 0.
+    # Declared here so the rule still covers keys nobody thought about.
+    stage_only = {"STEP_SCALE_KEY", "HOLD_DELAY_KEY"}
     staged = set()
     for path in PATCHES.rglob("*.kt"):
         text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
