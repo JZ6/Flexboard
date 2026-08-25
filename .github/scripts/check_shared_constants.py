@@ -474,18 +474,25 @@ def _check_screen_contract(problems, kotlin):
             )
 
     # The per-slot fan-out has a count, not just a family: the screen must carry exactly
-    # HOTKEY_SLOTS text rows and the same icon rows, numbered 1..N. The family rule above can't
-    # see it — a 13th row is a dead control, an 11th is a slot with no editor.
+    # HOTKEY_SLOTS merged text rows and no icon rows — the icon lives in the same row's dialog
+    # now, so a flexboard_hotkey_N_icon row key is regression, not a feature. The family rule
+    # above can't see either: a 13th row is a dead control, an 11th is a slot with no editor,
+    # a revived icon row splits the edit surface in two.
     slot_count = int(kotlin.get("HOTKEY_SLOTS", "0"))
-    for suffix in ("_text", "_icon"):
-        want = {f"flexboard_hotkey_{n}{suffix}" for n in range(1, slot_count + 1)}
-        got = {k for k in keys if re.fullmatch(rf"flexboard_hotkey_\d+{suffix}", k)}
-        if got != want:
-            problems.append(
-                f"  flexboard_settings.xml should carry exactly the {slot_count} "
-                f"flexboard_hotkey_1..{slot_count}{suffix} rows; "
-                f"missing {sorted(want - got)}, extra {sorted(got - want)}"
-            )
+    want = {f"flexboard_hotkey_{n}_text" for n in range(1, slot_count + 1)}
+    got = {k for k in keys if re.fullmatch(r"flexboard_hotkey_\d+_text", k)}
+    if got != want:
+        problems.append(
+            f"  flexboard_settings.xml should carry exactly the {slot_count} merged "
+            f"hotkey rows (flexboard_hotkey_1..{slot_count}_text); "
+            f"missing {sorted(want - got)}, extra {sorted(got - want)}"
+        )
+    icon_rows = sorted(k for k in keys if re.fullmatch(r"flexboard_hotkey_\d+_icon", k))
+    if icon_rows:
+        problems.append(
+            f"  flexboard_settings.xml carries icon rows {icon_rows} — icon editing lives in "
+            f"each hotkey row's composite dialog; icon keys are store keys, not row keys"
+        )
 
 
 def _check_dotted_extension_classes(problems):
@@ -544,7 +551,7 @@ def main():
         )
 
     # Same rule for the picker's back half: the patch writes the extra drawables, the extension
-    # cycles past the defaults through them in the same order. (Digits appear in counter_*, so
+    # lays them out past the defaults in the same order. (Digits appear in counter_*, so
     # this pattern admits them where the defaults' does not.)
     kt_extra = re.findall(r'"([a-z0-9_]+)"', _collect_body("HOTKEY_EXTRA_SYMBOLS"))
     java_extra = re.findall(r'"flexboard_icon_([a-z0-9_]+)"', _collect_body("EXTRA_ICON_NAMES"))

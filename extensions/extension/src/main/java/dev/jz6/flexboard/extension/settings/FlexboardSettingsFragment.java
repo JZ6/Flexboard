@@ -10,6 +10,7 @@ import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.GridLayout;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -130,20 +131,22 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
      * ({@code Preference.I()V} → the manager's hosted fragment) lands on the fragment class's
      * {@code aA} by name, which is why the obfuscated letters here and on the row stub are
      * load-bearing, and why {@code super.aA(...)} is the fallback that keeps the stock rows —
-     * the per-slot {@code EditTextPreference} dialogs above all — working.
+     * falling back IS the point here: each hotkey row is still an {@code EditTextPreference},
+     * so a dead dialog path lands the user in the stock text editor rather than a dead row.
      *
-     * <p>Three row families are intercepted by identity: each {@code flexboard_hotkey_N_icon}
-     * row opens the icon-picker grid, and Export/Import open the blob popups. Rows keep working
-     * without a dialog surface — icons fall back to tap-cycling, import to reading the
-     * clipboard; outcomes always surface in the tapped row's own summary.
+     * <p>One row per slot drives one composite dialog (text field + icon grid), intercepted by
+     * identity; Export/Import open the blob popups. Export needs no dialog context beyond best
+     * effort (clipboard + summary first), and Import without one reads the clipboard instead.
      */
     @Override
     public boolean aA(androidx.preference.Preference preference) {
         syncRowIconsOnce();
 
         for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
-            if (isRow(preference, Hotkeys.iconKey(slot))) {
-                pickIcon(preference, slot);
+            if (isRow(preference, Hotkeys.textKey(slot))) {
+                if (!editHotkey(preference, slot)) {
+                    return super.aA(preference);
+                }
                 return true;
             }
         }
@@ -172,44 +175,51 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     }
 
     // -----------------------------------------------------------------------------------------
-    // Icon picker
+    // The composite hotkey editor
     // -----------------------------------------------------------------------------------------
 
     /**
-     * The icon row's tap. Preferred: a grid dialog of the whole bundled pack in a framework
-     * AlertDialog — appcompat is stripped from Gboard, so the framework class under the host
-     * theme is as native as dialogs get here. Fallback when the row's context can't host one:
-     * tap-cycling (the pre-dialog behavior), which needs no UI at all.
+     * One row's tap: the composite editor — the slot's text field above the bundled-pack icon
+     * grid — when the row carries a host Activity context. Answers {@code false} when it can't
+     * host one, so the click falls to {@code super.aA} and the row's stock text editor opens:
+     * a row that does nothing is the failure this keeps impossible.
      */
-    private void pickIcon(androidx.preference.Preference iconRow, int slot) {
-        Context ui = dialogContext(iconRow);
-        if (ui != null) {
-            try {
-                showIconDialog(ui, iconRow, slot);
-                return;
-            } catch (Exception dialogUnavailable) {
-                // fall through to the cycle fallback
-            }
+    private boolean editHotkey(androidx.preference.Preference row, int slot) {
+        Context ui = dialogContext(row);
+        if (ui == null) {
+            return false;
         }
-        Context context = processContext();
-        if (context == null) {
-            iconRow.n("no app context — try again from the keyboard");
-            return;
+        try {
+            showHotkeyDialog(ui, row, slot);
+            return true;
+        } catch (Exception dialogUnavailable) {
+            return false;
         }
-        Hotkeys.cycleIcon(context, slot);
-        redrawSlot(context, slot);
     }
 
-    private void showIconDialog(Context ui, androidx.preference.Preference iconRow, int slot) {
+    private void showHotkeyDialog(final Context ui, final androidx.preference.Preference row,
+            final int slot) {
+        LinearLayout column = new LinearLayout(ui);
+        column.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(ui, 16);
+        column.setPadding(pad, 0, pad, dp(ui, 8));
+
+        final EditText field = new EditText(ui);
+        field.setText(Hotkeys.textOf(ui, slot));
+        field.setHint("Text to commit");
+        column.addView(field, new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // Grid of the bundled pack, dimmed on the current choice. The pick is pending until OK
+        // — taps move the dim only — so Cancel discards both halves of the edit evenly.
         GridLayout grid = new GridLayout(ui);
         grid.setColumnCount(4);
         int cell = dp(ui, 48);
-        int padding = dp(ui, 8);
-        String current = Hotkeys.currentIconToken(ui, slot);
-        // Listeners attach after the dialog exists, so they can dismiss it; the two lists are
-        // index-parallel for the same reason the old picker kept the correspondence by position.
-        List<ImageView> items = new ArrayList<>();
-        List<String> names = new ArrayList<>();
+        int spacing = dp(ui, 8);
+        final String seed = Hotkeys.currentIconToken(ui, slot);
+        final String[] pending = { seed };
+        final List<ImageView> items = new ArrayList<>();
+        final List<String> names = new ArrayList<>();
         for (String name : Hotkeys.choices()) {
             Drawable glyph = Hotkeys.drawableOf(ui, name);
             if (glyph == null) {
@@ -218,8 +228,8 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             ImageView item = new ImageView(ui);
             item.setImageDrawable(glyph);
             item.setLayoutParams(new ViewGroup.LayoutParams(cell, cell));
-            item.setPadding(padding, padding, padding, padding);
-            if (name.equals(current)) {
+            item.setPadding(spacing, spacing, spacing, spacing);
+            if (name.equals(seed)) {
                 item.setAlpha(0.35f);
             }
             grid.addView(item);
@@ -230,27 +240,36 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         // bottom cells (and the buttons) would be unreachable without the wrapper.
         ScrollView scroll = new ScrollView(ui);
         scroll.addView(grid);
-        final AlertDialog dialog = new AlertDialog.Builder(ui)
-            .setTitle("Hotkey " + slot + " icon")
-            .setView(scroll)
-            .setNegativeButton("Reset to default", (dlog, which) -> {
-                Hotkeys.resetIconToken(ui, slot);
-                redrawSlot(ui, slot);
-                // The dialog stays open after a reset — move the "current" dimming onto the
-                // slot's default cell rather than leaving it on the cell that was chosen.
-                String now = Hotkeys.currentIconToken(ui, slot);
-                for (int i = 0; i < items.size(); i++) {
-                    items.get(i).setAlpha(names.get(i).equals(now) ? 0.35f : 1f);
+        column.addView(scroll, new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        new AlertDialog.Builder(ui)
+            .setTitle("Hotkey " + slot)
+            .setView(column)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("OK", (dlog, which) -> {
+                String text = field.getText().toString();
+                Hotkeys.setText(ui, slot, text);
+                // The store file and the bridge's in-memory store are two lanes feeding one
+                // screen — writing text through the row's own setter keeps them (and the stock
+                // editor, and the port's summary provider) in agreement, like on import.
+                if (row instanceof androidx.preference.EditTextPreference) {
+                    ((androidx.preference.EditTextPreference) row).i(text);
                 }
+                if (!pending[0].equals(seed)) {
+                    Hotkeys.setIconToken(ui, slot, pending[0]);
+                }
+                redrawSlot(ui, slot);
             })
-            .setNeutralButton("Cancel", null)
             .show();
+        // Listeners attach after the dialog exists, so they can dim — and never dismiss.
         for (int i = 0; i < items.size(); i++) {
             final int index = i;
             items.get(i).setOnClickListener(v -> {
-                Hotkeys.setIconToken(ui, slot, names.get(index));
-                redrawSlot(ui, slot);
-                dialog.dismiss();
+                pending[0] = names.get(index);
+                for (int j = 0; j < items.size(); j++) {
+                    items.get(j).setAlpha(j == index ? 0.35f : 1f);
+                }
             });
         }
     }
@@ -346,25 +365,20 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    /** Live-updates the icon and summary of one slot's two rows from the store. */
+    /**
+     * Live-updates one slot row's icon from the store. The summary is the port's own
+     * SummaryProvider showing the committed text — never touch it with {@code n()}: that setter
+     * throws {@code IllegalStateException} when a provider is installed, and the port installs
+     * one on every EditTextPreference row.
+     */
     private void redrawSlot(Context context, int slot) {
-        String token = Hotkeys.currentIconToken(context, slot);
-        setRowIcon(d(Hotkeys.iconKey(slot)), Hotkeys.displayName(token), context, token);
-        setRowIcon(d(Hotkeys.textKey(slot)), null, context, token);
-    }
-
-    private static void setRowIcon(androidx.preference.Preference row, String summary,
-            Context context, String token) {
+        androidx.preference.Preference row = d(Hotkeys.textKey(slot));
         if (row == null) {
             return;
         }
-        Drawable icon = Hotkeys.drawableOf(context, token);
+        Drawable icon = Hotkeys.drawableOf(context, Hotkeys.currentIconToken(context, slot));
         if (icon != null) {
-            // One Drawable instance holds exactly one view callback — inflate per row.
             row.N(icon);
-        }
-        if (summary != null) {
-            row.n(summary);
         }
     }
 

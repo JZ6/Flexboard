@@ -25,9 +25,9 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  * patch itself would have staged.
  *
  * <p>Each slot's default icon is a fixed member of the bundled Flexboard pack, so an untouched
- * install already shows twelve distinguishable buttons. The settings screen's per-slot Icon rows
- * open a picker grid over the same pack by name (tap-cycling as the no-dialog fallback), so a
- * preference written by the picker, by an import, or by neither resolves through one path.
+ * install already shows twelve distinguishable buttons. The settings screen's single row per
+ * slot opens a composite editor (text field + grid over the same pack, chosen by name), so a
+ * preference written by the dialog, by an import, or by neither resolves through one path.
  */
 public final class Hotkeys {
 
@@ -70,7 +70,7 @@ public final class Hotkeys {
 
     /**
      * The rest of the bundled pack, after the slot defaults — the back half of the picker's
-     * cycle. The patch side mirrors this list as {@code HOTKEY_EXTRA_SYMBOLS} in
+     * grid. The patch side mirrors this list as {@code HOTKEY_EXTRA_SYMBOLS} in
      * {@code SettingsScreenPatch.kt}; the constants checker holds the two in step.
      */
     private static final String[] EXTRA_ICON_NAMES = new String[] {
@@ -88,12 +88,10 @@ public final class Hotkeys {
     };
 
     /**
-     * The picker's cycle, in tap order: the slot defaults first, then the extras. A slot's
-     * default is therefore always one tap's distance from the start of the table, which is what
-     * {@link #cycleIcon} leans on for its reset-to-default behaviour on unrecognised state.
+     * The picker's grid order: the twelve slot defaults first, then the extras.
      *
      * <p>Sized and filled by the two source tables' own lengths, not SLOT_COUNT: a drifted table
-     * degrades to a short cycle instead of killing the whole class in its static initializer
+     * degrades to a short grid instead of killing the whole class in its static initializer
      * (and the count drift is the constants checker's red, not the phone's).
      */
     private static final String[] ICON_CHOICES;
@@ -169,7 +167,7 @@ public final class Hotkeys {
     /**
      * The slot's effective icon token: the stored override when set, the slot's default name
      * otherwise. This is what the export blob carries, and what the settings screen redraws a
-     * row from after a cycle or an import.
+     * row from after a pick or an import.
      */
     public static String currentIconToken(Context context, int slot) {
         String raw = Preferences.of(context).getString(iconKey(slot), "");
@@ -183,44 +181,6 @@ public final class Hotkeys {
     public static Drawable drawableOf(Context context, String token) {
         int id = resolveIcon(context, token);
         return id != 0 ? context.getDrawable(id) : null;
-    }
-
-    /**
-     * The token as it appears under a settings row: the prefix and underscores are plumbing the
-     * user gains nothing from — {@code flexboard_icon_kid_star} reads as "kid star". A legacy
-     * decimal id (dev.7-era export) is just "custom": the number means nothing to a user and the
-     * next tap replaces it anyway.
-     */
-    public static String displayName(String token) {
-        if (!token.startsWith("flexboard_icon_")) {
-            return "custom";
-        }
-        return token.substring("flexboard_icon_".length()).replace('_', ' ');
-    }
-
-    /**
-     * Advances a slot's icon one entry around {@link #ICON_CHOICES} and answers the new token.
-     * This is the <b>no-dialog fallback</b>: the settings screen's icon row opens the picker grid
-     * when the row carries a usable Activity context, and cycles like this when it doesn't.
-     * A slot whose stored token names nothing bundled restarts at the slot's own default.
-     */
-    public static String cycleIcon(Context context, int slot) {
-        int at = indexOfChoice(currentIconToken(context, slot));
-        if (at < 0) {
-            at = indexOfChoice(DEFAULT_ICON_NAMES[slot - 1]) - 1;
-        }
-        String next = ICON_CHOICES[(at + 1) % ICON_CHOICES.length];
-        Preferences.of(context).edit().putString(iconKey(slot), next).apply();
-        return next;
-    }
-
-    private static int indexOfChoice(String token) {
-        for (int i = 0; i < ICON_CHOICES.length; i++) {
-            if (ICON_CHOICES[i].equals(token)) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     /**
@@ -250,19 +210,19 @@ public final class Hotkeys {
         return PREF_TEXT_PREFIX + slot + PREF_ICON_SUFFIX;
     }
 
-    /** The picker's full table, in grid order. A copy: the reset math leans on the table. */
+    /** The picker's full table, in grid order. A copy, so a caller can't reorder the pack. */
     public static String[] choices() {
         return ICON_CHOICES.clone();
+    }
+
+    /** Writes a slot's committed text straight to the store (the composite dialog's half). */
+    public static void setText(Context context, int slot, String text) {
+        Preferences.of(context).edit().putString(textKey(slot), text).apply();
     }
 
     /** Writes a slot's icon choice — one of the {@link #choices()} names. */
     public static void setIconToken(Context context, int slot, String token) {
         Preferences.of(context).edit().putString(iconKey(slot), token).apply();
-    }
-
-    /** Clears the override; the slot falls back to its default icon. */
-    public static void resetIconToken(Context context, int slot) {
-        Preferences.of(context).edit().remove(iconKey(slot)).apply();
     }
 
     // ---------------------------------------------------------------------------------------------

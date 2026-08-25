@@ -67,7 +67,7 @@ internal val HOTKEY_DEFAULT_SYMBOLS = listOf(
 )
 
 /** The pack's remainder beyond the slot defaults — the back half of the per-slot icon picker's
- * cycle, in tap order. Java mirrors it as Hotkeys.EXTRA_ICON_NAMES, same checker. */
+ * grid. Java mirrors it as Hotkeys.EXTRA_ICON_NAMES, same checker. */
 internal val HOTKEY_EXTRA_SYMBOLS = listOf(
     "snowflake", "token",
     "counter_1", "counter_2", "counter_3", "counter_4", "counter_5",
@@ -87,7 +87,7 @@ internal val settingsScreenPatch = resourcePatch(
         // The hotkey icon pack: the twelve per-slot defaults plus the picker's extras, both
         // symbol lists above. All resolve by name at runtime through getIdentifier, so aapt2's
         // numbering never leaks into preferences — a blob exported on one device round-trips on
-        // another, and the picker's cycle table needs no resource ids of its own.
+        // another, and the picker's grid table needs no resource ids of its own.
         for (symbol in HOTKEY_DEFAULT_SYMBOLS + HOTKEY_EXTRA_SYMBOLS) {
             writePatchResource("flexboard_icon_$symbol.xml", "res/drawable")
         }
