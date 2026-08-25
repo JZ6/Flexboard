@@ -1,3 +1,11 @@
+# [2.0.0-dev.1](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.0...v2.0.0-dev.1) (2026-08-25)
+
+* **Gboard:** refactor: one hotkey emission template, two site configs
+* **Gboard:** docs: park the grey-out-unpatched-rows design with its mechanisms pinned
+* **Gboard:** refactor: patch structure — slots internal, swipe-scoped seed, one controller resolution
+* **Gboard:** feat: real popups — icon picker grid, export text box, import paste box
+* **Gboard:** fix: hotkey bug hunt — validated legacy icons, honest clear contract, two new pins
+
 # [2.0.0-dev.0](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.9...v2.0.0-dev.0) (2026-08-25)
 
 * **Gboard:** chore: keep the extracted Gboard APK in-repo for the dex gates
