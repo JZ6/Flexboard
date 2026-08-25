@@ -1797,6 +1797,24 @@ def run(dl, apk=None):
               and f'{pref}->d()V' in refs,
               str(refs))
 
+    # The stock editor-dialog borrow: the popups inflate Gboard's own editor-dialog layout, the
+    # id learned at runtime off DialogPreference's `f` field (the dialogLayoutResId). Pins: the
+    # ctor writes f from the theme/attr read (Lbhp K call), and the dialog base (Lcdm.onCreateDialog)
+    # reads it — exactly once, or the layout may have moved readers without a write.
+    dlg = 'Landroidx/preference/DialogPreference;'
+    c, ins = body(dl, f'{dlg}-><init>(Landroid/content/Context;Landroid/util/AttributeSet;II)V')
+    if check('settings: the DialogPreference ctor exists', ins is not None):
+        k_calls = [a for _pc, _mn, a in ins if 'Lbhp;->K(' in a]
+        writes = [a for _pc, mn, a in ins
+                  if mn == 'iput' and a.rsplit(', ', 1)[-1] == f'{dlg}->f:I']
+        check('settings: the dialog layout id comes from the theme read and lands in f',
+              len(k_calls) == 1 and len(writes) == 1, f'K={k_calls} writes={writes}')
+    c, ins = body(dl, 'Lcdm;->f(Landroid/os/Bundle;)V')
+    if check('settings: the dialog base still reads the layout id', ins is not None):
+        reads = [a for _pc, mn, a in ins
+                 if mn.startswith('iget') and a.rsplit(', ', 1)[-1] == f'{dlg}->f:I']
+        check('settings: exactly one reader of the layout id', len(reads) == 1, str(reads))
+
     # ---- bypass signature
     sig_cls = B['sigcheck']
     c, ins = body(dl, f'{sig_cls}->a({CONTEXT}Ljava/lang/String;)Z')

@@ -19,6 +19,14 @@ public class ViewGroup extends View {
         // stub
     }
 
+    public int getChildCount() {
+        return 0;
+    }
+
+    public View getChildAt(int index) {
+        return null;
+    }
+
     public static class LayoutParams {
 
         /** API-stable since API 1. */
