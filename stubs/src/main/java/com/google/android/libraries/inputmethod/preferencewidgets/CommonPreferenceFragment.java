@@ -30,4 +30,13 @@ public class CommonPreferenceFragment {
     public int aB() {
         return 0;
     }
+
+    /**
+     * Stub of the ported androidx click dispatch — the real {@code Lcdr.aA(Landroidx/preference/
+     * Preference;)Z} is what {@code Preference.performClick} funnels through. Defaults false so an
+     * unhandled row falls through to the host's own navigation logic.
+     */
+    public boolean aA(androidx.preference.Preference preference) {
+        return false;
+    }
 }

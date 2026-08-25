@@ -27,4 +27,10 @@ public abstract class Context {
     public Context createDeviceProtectedStorageContext() {
         return null;
     }
+
+    public static final String CLIPBOARD_SERVICE = "clipboard";
+
+    public Object getSystemService(String name) {
+        return null;
+    }
 }

@@ -6,6 +6,7 @@ import android.inputmethodservice.InputMethodService;
 import com.google.android.libraries.inputmethod.preferencewidgets.CommonPreferenceFragment;
 
 import dev.jz6.flexboard.extension.ime.ImeService;
+import dev.jz6.flexboard.extension.toolbar.Hotkeys;
 
 /**
  * Flexboard's settings screen, hosted by Gboard's own {@code SettingsActivity}.
@@ -83,5 +84,34 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         } catch (ReflectiveOperationException | ClassCastException ignored) {
             return null;
         }
+    }
+
+    /**
+     * Click dispatch on this screen's rows. The ported androidx {@code Preference} click chain
+     * lands here — {@code Preference.performClick} on the host calls the fragment class's
+     * {@code aA} by name, which is why the method's obfuscated name is load-bearing and the
+     * {@code super.aA(...)} return is the navigation fallback (rows that navigate, like
+     * everything else on the screen, keep working).
+     *
+     * <p>Our two buttons write to / read from the clipboard and report through the row's own
+     * summary, so a paste typo is told by the row it happened on rather than by a toast the
+     * theme might not style.
+     */
+    @Override
+    public boolean aA(androidx.preference.Preference preference) {
+        String key = preference.getKey();
+        if (!"flexboard_hotkey_copy".equals(key) && !"flexboard_hotkey_paste".equals(key)) {
+            return super.aA(preference);
+        }
+        Context context = processContext();
+        if (context == null) {
+            preference.setSummary("no app context — try again from the keyboard");
+            return true;
+        }
+        String outcome = "flexboard_hotkey_copy".equals(key)
+            ? Hotkeys.exportToClipboard(context)
+            : Hotkeys.importFromClipboard(context);
+        preference.setSummary(outcome);
+        return true;
     }
 }

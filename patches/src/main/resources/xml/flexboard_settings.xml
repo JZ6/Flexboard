@@ -44,16 +44,6 @@
           has no mid-session un-register, and a lagging label is simpler than one.
         -->
         <!--
-          The whole hotkey state serialized as one pasteable string, refreshed by the extension
-          whenever the toolbar rebuilds. Paste an export to import it; anything that is not an
-          export is replaced by one on the spot.
-        -->
-        <androidx.preference.EditTextPreference
-            android:key="flexboard_hotkey_blob"
-            android:title="Import / export"
-            android:summary="One line per slot: number, text, icon. Paste an export here to import it." />
-
-        <!--
           One plain text row per slot: what the tap commits. The EditTextPreference widget is
           bundled by Gboard's androidx port, so the dialog is stock. A slot with no text passes
           no shown-gate at toolbar build time, so blank rows simply don't render.
@@ -106,6 +96,20 @@
             android:icon="@drawable/flexboard_icon_sports_soccer"
             android:key="flexboard_hotkey_12_text"
             android:title="Hotkey 12" />
+
+        <!--
+          Real buttons, not a text field full of serialization. The host port's click dispatch
+          reaches FlexboardSettingsFragment.aA(Preference) by name; the tap handler writes/reads
+          the clipboard and reports right in the row's summary.
+        -->
+        <Preference
+            android:key="flexboard_hotkey_copy"
+            android:summary="Copy all hotkeys to the clipboard"
+            android:title="Export" />
+        <Preference
+            android:key="flexboard_hotkey_paste"
+            android:summary="Replace the slots with a copied export"
+            android:title="Import" />
 
     </PreferenceCategory>
 

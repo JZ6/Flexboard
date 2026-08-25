@@ -1,5 +1,7 @@
 package dev.jz6.flexboard.extension.toolbar;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 
@@ -66,9 +68,6 @@ public final class Hotkeys {
         if (slot < 1 || slot > SLOT_COUNT) {
             return false;
         }
-        // The one funnel every accessor passes through on a toolbar rebuild — the only place
-        // import/export needs to watch. Cheap: two store reads.
-        maybeApplyBlob(context);
         return !textOf(context, slot).trim().isEmpty();
     }
 
@@ -137,49 +136,58 @@ public final class Hotkeys {
     // Import / export — the whole hotkey state as one pasteable string
     // ---------------------------------------------------------------------------------------------
 
-    /** The single settings row carrying the serialized slots in and out. */
-    private static final String PREF_BLOB = "flexboard_hotkey_blob";
-
-    /** Records which blob we already produced/consumed, so a paste is distinguishable. */
-    private static final String PREF_BLOB_APPLIED = "flexboard_hotkey_blob_applied";
-
-    /** First line of a blob; guards against accepting any old text field content as config. */
+    /** First line of a blob; guards against accepting any old clipboard content as config. */
     private static final String BLOB_VERSION = "flexboard-hotkeys v1";
 
     /**
-     * Keeps the blob row in step with the slots and digests a paste. Invoked from {@link #shown}
-     * — toolbar builds happen on every keyboard-open, so an import lands before the user can
-     * plausibly miss it, and a stale export refreshes before anyone copies an old one.
+     * Writes the current hotkey set to the clipboard as a blob and says what happened. Called
+     * from the settings screen's Copy row.
      */
-    public static void maybeApplyBlob(Context context) {
-        SharedPreferences preferences = Preferences.of(context);
-        String blob = preferences.getString(PREF_BLOB, "");
-        String applied = preferences.getString(PREF_BLOB_APPLIED, "");
-        if (!blob.equals(applied)) {
-            // The blob field changed without going through us: a paste. Only claim it if it's
-            // one of ours; a first run or a garbage paste stops being the blob and becomes
-            // a fresh export of the current state, which is the clearest feedback we can give.
-            if (!blob.startsWith(BLOB_VERSION)) {
-                writeBlob(context);
-                return;
-            }
-            if (applyBlob(context, blob)) {
-                writeBlob(context);
-            }
-            return;
+    public static String exportToClipboard(Context context) {
+        ClipboardManager clipboard =
+                (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) {
+            return "no clipboard service";
         }
-        if (blob.isEmpty() || !blob.equals(serialize(context))) {
-            // Slots moved since the last export; refresh so a long-press copy keeps up.
-            writeBlob(context);
-        }
+        String blob = serialize(context);
+        clipboard.setPrimaryClip(ClipData.newPlainText("Flexboard hotkeys", blob));
+        int occupied = countOccupied(context);
+        return occupied == 0 ? "copied (no slots set)" : "copied " + occupied + " slots";
     }
 
-    private static void writeBlob(Context context) {
-        String blob = serialize(context);
-        Preferences.of(context).edit()
-            .putString(PREF_BLOB, blob)
-            .putString(PREF_BLOB_APPLIED, blob)
-            .apply();
+    /**
+     * Reads the clipboard and, if it carries a blob, applies it. Called from the Paste row.
+     * Anything that is not one of our exports is refused without touching the store.
+     */
+    public static String importFromClipboard(Context context) {
+        ClipboardManager clipboard =
+                (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null || !clipboard.hasPrimaryClip()) {
+            return "clipboard is empty";
+        }
+        ClipData clip = clipboard.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) {
+            return "clipboard is empty";
+        }
+        CharSequence text = clip.getItemAt(0).getText();
+        if (text == null || !text.toString().startsWith(BLOB_VERSION)) {
+            return "clipboard does not hold a Flexboard export";
+        }
+        boolean applied = applyBlob(context, text.toString());
+        if (!applied) {
+            return "export is malformed — nothing changed";
+        }
+        return "imported " + countOccupied(context) + " slots";
+    }
+
+    private static int countOccupied(Context context) {
+        int occupied = 0;
+        for (int slot = 1; slot <= SLOT_COUNT; slot++) {
+            if (!textOf(context, slot).isEmpty()) {
+                occupied++;
+            }
+        }
+        return occupied;
     }
 
     /** One line per occupied slot: slot number, tab, escaped text, tab, icon token (a
