@@ -138,3 +138,6 @@ local.properties
 # Exported Gboard icon SVGs for local viewing
 docs/icons/
 .DS_Store
+
+# The extracted Gboard APK the dex gates (tools/apk/preflight.py etc.) read locally
+gboard-apk/
