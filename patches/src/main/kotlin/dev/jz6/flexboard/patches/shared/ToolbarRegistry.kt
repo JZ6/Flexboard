@@ -158,17 +158,18 @@ private fun Method.splitsAccessPoints(): Boolean {
 // -------------------------------------------------------------------------------------------
 
 /**
- * Emits one block per button that builds its access point with the existing builder and calls
- * the bar controller's register method on it. All blocks sit at the same hook point — the tail
- * of `<init>` — and execute in patch-application order, which is not something this layer needs
- * to care about: order in the registry is irrelevant to order on the bar.
+ * The shared controller resolution behind every emission: where the controller lives and what
+ * its register call is called today. One copy, so the three emitters can't drift a Gboard-bump
+ * fix between them (that drift class has no gate of its own — only preflight's shape pins see
+ * through it, and they cover the result, not the Kotlin).
  */
-internal fun BytecodePatchContext.emitNativeToolbarButtons(
-    builder: AccessPointBuilder,
-    buttons: List<NativeToolbarButton>,
-) {
-    check(buttons.isNotEmpty()) { "emitNativeToolbarButtons called with no buttons" }
+private class ControllerCanvas(
+    val controllerType: String,
+    val registerCall: String,
+    val initDescriptor: String,
+)
 
+private fun BytecodePatchContext.resolveControllerCanvas(): ControllerCanvas {
     // Anchor the bar-controller class on the split method — shape-derived, not name-derived.
     val splits = methodsMatching { it.splitsAccessPoints() }
     check(splits.size == 1) {
@@ -183,17 +184,32 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
     // underneath us; what does not change is the *shape* — a (ApType, Z)V method on the
     // controller that Lays.put's into the registry map.
     val registerCall = resolveControllerRegisterCall(controllerClass)
-    val initDef = resolveInitDef(controllerType, controllerClass)
-    val initDescriptor = initDef.toDescriptor()
-    val init = mutableClassDefBy(controllerType).methods.single {
-        it.toDescriptor() == initDescriptor
+    val initDescriptor = resolveInitDef(controllerClass).toDescriptor()
+    return ControllerCanvas(controllerType, registerCall, initDescriptor)
+}
+
+/**
+ * Emits one block per button that builds its access point with the existing builder and calls
+ * the bar controller's register method on it. All blocks sit at the same hook point — the tail
+ * of `<init>` — and execute in patch-application order, which is not something this layer needs
+ * to care about: order in the registry is irrelevant to order on the bar.
+ */
+internal fun BytecodePatchContext.emitNativeToolbarButtons(
+    builder: AccessPointBuilder,
+    buttons: List<NativeToolbarButton>,
+) {
+    check(buttons.isNotEmpty()) { "emitNativeToolbarButtons called with no buttons" }
+
+    val canvas = resolveControllerCanvas()
+    val init = mutableClassDefBy(canvas.controllerType).methods.single {
+        it.toDescriptor() == canvas.initDescriptor
     }
-    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, initDescriptor)
+    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, canvas.initDescriptor)
 
     val tailIndex = init.implementation!!.instructions
         .indexOfLast { it.opcodeName() == "RETURN_VOID" }
     check(tailIndex >= 0) {
-        "$initDescriptor has no return-void — the constructor's shape has changed"
+        "${canvas.initDescriptor} has no return-void — the constructor's shape has changed"
     }
 
     // Three scratch registers cover everything a button's emission touches: v0 holds the builder
@@ -203,10 +219,10 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
     validateScratchRegisters(
         scratch = listOf(0, 1, 2),
         avoid = listOf(10, 11, 12),
-        what = initDescriptor,
+        what = canvas.initDescriptor,
     )
 
-    val emission = buttons.joinToString("\n\n") { it.toSmali(builder, registerCall) }
+    val emission = buttons.joinToString("\n\n") { it.toSmali(builder, canvas.registerCall) }
     init.addInstructions(tailIndex, emission)
 }
 
@@ -238,7 +254,6 @@ private fun resolveControllerRegisterCall(controllerClass: ClassDef): String {
 
 /** The immutable `<init>(Context, ?)` declaration; identified once and shared by the rest. */
 private fun resolveInitDef(
-    controllerType: String,
     controllerClass: ClassDef,
 ): com.android.tools.smali.dexlib2.iface.Method {
     return controllerClass.methods.singleOrNull {
@@ -246,8 +261,8 @@ private fun resolveInitDef(
             it.parameterTypes.size == 2 &&
             it.parameterTypes[0].toString() == "Landroid/content/Context;"
     } ?: error(
-        "$controllerType has no <init>(Context, ?) — the bar-controller constructor's shape " +
-            "has changed and the hook point must be re-derived",
+        "${controllerClass.type} has no <init>(Context, ?) — the bar-controller constructor's " +
+            "shape has changed and the hook point must be re-derived",
     )
 }
 
@@ -360,35 +375,27 @@ internal const val HOTKEY_ID_PREFIX = "flexboard_hotkey_"
  * touches the order-read filter at all.
  */
 internal fun BytecodePatchContext.emitNativeHotkeys(builder: AccessPointBuilder) {
-    val splits = methodsMatching { it.splitsAccessPoints() }
-    check(splits.size == 1) {
-        "The bar-controller anchor moved: expected exactly one method that splits a List around " +
-            "subList+Math.min, found ${splits.size}: ${splits.map { it.toDescriptor() }}"
+    val canvas = resolveControllerCanvas()
+    val init = mutableClassDefBy(canvas.controllerType).methods.single {
+        it.toDescriptor() == canvas.initDescriptor
     }
-    val controllerType = splits.single().definingClass
-    val controllerClass = classDefByOrNull(controllerType)
-        ?: error("$controllerType is not in the APK; the bar controller cannot be hooked")
-    val registerCall = resolveControllerRegisterCall(controllerClass)
-    val initDef = resolveInitDef(controllerType, controllerClass)
-    val initDescriptor = initDef.toDescriptor()
-    val init = mutableClassDefBy(controllerType).methods.single {
-        it.toDescriptor() == initDescriptor
-    }
-    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, initDescriptor)
+    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, canvas.initDescriptor)
 
     val tailIndex = init.implementation!!.instructions
         .indexOfLast { it.opcodeName() == "RETURN_VOID" }
-    check(tailIndex >= 0) { "$initDescriptor has no return-void" }
+    check(tailIndex >= 0) {
+        "${canvas.initDescriptor} has no return-void — the constructor's shape has changed"
+    }
 
     // p1 is the constructor's Context argument at this register count; p0 is the receiver.
     validateScratchRegisters(
         scratch = listOf(0, 1, 2, 4),
         avoid = listOf(10, 11, 12),
-        what = initDescriptor,
+        what = canvas.initDescriptor,
     )
 
     val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
-        hotkeyBlock(slot, builder, registerCall)
+        hotkeyBlock(slot, builder, canvas.registerCall)
     } + "\n\nnop\n").trimIndent()
     // WithLabels: the slot blocks carry twelve distinct internal `:…skip_N` labels, which the
     // plain `addInstructions` rejects. The trailing `nop` is not decoration:
@@ -485,15 +492,7 @@ private const val HOTKEY_SKIP_LABEL = "flexboard_hotkey_skip_"
  */
 internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder) {
     // Same controller resolution as the constructor emission; the register call is shared.
-    val splits = methodsMatching { it.splitsAccessPoints() }
-    check(splits.size == 1) {
-        "The bar-controller anchor moved: expected exactly one method that splits a List around " +
-            "subList+Math.min, found ${splits.size}: ${splits.map { it.toDescriptor() }}"
-    }
-    val controllerType = splits.single().definingClass
-    val controllerClass = classDefByOrNull(controllerType)
-        ?: error("$controllerType is not in the APK; the bar controller cannot be hooked")
-    val registerCall = resolveControllerRegisterCall(controllerClass)
+    val canvas = resolveControllerCanvas()
 
     // The start-input signature is the *module-wide* base API (Lnvd) — dozens of modules
     // declare it. What singles out the toolbar module is that it also OWNS the bar controller:
@@ -501,7 +500,7 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
     val owning = methodsMatching { it.signatureMatchesToolbarStartInput() }
         .filter { moduleMethod ->
             val cls = classDefByOrNull(moduleMethod.definingClass) ?: return@filter false
-            cls.fields.any { it.type == controllerType }
+            cls.fields.any { it.type == canvas.controllerType }
         }
     check(owning.size == 1) {
         "The toolbar module start-input anchor moved: expected exactly one start-input method " +
@@ -513,9 +512,9 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
     val moduleType = startDef.definingClass
     val moduleClass = classDefByOrNull(moduleType)
         ?: error("$moduleType is not in the APK; the toolbar module cannot be hooked")
-    val controllerFields = moduleClass.fields.filter { it.type == controllerType }.toList()
+    val controllerFields = moduleClass.fields.filter { it.type == canvas.controllerType }.toList()
     check(controllerFields.size == 1) {
-        "$moduleType should carry exactly one $controllerType field, found " +
+        "$moduleType should carry exactly one ${canvas.controllerType} field, found " +
             controllerFields.map { "${it.definingClass}->${it.name}:${it.type}" }
     }
     val controllerField = controllerFields.single().let {
@@ -533,7 +532,7 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
     check(returnIndex >= 0) { "$startDescriptor has no return — shape moved" }
 
     val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
-        hotkeyRefreshBlock(slot, builder, controllerField, registerCall)
+        hotkeyRefreshBlock(slot, builder, controllerField, canvas.registerCall)
     } + "\n\nnop\n").trimIndent()
     // Same trailing-label rule as the constructor emission: the nop houses the twelfth branch.
     start.addInstructionsWithLabels(returnIndex, emission)

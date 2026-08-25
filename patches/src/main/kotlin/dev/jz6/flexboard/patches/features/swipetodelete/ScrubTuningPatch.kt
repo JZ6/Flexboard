@@ -26,7 +26,6 @@ import dev.jz6.flexboard.patches.features.swipetodelete.resolveStartKeyChain
 import dev.jz6.flexboard.patches.features.swipetodelete.ScrubDeleteConstructorFingerprint
 import dev.jz6.flexboard.patches.features.swipetodelete.ScrubDispatchFingerprint
 import dev.jz6.flexboard.patches.features.swipetodelete.ScrubEngineConstructorFingerprint
-import dev.jz6.flexboard.patches.features.settings.scrubSettingsScreenPatch
 import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.PACKED_INVOKE_REGISTER_LIMIT
@@ -67,6 +66,10 @@ internal val scrubTuningPatch = bytecodePatch(
         "Hold delay is fixed at 0 — its settings row was dropped; everyone wants hold-none.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
+
+    // The seed is swipe-scoped (it writes exactly the keys this patch reads), so it hangs off the
+    // swipe tree rather than the base patch — deselecting Swipe to Delete now skips both.
+    dependsOn(seedDefaultsPatch)
 
     execute {
         checkPreferenceStorePins()

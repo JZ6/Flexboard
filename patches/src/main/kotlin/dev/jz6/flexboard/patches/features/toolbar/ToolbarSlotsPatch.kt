@@ -22,10 +22,12 @@ import dev.jz6.flexboard.patches.shared.spliceValues
  * registers an access point under the same id — names without a registry entry are skipped at
  * render (`Lmlh.w` does a map lookup and drops misses). The consumers arrive with the hotkey
  * patches.
+ *
+ * Unnamed on purpose: nothing about it is user-meaningful alone, and a "Toolbar Slots" tickbox
+ * would invite deselecting a dependency the hotkey patches can never actually exclude
+ * (they `dependsOn` it). It runs whenever a consumer is selected, and never on its own.
  */
-@Suppress("unused")
-val toolbarSlotsPatch = resourcePatch(
-    name = "Toolbar Slots",
+internal val toolbarSlotsPatch = resourcePatch(
     description = "Admit Flexboard's toolbar button ids natively, widening Gboard's own " +
         "allowed-set array. No other change; reorder and persistence stay stock.",
 ) {

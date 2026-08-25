@@ -74,7 +74,7 @@ internal val HOTKEY_EXTRA_SYMBOLS = listOf(
     "counter_6", "counter_7", "counter_8", "counter_9",
 )
 
-internal val scrubSettingsScreenPatch = resourcePatch(
+internal val settingsScreenPatch = resourcePatch(
     description = "Adds a Flexboard entry to Gboard's settings that opens Flexboard's own screen.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
