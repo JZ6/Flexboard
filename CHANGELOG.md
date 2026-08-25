@@ -1,3 +1,14 @@
+# [2.0.0-dev.0](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.9...v2.0.0-dev.0) (2026-08-25)
+
+* **Gboard:** chore: keep the extracted Gboard APK in-repo for the dex gates
+* **Gboard:** fix: icon picker review — dispatch through the fragment's public d, not protected t
+* **Gboard:** feat: per-slot icon picker — cycle rows on the aA click hook
+* **Gboard:** feat: import/export as real buttons — the port's click hook finally exists
+* **Gboard:** feat: drop the hold-delay settings row — fixed at 0ms
+* **Gboard:** feat: settings polish — per-slot icons on hotkey rows, version under About
+* **Gboard:** docs: park the bigger-toolbar plan with the corrected stock model
+* **Gboard:** docs: trace the toolbar-capacity chain and the native raise-the-max plan
+
 # [1.4.0-dev.9](https://github.com/JZ6/Flexboard/compare/v1.4.0-dev.8...v1.4.0-dev.9) (2026-08-24)
 
 * **Gboard:** refactor: hotkey icon drawables carry their symbol names
