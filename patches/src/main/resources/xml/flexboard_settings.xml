@@ -64,7 +64,7 @@
             android:icon="@drawable/flexboard_icon_alternate_email"
             android:key="flexboard_hotkey_1_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 1 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_password"
             android:key="flexboard_hotkey_2_text"
@@ -73,7 +73,7 @@
             android:icon="@drawable/flexboard_icon_password"
             android:key="flexboard_hotkey_2_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 2 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_phone_enabled"
             android:key="flexboard_hotkey_3_text"
@@ -82,7 +82,7 @@
             android:icon="@drawable/flexboard_icon_phone_enabled"
             android:key="flexboard_hotkey_3_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 3 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_local_post_office"
             android:key="flexboard_hotkey_4_text"
@@ -91,7 +91,7 @@
             android:icon="@drawable/flexboard_icon_local_post_office"
             android:key="flexboard_hotkey_4_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 4 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_home_pin"
             android:key="flexboard_hotkey_5_text"
@@ -100,7 +100,7 @@
             android:icon="@drawable/flexboard_icon_home_pin"
             android:key="flexboard_hotkey_5_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 5 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_work"
             android:key="flexboard_hotkey_6_text"
@@ -109,7 +109,7 @@
             android:icon="@drawable/flexboard_icon_work"
             android:key="flexboard_hotkey_6_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 6 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_favorite"
             android:key="flexboard_hotkey_7_text"
@@ -118,7 +118,7 @@
             android:icon="@drawable/flexboard_icon_favorite"
             android:key="flexboard_hotkey_7_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 7 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_kid_star"
             android:key="flexboard_hotkey_8_text"
@@ -127,7 +127,7 @@
             android:icon="@drawable/flexboard_icon_kid_star"
             android:key="flexboard_hotkey_8_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 8 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_credit_card"
             android:key="flexboard_hotkey_9_text"
@@ -136,7 +136,7 @@
             android:icon="@drawable/flexboard_icon_credit_card"
             android:key="flexboard_hotkey_9_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 9 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_hexagon"
             android:key="flexboard_hotkey_10_text"
@@ -145,7 +145,7 @@
             android:icon="@drawable/flexboard_icon_hexagon"
             android:key="flexboard_hotkey_10_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 10 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_hive"
             android:key="flexboard_hotkey_11_text"
@@ -154,7 +154,7 @@
             android:icon="@drawable/flexboard_icon_hive"
             android:key="flexboard_hotkey_11_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 11 icon" />
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_sports_soccer"
             android:key="flexboard_hotkey_12_text"
@@ -163,7 +163,7 @@
             android:icon="@drawable/flexboard_icon_sports_soccer"
             android:key="flexboard_hotkey_12_icon"
             android:summary="Tap to change"
-            android:title="Icon" />
+            android:title="Hotkey 12 icon" />
 
         <!--
           Real buttons, not a text field full of serialization. The host port's click dispatch

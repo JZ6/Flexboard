@@ -12,18 +12,20 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  * The hotkeys' store contract, read by the emitted smali on every toolbar build.
  *
  * <p>Every slot has two keys — {@code flexboard_hotkey_N_text} (the string the tap commits) and
- * {@code flexboard_hotkey_N_icon} (a Gboard-bundled drawable id as a decimal string) — plus the
- * category-wide {@code flexboard_hotkey_count} slider: slots above the count never register, so
- * the bar never shows more than asked for. Slot N hiding also skips registration, so reordering
- * stays Gboard's (docs/toolbar-access-points.md).
+ * {@code flexboard_hotkey_N_icon} (a bundled vector's drawable <i>name</i>; decimal ids from
+ * dev.7-and-earlier exports still resolve but are no longer written). A slot registers only when
+ * its text is set, so an unused slot draws nothing and clearing the text takes the button away on
+ * the next keyboard start. Slot N hiding also skips registration, so reordering stays Gboard's
+ * (docs/toolbar-access-points.md).
  *
  * <p>All values are strings because the screen's rows persist through Gboard's androidx port,
  * which writes them as text; readers here parse defensively and fall back to the default the
  * patch itself would have staged.
  *
- * <p>Icons rotate through the bundled-icon table by slot, so an untouched install already has
- * twelve distinguishable buttons; the table ids come from the glyphs audit and are pinned in
- * preflight by path signature.
+ * <p>Each slot's default icon is a fixed member of the bundled Flexboard pack, so an untouched
+ * install already shows twelve distinguishable buttons. The settings screen's per-slot Icon rows
+ * cycle the same pack by name, so a preference written by the picker, by an import, or by neither
+ * resolves through one path.
  */
 public final class Hotkeys {
 
@@ -84,15 +86,20 @@ public final class Hotkeys {
     };
 
     /**
-     * The picker's cycle, in tap order: the twelve slot defaults first, then the extras. A slot's
+     * The picker's cycle, in tap order: the slot defaults first, then the extras. A slot's
      * default is therefore always one tap's distance from the start of the table, which is what
      * {@link #cycleIcon} leans on for its reset-to-default behaviour on unrecognised state.
+     *
+     * <p>Sized and filled by the two source tables' own lengths, not SLOT_COUNT: a drifted table
+     * degrades to a short cycle instead of killing the whole class in its static initializer
+     * (and the count drift is the constants checker's red, not the phone's).
      */
     private static final String[] ICON_CHOICES;
     static {
-        ICON_CHOICES = new String[SLOT_COUNT + EXTRA_ICON_NAMES.length];
-        System.arraycopy(DEFAULT_ICON_NAMES, 0, ICON_CHOICES, 0, SLOT_COUNT);
-        System.arraycopy(EXTRA_ICON_NAMES, 0, ICON_CHOICES, SLOT_COUNT, EXTRA_ICON_NAMES.length);
+        ICON_CHOICES = new String[DEFAULT_ICON_NAMES.length + EXTRA_ICON_NAMES.length];
+        System.arraycopy(DEFAULT_ICON_NAMES, 0, ICON_CHOICES, 0, DEFAULT_ICON_NAMES.length);
+        System.arraycopy(EXTRA_ICON_NAMES, 0, ICON_CHOICES,
+            DEFAULT_ICON_NAMES.length, EXTRA_ICON_NAMES.length);
     }
 
     private Hotkeys() {}
@@ -162,12 +169,15 @@ public final class Hotkeys {
 
     /**
      * The token as it appears under a settings row: the prefix and underscores are plumbing the
-     * user gains nothing from — {@code flexboard_icon_kid_star} reads as "kid star".
+     * user gains nothing from — {@code flexboard_icon_kid_star} reads as "kid star". A legacy
+     * decimal id (dev.7-era export) is just "custom": the number means nothing to a user and the
+     * next tap replaces it anyway.
      */
     public static String displayName(String token) {
-        String name = token.startsWith("flexboard_icon_")
-                ? token.substring("flexboard_icon_".length()) : token;
-        return name.replace('_', ' ');
+        if (!token.startsWith("flexboard_icon_")) {
+            return "custom";
+        }
+        return token.substring("flexboard_icon_".length()).replace('_', ' ');
     }
 
     /**

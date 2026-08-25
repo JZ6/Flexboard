@@ -39,4 +39,15 @@ public class CommonPreferenceFragment {
     public boolean aA(androidx.preference.Preference preference) {
         return false;
     }
+
+    /**
+     * Stub of the ported {@code PreferenceFragmentCompat.findPreference} — publicly inherited
+     * from the real superclass chain ({@code Lcdr;->d(Ljava/lang/CharSequence;)}, verified public
+     * on Gboard 18.0.3). This, and not {@code Preference}'s own findPreference, is the key lookup
+     * the extension may call: the row-class one survives R8 as {@code protected}, so a call from
+     * the fragment would compile here and throw IllegalAccessError at tap time.
+     */
+    public androidx.preference.Preference d(CharSequence key) {
+        return null;
+    }
 }

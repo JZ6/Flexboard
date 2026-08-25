@@ -38,8 +38,9 @@ import dev.jz6.flexboard.extension.toolbar.Hotkeys;
  *       and public.</li>
  *   <li>It extends a compile-time stub of the real Gboard class (see {@code stubs/}), so every
  *       inherited surface it touches is the port's obfuscated letters: {@code aB()} for the screen
- *       id, {@code aA(Preference)} for clicks, and on the rows themselves {@code t(String)}
- *       (findPreference), {@code n(CharSequence)} (setSummary) and {@code N(Drawable)} (setIcon).
+ *       id, {@code aA(Preference)} for clicks, {@code d(CharSequence)} (this chain's public
+ *       findPreference) for row identity, and on the rows themselves {@code n(CharSequence)}
+ *       (setSummary) and {@code N(Drawable)} (setIcon).
  *       There is no getKey to dispatch on — R8 inlined the one-instruction getter out of the dex
  *       entirely — so a row is identified by asking the tree for its key and comparing identity
  *       with the tapped instance.
@@ -110,7 +111,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
      */
     @Override
     public boolean aA(androidx.preference.Preference preference) {
-        syncRowIconsOnce(preference);
+        syncRowIconsOnce();
 
         for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
             if (isRow(preference, Hotkeys.iconKey(slot))) {
@@ -128,20 +129,31 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             preference.n("no app context — try again from the keyboard");
             return true;
         }
-        preference.n(copy
+        String outcome = copy
             ? Hotkeys.exportToClipboard(context)
-            : Hotkeys.importFromClipboard(context));
+            : Hotkeys.importFromClipboard(context);
+        preference.n(outcome);
+        // The once-per-instance sync ran before this tap, i.e. before the import wrote the store
+        // — re-run it so the rows show what the import landed, not what it replaced. "imported"
+        // is the one success prefix among the outcome strings; failures leave the screen as is.
+        if (!copy && outcome.startsWith("imported")) {
+            iconsSynced = false;
+            syncRowIconsOnce();
+        }
         return true;
     }
 
     /**
      * Whether {@code tapped} is the row carrying {@code key}. There is no getKey on the ported
-     * {@code Preference} — R8 inlined it away — so this asks the screen's own tree for the row
-     * under the key and compares identity. A miss returns null, not an exception, so an unknown
-     * click falls through to the host's handling unharmed.
+     * {@code Preference} — R8 inlined it away — so this looks the key up in the screen's own tree
+     * and compares identity. The lookup is the fragment's own findPreference, not the row's:
+     * {@code Preference.findPreference} survives in the dex as {@code protected}, and calling it
+     * from this class would link clean in the IDE and throw IllegalAccessError on the first tap.
+     * A miss returns null, not an exception, so an unknown click falls through to the host's
+     * handling unharmed.
      */
-    private static boolean isRow(androidx.preference.Preference tapped, String key) {
-        return tapped.t(key) == tapped;
+    private boolean isRow(androidx.preference.Preference tapped, String key) {
+        return d(key) == tapped;
     }
 
     /**
@@ -155,47 +167,57 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             return;
         }
         String picked = Hotkeys.cycleIcon(context, slot);
+        // One Drawable instance holds exactly one view callback, so each row gets its own
+        // inflation rather than two ImageViews sharing an object.
         Drawable icon = Hotkeys.drawableOf(context, picked);
         if (icon != null) {
             iconRow.N(icon);
-            androidx.preference.Preference textRow = iconRow.t(Hotkeys.textKey(slot));
-            if (textRow != null) {
-                textRow.N(icon);
+        }
+        androidx.preference.Preference textRow = d(Hotkeys.textKey(slot));
+        if (textRow != null) {
+            Drawable textIcon = Hotkeys.drawableOf(context, picked);
+            if (textIcon != null) {
+                textRow.N(textIcon);
             }
         }
         iconRow.n(Hotkeys.displayName(picked));
     }
 
     /**
-     * Redraws every row's icon from the store, once per screen instance.
+     * Redraws every row's icon from the store, once per screen instance (and once more after each
+     * successful import — that tap's once-a-pass runs *before* the blob lands).
      *
      * <p>The rows' XML icons are the slot *defaults*: the port exposes no row-bind hook a
      * compile-time stub can override, so a stored override can't appear at inflation. Any tap on
-     * the screen runs this first — including the Export/Import taps, so the healing pass that
-     * follows an import is the very tap that reports its result.
+     * the screen runs this first, so the defaults a user might be looking at heal on the way in.
      */
-    private void syncRowIconsOnce(androidx.preference.Preference anyRow) {
+    private void syncRowIconsOnce() {
         if (iconsSynced) {
             return;
         }
-        iconsSynced = true;
         Context context = processContext();
         if (context == null) {
+            // Latch only after a context exists: a settings screen opened before the keyboard
+            // ever ran must not burn its one sync pass drawing nothing.
             return;
         }
+        iconsSynced = true;
         for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
             String token = Hotkeys.currentIconToken(context, slot);
-            Drawable icon = Hotkeys.drawableOf(context, token);
-            androidx.preference.Preference iconRow = anyRow.t(Hotkeys.iconKey(slot));
+            androidx.preference.Preference iconRow = d(Hotkeys.iconKey(slot));
             if (iconRow != null) {
+                Drawable icon = Hotkeys.drawableOf(context, token);
                 if (icon != null) {
                     iconRow.N(icon);
                 }
                 iconRow.n(Hotkeys.displayName(token));
             }
-            androidx.preference.Preference textRow = anyRow.t(Hotkeys.textKey(slot));
-            if (textRow != null && icon != null) {
-                textRow.N(icon);
+            androidx.preference.Preference textRow = d(Hotkeys.textKey(slot));
+            if (textRow != null) {
+                Drawable textIcon = Hotkeys.drawableOf(context, token);
+                if (textIcon != null) {
+                    textRow.N(textIcon);
+                }
             }
         }
     }

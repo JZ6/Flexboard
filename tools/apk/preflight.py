@@ -1668,13 +1668,13 @@ def run(dl, apk=None):
 
     # ---- the extension's click seam: aA dispatch and the row letters
     #
-    # The settings fragment overrides aA (the ported onPreferenceTreeClick) and rewrites tapped
-    # rows through three obfuscated letters: t (findPreference), n (setSummary), N (setIcon).
-    # The letters are R8 output and re-rolled every build, so what is pinned is the *shape*
-    # behind each — a rename fails here instead of as a NoSuchMethodError at tap time, which is
-    # exactly how unobfuscated getKey()/setSummary() calls once shipped broken: getKey is a
-    # one-instruction getter, R8 inlines those outright, and nothing below can pin a method that
-    # no longer exists at all.
+    # The settings fragment overrides aA (the ported onPreferenceTreeClick), identifies rows
+    # through the listener's d (findPreference), and rewrites them through n (setSummary) and
+    # N (setIcon). The letters are R8 output and re-rolled every build, so what is pinned is the
+    # *shape* behind each — a rename fails here instead of as a NoSuchMethodError at tap time —
+    # PLUS the access flags: obfuscated-member pinning by shape alone once shipped
+    # Preference.t (findPreference) as green while it sat there `protected`, an IllegalAccessError
+    # waiting for the first tap. Every letter the extension calls is asserted public+concrete.
     pref = 'Landroidx/preference/Preference;'
     tree_listener = E['native_settings_tree_listener']
     manager = E['native_settings_manager']
@@ -1704,19 +1704,46 @@ def run(dl, apk=None):
               and f'{manager}->d:{tree_listener}' in reads,
               str(reads))
 
-    # t(String) — findPreference. With no getKey to dispatch on, a row is identified by asking
-    # the tree for its key and comparing identity, so this letter is what every intercepted
-    # click depends on. The shape: read the manager field, delegate to its key lookup.
-    c, ins = body(dl, f'{pref}->t(Ljava/lang/String;){pref}')
-    if check('settings: t(String)Preference exists', ins is not None):
+    # d(CharSequence) — PreferenceFragmentCompat.findPreference, the extension's row identity
+    # source. With no getKey to dispatch on, a row is identified by looking its key up in the
+    # screen tree and comparing the tapped instance. NOTE what this is NOT: Preference's own
+    # findPreference (t(String)) survives R8 protected, so calling it from the fragment would
+    # compile against the stub and throw IllegalAccessError at tap time — which is also why every
+    # letter below asserts its access flags, not just its shape. The shape here: read the
+    # manager field off the fragment, delegate to the manager's key lookup.
+    d_tl, _s_t, cd_tl = find_class(dl, tree_listener)
+    d_fp = [(m, af, co) for m, af, co in d_tl.class_methods(cd_tl)
+            if m == f'{tree_listener}->d(Ljava/lang/CharSequence;){pref}'] \
+        if cd_tl else []
+    check('settings: d(CharSequence)Preference on the tree listener, public',
+          bool(d_fp) and d_fp[0][1] & 0x1 == 1 and d_fp[0][1] & 0x400 == 0
+          and d_fp[0][2] != 0,
+          f'access={d_fp and hex(d_fp[0][1])}')
+    c, ins = body(dl, f'{tree_listener}->d(Ljava/lang/CharSequence;){pref}')
+    if check('settings: d(CharSequence)Preference has a body', ins is not None):
         refs = [a.rsplit(', ', 1)[-1] for _pc, _mn, a in ins]
-        check('settings: t delegates to the manager key lookup',
-              f'{pref}->k:{manager}' in refs
+        check('settings: d delegates to the manager key lookup',
+              f'{tree_listener}->b:{manager}' in refs
               and f'{manager}->d(Ljava/lang/CharSequence;){pref}' in refs,
               str(refs))
 
+    # Every remaining row-letter the extension calls must stay public AND concrete — a shape
+    # match alone once shipped a protected findPreference as green.
+    def public_concrete(owner, member):
+        d_x, _s, cd_x = find_class(dl, owner)
+        if d_x is None:
+            return None
+        hits = [(af, co) for m, af, co in d_x.class_methods(cd_x)
+                if m == f'{owner}->{member}']
+        return hits if hits else None
+
     # n(CharSequence) — setSummary, told apart from its sibling setter by the throw only it
     # carries; the string is the anchor because R8 cannot rename it.
+    pc_n = public_concrete(pref, 'n(Ljava/lang/CharSequence;)V')
+    check('settings: n(CharSequence)V is public and concrete',
+          bool(pc_n) and pc_n[0][0] & 0x1 == 1 and pc_n[0][0] & 0x400 == 0
+          and pc_n[0][1] != 0,
+          f'access={pc_n and hex(pc_n[0][0])}')
     c, ins = body(dl, f'{pref}->n(Ljava/lang/CharSequence;)V')
     if check('settings: n(CharSequence)V exists', ins is not None):
         strings = [a for _pc, mn, a in ins if mn.startswith('const-string')]
@@ -1725,6 +1752,11 @@ def run(dl, apk=None):
 
     # N(Drawable) — setIcon: writes the icon field, clears the resource id, notifies. Both field
     # writes are the identity; a rename that left them behind would draw nothing on a cycle.
+    pc_ni = public_concrete(pref, 'N(Landroid/graphics/drawable/Drawable;)V')
+    check('settings: N(Drawable)V is public and concrete',
+          bool(pc_ni) and pc_ni[0][0] & 0x1 == 1 and pc_ni[0][0] & 0x400 == 0
+          and pc_ni[0][1] != 0,
+          f'access={pc_ni and hex(pc_ni[0][0])}')
     c, ins = body(dl, f'{pref}->N(Landroid/graphics/drawable/Drawable;)V')
     if check('settings: N(Drawable)V exists', ins is not None):
         writes = [a.rsplit(', ', 1)[-1] for _pc, mn, a in ins if mn.startswith('iput')]

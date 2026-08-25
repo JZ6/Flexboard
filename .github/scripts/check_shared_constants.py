@@ -518,12 +518,14 @@ def main():
             java[name], declared_in[name] = value, source.name
 
     # The hotkey default-icon order, held in lockstep across the patch's drawable loop and the
-    # extension's defaults table: Kotlin names the symbol, Java the flexboard_icon_<symbol>.
+    # extension's defaults table: Kotlin names the symbol, Java the flexboard_icon_<symbol>. An
+    # empty parse on either side must fail too — renamed initializers otherwise compare [] != []
+    # green while pinning nothing.
     kt_syms = re.findall(r'"([a-z_]+)"', _collect_body("HOTKEY_DEFAULT_SYMBOLS"))
     java_names = re.findall(r'"flexboard_icon_([a-z_]+)"', _collect_body("DEFAULT_ICON_NAMES"))
-    if kt_syms != java_names:
+    if not kt_syms or not java_names or kt_syms != java_names:
         problems.append(
-            f"  hotkey default icon order drifted: patch says {kt_syms}, "
+            f"  hotkey default icon order drifted or failed to parse: patch says {kt_syms}, "
             f"extension says {java_names}"
         )
 
@@ -532,9 +534,9 @@ def main():
     # this pattern admits them where the defaults' does not.)
     kt_extra = re.findall(r'"([a-z0-9_]+)"', _collect_body("HOTKEY_EXTRA_SYMBOLS"))
     java_extra = re.findall(r'"flexboard_icon_([a-z0-9_]+)"', _collect_body("EXTRA_ICON_NAMES"))
-    if kt_extra != java_extra:
+    if not kt_extra or not java_extra or kt_extra != java_extra:
         problems.append(
-            f"  hotkey picker extra-icon order drifted: patch says {kt_extra}, "
+            f"  hotkey picker extra-icon order drifted or failed to parse: patch says {kt_extra}, "
             f"extension says {java_extra}"
         )
 

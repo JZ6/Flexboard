@@ -121,20 +121,24 @@ Preference.I()V                    the ported performClick
 `super.aA(preference)` keeps the untouched rows (the EditText dialogs, anything that navigates)
 working — it is the base implementation, not a null default.
 
-The obfuscated surface this rides on, all pinned by body shape in preflight's settings section:
+The obfuscated surface this rides on, all pinned by body shape **and access flags** in
+preflight's settings section:
 
 | letter | is the ported | identified by |
 |---|---|---|
 | `Lcdr;->aA(Preference)Z` | `onPreferenceTreeClick` | on the host's superclass chain; called once from `I()V` |
-| `Preference;->t(String)Preference` | `findPreference` | reads manager field `k`, delegates to `Lcdw;->d(CharSequence)` |
+| `Lcdr;->d(CharSequence)Preference` | `PreferenceFragmentCompat.findPreference` | reads manager field `b`, delegates to `Lcdw;->d` |
 | `Preference;->n(CharSequence)V` | `setSummary` | throws `"Preference already has a SummaryProvider set."` |
 | `Preference;->N(Drawable)V` | `setIcon` | writes field `c:…Drawable;`, clears `b:I`, notifies |
 
 **There is no `getKey`.** R8 inlines one-instruction getters out of the dex entirely — `66`
 methods survive on `Preference` and none of them returns the key. Do not compile dispatch code
-against `getKey()`/`setSummary(…)`: it links clean and then dies on device (the dev.10 framing
-of exactly that mistake is why this table exists). A row is identified by asking the tree for
-its key and comparing identity: `tapped.t("flexboard_hotkey_3_icon") == tapped`.
+against androidx source names: it links clean and then dies on device. And check **access**, not
+just existence: `Preference;->t(String)` *is* the real findPreference, sitting right there in
+the dex — but `protected`, so calling it from the fragment throws `IllegalAccessError` on the
+first tap (caught in review, before release; the extension's stub omits it so a stray call fails
+to compile instead). Row identity therefore rides the fragment's own chain:
+`d("flexboard_hotkey_3_icon") == tapped`.
 
 Rows also cannot refresh at bind time — no bind-hook letter is known to the stub — so the
 settings fragment re-draws the icon rows from the store on the *first intercepted tap* of each
@@ -146,9 +150,10 @@ shows its XML default; the toolbar itself always reflects the store.
 - Row tap does nothing at all (no dialog, no outcome text) → the click chain moved: preflight's
   `settings: performClick dispatches to aA…` checks name the seam. An `aA` that exists but is
   never called is invisible until tapped, which is why the caller is pinned, not just the letter.
-- Row tap crashes `NoSuchMethodError` → a row-letter (`t`/`n`/`N`) was renamed by a Gboard bump;
-  preflight's settings section pins each by shape. Never dispatch on `getKey()` — it does not
-  exist in the dex (see "Intercepting row clicks").
+- Row tap crashes `NoSuchMethodError` → a row-letter (`d`/`n`/`N`) was renamed by a Gboard bump;
+  `IllegalAccessError` instead → one of them changed visibility. Preflight's settings section
+  pins each by shape **and** access flags. Never dispatch on `getKey()` or on `Preference`'s own
+  findPreference — the first is absent, the second is protected (see "Intercepting row clicks").
 - Icon row tap changes the summary but not the toolbar picture → the write went to a key the
   toolbar emission does not read (`Hotkeys.iconKey` is the single source; the row's XML key
   must equal it).
