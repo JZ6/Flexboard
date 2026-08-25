@@ -4,7 +4,11 @@
 # Roadmap entries written by the user verbatim.
 
 
-readd hotkeys with the icons
+dislike the way icon selection works
+
+export button should also popup a text box showing whats exported
+
+import also should have a popup
 
 allow hotkey import export
 
@@ -74,13 +78,12 @@ extension's Java and build the lists at runtime.
 extension core (`499af89`), registration + settings rows (`fc80d12`) — count slider,
 twelve inline text EditText rows, label/labelOf fixes and trailing-nop carried over — and the
 import/export blob row (`3ba0de6`), later replaced by real Export/Import buttons. Slot icons
-default from the bundled-glyph table and are user-changeable again: a per-slot **Icon** row
-cycles the bundled pack on each tap, wired through the ported click hook (`aA`) that finally
-exists — first as the button dispatch, verified end to end by preflight's settings section.
-The planned `IconListPreference` grid was skipped: its icon list arrives through the extras
-*Bundle*, which no XML inflater in the port populates, and its arrays would have put names back
-into `res/values/`; the cycle row runs on letters already pinned and touches only the screen's
-own XML.
+default from the bundled-glyph table and are user-changeable again, wired through the ported
+click hook (`aA`) that finally exists. The ui went through two passes: first tap-to-cycle rows
+(superseded — user feedback), then the current **picker grid dialog** off the tapped row's own
+activity context, with export/import as a show-the-blob / paste-the-blob popup pair.
+`IconListPreference` was skipped deliberately: its icon list arrives through the extras *Bundle*,
+which no XML inflater in the port populates.
 
 Device note, resolved in dev.5: slots also re-register from the toolbar module's start-input
 callback (`Lmln.fn`), so a settings edit takes effect when the keyboard next opens. The

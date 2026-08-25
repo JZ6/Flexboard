@@ -130,6 +130,7 @@ preflight's settings section:
 | `Lcdr;->d(CharSequence)Preference` | `PreferenceFragmentCompat.findPreference` | reads manager field `b`, delegates to `Lcdw;->d` |
 | `Preference;->n(CharSequence)V` | `setSummary` | throws `"Preference already has a SummaryProvider set."` |
 | `Preference;->N(Drawable)V` | `setIcon` | writes field `c:…Drawable;`, clears `b:I`, notifies |
+| `Preference;->j:Landroid/content/Context;` | the row's construction context | read by `I()V` for its `startActivity` fallback |
 
 **There is no `getKey`.** R8 inlines one-instruction getters out of the dex entirely — `66`
 methods survive on `Preference` and none of them returns the key. Do not compile dispatch code
@@ -145,8 +146,33 @@ settings fragment re-draws the icon rows from the store on the *first intercepte
 screen instance (`syncRowIconsOnce`). Between opening the screen and the first tap, an icon row
 shows its XML default; the toolbar itself always reflects the store.
 
+## Dialogs: popups off the row's own context
+
+The icon picker and the export/import popups are hand-built dialogs — but they hang off
+**Gboard's** theme, not an invented one. Every row object carries the context it was constructed
+with (the settings host Activity) in the `j` field: written in the 4-arg constructor, and
+consumed by the ported `performClick` via `Context.startActivity` **without**
+`FLAG_ACTIVITY_NEW_TASK` — the proof it is an Activity, not a wrapper. (The field's visibility
+doesn't matter to the read; its *name* does, which is what the preflight pin asserts.)
+
+- Reach is `Preference.class.getDeclaredField("j")` + `setAccessible(true)`. Reflection on an
+  app class is unrestricted — hidden-API enforcement covers the boot classpath, not this dex.
+- The pin is structural: preflight's `performClick` check asserts `j` among the field reads, so
+  a rename fails at pre-push instead of silently downgrading the UI.
+- The dialog class is the **framework** `AlertDialog` — deliberately. The dex ships zero
+  appcompat/M3 dialog classes (checked 18.0.3); Gboard's own dialogs are built from the same
+  primitives. The theme (`alertDialogTheme`, colours, corner shapes) inherits from the host
+  Activity, so the chrome reads native; only the content is ours.
+- Every dialog path is wrapped in a typed catch. Any failure — no field, no activity, a
+  `BadTokenException` — falls back to the no-dialog behavior (icons tap-cycle, import reads the
+  clipboard, export is clipboard + summary). Sunset a fallback only when its caller proves dead.
+
 ## Failure checklist
 
+- Tap works but no popup appears (icon tap cycles instead of opening the grid, import copies
+  from the clipboard silently) → the dialog path fell back: the `j` field moved (preflight's
+  performClick pin should have failed first) or the row context was not an Activity on that
+  path. The fallback is deliberate; the regression to hunt is the missed popup, not a crash.
 - Row tap does nothing at all (no dialog, no outcome text) → the click chain moved: preflight's
   `settings: performClick dispatches to aA…` checks name the seam. An `aA` that exists but is
   never called is invisible until tapped, which is why the caller is pinned, not just the letter.

@@ -1700,7 +1700,9 @@ def run(dl, apk=None):
 
     # The click path itself, with no name of its own: performClick's port reads the hosted
     # fragment off the manager and invokes aA through it. Every letter above could exist while
-    # this wiring moves, which would compile and then dispatch nothing anywhere.
+    # this wiring moves, which would compile and then dispatch nothing anywhere. The row-context
+    # field j is pinned alongside because the settings dialogs reflect on it by name — a rename
+    # is a silent fallback to the no-dialog path, noticed only by a missing popup.
     c, ins = body(dl, f'{pref}->I()V')
     if check('settings: the ported performClick exists', ins is not None):
         calls = [a.split(', ')[-1] for _pc, mn, a in ins if mn.startswith('invoke')]
@@ -1708,9 +1710,10 @@ def run(dl, apk=None):
         check('settings: performClick dispatches to aA exactly once',
               len(aA_calls) == 1, str(aA_calls))
         reads = [a.rsplit(', ', 1)[-1] for _pc, mn, a in ins if mn.startswith('iget')]
-        check('settings: performClick reads the manager and hosted-fragment fields',
+        check('settings: performClick reads the manager, fragment and row-context fields',
               f'{pref}->k:{manager}' in reads
-              and f'{manager}->d:{tree_listener}' in reads,
+              and f'{manager}->d:{tree_listener}' in reads
+              and f'{pref}->j:Landroid/content/Context;' in reads,
               str(reads))
 
     # d(CharSequence) — PreferenceFragmentCompat.findPreference, the extension's row identity

@@ -26,8 +26,8 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  *
  * <p>Each slot's default icon is a fixed member of the bundled Flexboard pack, so an untouched
  * install already shows twelve distinguishable buttons. The settings screen's per-slot Icon rows
- * cycle the same pack by name, so a preference written by the picker, by an import, or by neither
- * resolves through one path.
+ * open a picker grid over the same pack by name (tap-cycling as the no-dialog fallback), so a
+ * preference written by the picker, by an import, or by neither resolves through one path.
  */
 public final class Hotkeys {
 
@@ -199,10 +199,10 @@ public final class Hotkeys {
     }
 
     /**
-     * Advances a slot's icon one entry around {@link #ICON_CHOICES} and answers the new token, so
-     * the tapped row can redraw itself. A slot whose stored token names nothing bundled — a
-     * decimal id out of a dev.7-and-earlier export — restarts at the slot's own default, which
-     * makes "one tap back to normal" the single fallback for every unrecognised state.
+     * Advances a slot's icon one entry around {@link #ICON_CHOICES} and answers the new token.
+     * This is the <b>no-dialog fallback</b>: the settings screen's icon row opens the picker grid
+     * when the row carries a usable Activity context, and cycles like this when it doesn't.
+     * A slot whose stored token names nothing bundled restarts at the slot's own default.
      */
     public static String cycleIcon(Context context, int slot) {
         int at = indexOfChoice(currentIconToken(context, slot));
@@ -250,6 +250,21 @@ public final class Hotkeys {
         return PREF_TEXT_PREFIX + slot + PREF_ICON_SUFFIX;
     }
 
+    /** The picker's full table, in grid order. A copy: the reset math leans on the table. */
+    public static String[] choices() {
+        return ICON_CHOICES.clone();
+    }
+
+    /** Writes a slot's icon choice — one of the {@link #choices()} names. */
+    public static void setIconToken(Context context, int slot, String token) {
+        Preferences.of(context).edit().putString(iconKey(slot), token).apply();
+    }
+
+    /** Clears the override; the slot falls back to its default icon. */
+    public static void resetIconToken(Context context, int slot) {
+        Preferences.of(context).edit().remove(iconKey(slot)).apply();
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Import / export — the whole hotkey state as one pasteable string
     // ---------------------------------------------------------------------------------------------
@@ -274,8 +289,8 @@ public final class Hotkeys {
     }
 
     /**
-     * Reads the clipboard and, if it carries a blob, applies it. Called from the Paste row.
-     * Anything that is not one of our exports is refused without touching the store.
+     * Reads the clipboard and, if it carries a blob, applies it. The no-dialog fallback for the
+     * Import row; something that is not one of our exports is refused without touching the store.
      */
     public static String importFromClipboard(Context context) {
         ClipboardManager clipboard =
@@ -291,7 +306,21 @@ public final class Hotkeys {
         if (text == null || !text.toString().startsWith(BLOB_VERSION)) {
             return "clipboard does not hold a Flexboard export";
         }
-        boolean applied = applyBlob(context, text.toString());
+        return importFromText(context, text.toString());
+    }
+
+    /**
+     * Applies a blob held in hand — the import popup's Apply button hands the box's contents
+     * straight here. Same strict-any-bad-abort parse as the clipboard path, same store.
+     */
+    public static String importFromText(Context context, String blob) {
+        if (blob == null || blob.trim().isEmpty()) {
+            return "nothing to apply";
+        }
+        if (!blob.startsWith(BLOB_VERSION)) {
+            return "not a Flexboard export";
+        }
+        boolean applied = applyBlob(context, blob);
         if (!applied) {
             return "export is malformed — nothing changed";
         }
@@ -306,6 +335,11 @@ public final class Hotkeys {
             }
         }
         return occupied;
+    }
+
+    /** The blob as text — what Export copies, and what the export popup shows. */
+    public static String exportText(Context context) {
+        return serialize(context);
     }
 
     /** One line per occupied slot: slot number, tab, escaped text, tab, icon token (a

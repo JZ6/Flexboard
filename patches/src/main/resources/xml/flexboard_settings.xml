@@ -51,12 +51,13 @@
           no shown-gate at toolbar build time, so blank rows simply don't render.
         -->
         <!--
-          Under each text row, its Icon row: a plain Preference whose tap cycles the slot through
-          the bundled icon pack. The tap reaches FlexboardSettingsFragment.aA(Preference) by the
-          port's click dispatch; the row's key IS the slot's icon key, so identification asks the
-          screen tree for the key and compares identity (the port's getKey does not survive R8).
-          The summary is static by necessity — the port exposes no row-bind hook — and is replaced
-          with the icon's name by the first tap on the screen.
+          Under each text row, its Icon row: a plain Preference whose tap opens the bundled-pack
+          picker grid (tap-cycling is the fallback when the row's context can't host a dialog).
+          The tap reaches FlexboardSettingsFragment.aA(Preference) by the port's click dispatch;
+          the row's key IS the slot's icon key, so identification asks the screen tree for the
+          key and compares identity (the port's getKey does not survive R8). The summary is
+          static at inflation — the port exposes no row-bind hook — and is replaced with the
+          icon's name by the first tap on the screen.
         -->
         <androidx.preference.EditTextPreference
             android:icon="@drawable/flexboard_icon_alternate_email"
@@ -168,17 +169,20 @@
             android:title="Hotkey 12 icon" />
 
         <!--
-          Real buttons, not a text field full of serialization. The host port's click dispatch
-          reaches FlexboardSettingsFragment.aA(Preference) by name; the tap handler writes/reads
-          the clipboard and reports right in the row's summary.
+          Real picker/buttons with popups, not text fields full of serialization. The host
+          port's click dispatch reaches FlexboardSettingsFragment.aA(Preference) by name; the
+          icon row opens a grid dialog of the bundled pack, Export copies the blob AND shows it
+          in a dialog, Import shows a paste box with Apply. The dialogs hang off the tapped row's
+          own context (the port's private context field, pinned in preflight); when that's
+          unavailable the rows degrade to tap-cycling / the clipboard-only path.
         -->
         <Preference
             android:key="flexboard_hotkey_copy"
-            android:summary="Copy all hotkeys to the clipboard"
+            android:summary="Copies your hotkeys and shows the text"
             android:title="Export" />
         <Preference
             android:key="flexboard_hotkey_paste"
-            android:summary="Replace the slots with a copied export"
+            android:summary="Opens a text box to paste an export into"
             android:title="Import" />
 
     </PreferenceCategory>

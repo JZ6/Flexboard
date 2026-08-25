@@ -14,6 +14,10 @@ public class Resources {
         return null;
     }
 
+    public android.util.DisplayMetrics getDisplayMetrics() {
+        return null;
+    }
+
     /** Thrown by the id-addressed lookups when the id names nothing on this build. */
     public static class NotFoundException extends RuntimeException {
     }

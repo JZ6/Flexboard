@@ -1,13 +1,25 @@
 package dev.jz6.flexboard.extension.settings;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.EditText;
+import android.widget.GridLayout;
+import android.widget.ImageView;
+import android.widget.ScrollView;
+import android.widget.TextView;
 
 import com.google.android.libraries.inputmethod.preferencewidgets.CommonPreferenceFragment;
 
 import dev.jz6.flexboard.extension.ime.ImeService;
 import dev.jz6.flexboard.extension.toolbar.Hotkeys;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Flexboard's settings screen, hosted by Gboard's own {@code SettingsActivity}.
@@ -41,9 +53,6 @@ import dev.jz6.flexboard.extension.toolbar.Hotkeys;
  *       id, {@code aA(Preference)} for clicks, {@code d(CharSequence)} (this chain's public
  *       findPreference) for row identity, and on the rows themselves {@code n(CharSequence)}
  *       (setSummary) and {@code N(Drawable)} (setIcon).
- *       There is no getKey to dispatch on — R8 inlined the one-instruction getter out of the dex
- *       entirely — so a row is identified by asking the tree for its key and comparing identity
- *       with the tapped instance.
  * </ul>
  */
 public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
@@ -97,6 +106,26 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     }
 
     /**
+     * The context that can show a dialog: the one the tapped row was constructed with. Every
+     * port {@code Preference} carries it in the field {@code j} — written by the 4-arg
+     * constructor, and consumed by the ported {@code performClick} as the target of
+     * {@code Context.startActivity}, which without {@code FLAG_ACTIVITY_NEW_TASK} means it is an
+     * Activity: the settings host itself. Reading it is reflection over an app class (never a
+     * hidden-SDK surface), and the field is pinned in preflight; any failure answers {@code null}
+     * and the caller falls back to the no-dialog behavior.
+     */
+    private static Context dialogContext(androidx.preference.Preference row) {
+        try {
+            java.lang.reflect.Field field =
+                androidx.preference.Preference.class.getDeclaredField("j");
+            field.setAccessible(true);
+            return (Context) field.get(row);
+        } catch (ReflectiveOperationException | ClassCastException | SecurityException ignored) {
+            return null;
+        }
+    }
+
+    /**
      * Click dispatch on this screen's rows. The ported androidx click chain
      * ({@code Preference.I()V} → the manager's hosted fragment) lands on the fragment class's
      * {@code aA} by name, which is why the obfuscated letters here and on the row stub are
@@ -104,10 +133,9 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
      * the per-slot {@code EditTextPreference} dialogs above all — working.
      *
      * <p>Three row families are intercepted by identity: each {@code flexboard_hotkey_N_icon}
-     * row cycles its slot through the bundled icon pack, and the Export/Import buttons write
-     * and read the clipboard. Every outcome reports through the tapped row's own summary, so a
-     * paste typo is told by the row it happened on rather than by a toast the theme might not
-     * style.
+     * row opens the icon-picker grid, and Export/Import open the blob popups. Rows keep working
+     * without a dialog surface — icons fall back to tap-cycling, import to reading the
+     * clipboard; outcomes always surface in the tapped row's own summary.
      */
     @Override
     public boolean aA(androidx.preference.Preference preference) {
@@ -115,32 +143,19 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
 
         for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
             if (isRow(preference, Hotkeys.iconKey(slot))) {
-                cycleIcon(preference, slot);
+                pickIcon(preference, slot);
                 return true;
             }
         }
-        boolean copy = isRow(preference, "flexboard_hotkey_copy");
-        boolean paste = !copy && isRow(preference, "flexboard_hotkey_paste");
-        if (!copy && !paste) {
-            return super.aA(preference);
-        }
-        Context context = processContext();
-        if (context == null) {
-            preference.n("no app context — try again from the keyboard");
+        if (isRow(preference, "flexboard_hotkey_copy")) {
+            export(preference);
             return true;
         }
-        String outcome = copy
-            ? Hotkeys.exportToClipboard(context)
-            : Hotkeys.importFromClipboard(context);
-        preference.n(outcome);
-        // The once-per-instance sync ran before this tap, i.e. before the import wrote the store
-        // — re-run it so the rows show what the import landed, not what it replaced. "imported"
-        // is the one success prefix among the outcome strings; failures leave the screen as is.
-        if (!copy && outcome.startsWith("imported")) {
-            iconsSynced = false;
-            syncRowIconsOnce();
+        if (isRow(preference, "flexboard_hotkey_paste")) {
+            importBlob(preference);
+            return true;
         }
-        return true;
+        return super.aA(preference);
     }
 
     /**
@@ -156,40 +171,209 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         return d(key) == tapped;
     }
 
+    // -----------------------------------------------------------------------------------------
+    // Icon picker
+    // -----------------------------------------------------------------------------------------
+
     /**
-     * The icon-row tap: advance the slot's stored icon and show the result on both of the slot's
-     * rows — the icon row itself (icon + the name as its summary) and the text row above it.
+     * The icon row's tap. Preferred: a grid dialog of the whole bundled pack in a framework
+     * AlertDialog — appcompat is stripped from Gboard, so the framework class under the host
+     * theme is as native as dialogs get here. Fallback when the row's context can't host one:
+     * tap-cycling (the pre-dialog behavior), which needs no UI at all.
      */
-    private void cycleIcon(androidx.preference.Preference iconRow, int slot) {
+    private void pickIcon(androidx.preference.Preference iconRow, int slot) {
+        Context ui = dialogContext(iconRow);
+        if (ui != null) {
+            try {
+                showIconDialog(ui, iconRow, slot);
+                return;
+            } catch (Exception dialogUnavailable) {
+                // fall through to the cycle fallback
+            }
+        }
         Context context = processContext();
         if (context == null) {
             iconRow.n("no app context — try again from the keyboard");
             return;
         }
-        String picked = Hotkeys.cycleIcon(context, slot);
-        // One Drawable instance holds exactly one view callback, so each row gets its own
-        // inflation rather than two ImageViews sharing an object.
-        Drawable icon = Hotkeys.drawableOf(context, picked);
-        if (icon != null) {
-            iconRow.N(icon);
+        Hotkeys.cycleIcon(context, slot);
+        redrawSlot(context, slot);
+    }
+
+    private void showIconDialog(Context ui, androidx.preference.Preference iconRow, int slot) {
+        GridLayout grid = new GridLayout(ui);
+        grid.setColumnCount(4);
+        int cell = dp(ui, 48);
+        int padding = dp(ui, 8);
+        String current = Hotkeys.currentIconToken(ui, slot);
+        // Listeners attach after the dialog exists, so they can dismiss it; the two lists are
+        // index-parallel for the same reason the old picker kept the correspondence by position.
+        List<ImageView> items = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        for (String name : Hotkeys.choices()) {
+            Drawable glyph = Hotkeys.drawableOf(ui, name);
+            if (glyph == null) {
+                continue;
+            }
+            ImageView item = new ImageView(ui);
+            item.setImageDrawable(glyph);
+            item.setLayoutParams(new ViewGroup.LayoutParams(cell, cell));
+            item.setPadding(padding, padding, padding, padding);
+            if (name.equals(current)) {
+                item.setAlpha(0.35f);
+            }
+            grid.addView(item);
+            items.add(item);
+            names.add(name);
         }
-        androidx.preference.Preference textRow = d(Hotkeys.textKey(slot));
-        if (textRow != null) {
-            Drawable textIcon = Hotkeys.drawableOf(context, picked);
-            if (textIcon != null) {
-                textRow.N(textIcon);
+        // The framework dialog's custom panel doesn't scroll on its own — on a short window the
+        // bottom cells (and the buttons) would be unreachable without the wrapper.
+        ScrollView scroll = new ScrollView(ui);
+        scroll.addView(grid);
+        final AlertDialog dialog = new AlertDialog.Builder(ui)
+            .setTitle("Hotkey " + slot + " icon")
+            .setView(scroll)
+            .setNegativeButton("Reset to default", (dlog, which) -> {
+                Hotkeys.resetIconToken(ui, slot);
+                redrawSlot(ui, slot);
+                // The dialog stays open after a reset — move the "current" dimming onto the
+                // slot's default cell rather than leaving it on the cell that was chosen.
+                String now = Hotkeys.currentIconToken(ui, slot);
+                for (int i = 0; i < items.size(); i++) {
+                    items.get(i).setAlpha(names.get(i).equals(now) ? 0.35f : 1f);
+                }
+            })
+            .setNeutralButton("Cancel", null)
+            .show();
+        for (int i = 0; i < items.size(); i++) {
+            final int index = i;
+            items.get(i).setOnClickListener(v -> {
+                Hotkeys.setIconToken(ui, slot, names.get(index));
+                redrawSlot(ui, slot);
+                dialog.dismiss();
+            });
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Export / Import
+    // -----------------------------------------------------------------------------------------
+
+    /** Export: copy the blob to the clipboard as always, and additionally show it in a dialog. */
+    private void export(androidx.preference.Preference row) {
+        Context context = processContext();
+        if (context == null) {
+            row.n("no app context — try again from the keyboard");
+            return;
+        }
+        row.n(Hotkeys.exportToClipboard(context));
+        Context ui = dialogContext(row);
+        if (ui == null) {
+            return;
+        }
+        try {
+            showExportDialog(ui, context);
+        } catch (Exception dialogUnavailable) {
+            // the copy + summary already happened; the popup is best-effort
+        }
+    }
+
+    private void showExportDialog(Context ui, Context store) {
+        TextView blob = new TextView(ui);
+        blob.setText(Hotkeys.exportText(store));
+        blob.setTextIsSelectable(true);
+        int padding = dp(ui, 16);
+        blob.setPadding(padding, padding, padding, padding);
+        ScrollView scroll = new ScrollView(ui);
+        scroll.addView(blob);
+        new AlertDialog.Builder(ui)
+            .setTitle("Exported hotkeys")
+            .setView(scroll)
+            .setPositiveButton("OK", null)
+            .show();
+    }
+
+    /** Import: a paste box with Apply; falls back to reading the clipboard with no dialog. */
+    private void importBlob(androidx.preference.Preference row) {
+        Context ui = dialogContext(row);
+        if (ui != null) {
+            try {
+                showImportDialog(ui, row);
+                return;
+            } catch (Exception dialogUnavailable) {
+                // fall through to the clipboard path
             }
         }
-        iconRow.n(Hotkeys.displayName(picked));
+        Context context = processContext();
+        if (context == null) {
+            row.n("no app context — try again from the keyboard");
+            return;
+        }
+        String outcome = Hotkeys.importFromClipboard(context);
+        row.n(outcome);
+        if (outcome.startsWith("imported")) {
+            redrawAllRows(context);
+        }
+    }
+
+    private void showImportDialog(final Context ui, final androidx.preference.Preference row) {
+        final EditText field = new EditText(ui);
+        field.setMinLines(6);
+        field.setGravity(Gravity.TOP);
+        field.setHint("Paste a Flexboard export here");
+        int padding = dp(ui, 16);
+        field.setPadding(padding, padding, padding, padding);
+        new AlertDialog.Builder(ui)
+            .setTitle("Import hotkeys")
+            .setView(field)
+            .setPositiveButton("Apply", (dlog, which) -> {
+                String blob = field.getText().toString();
+                String outcome = Hotkeys.importFromText(ui, blob);
+                row.n(outcome);
+                if (outcome.startsWith("imported")) {
+                    redrawAllRows(ui);
+                }
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Redrawing
+    // -----------------------------------------------------------------------------------------
+
+    private static int dp(Context context, int value) {
+        return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    /** Live-updates the icon and summary of one slot's two rows from the store. */
+    private void redrawSlot(Context context, int slot) {
+        String token = Hotkeys.currentIconToken(context, slot);
+        setRowIcon(d(Hotkeys.iconKey(slot)), Hotkeys.displayName(token), context, token);
+        setRowIcon(d(Hotkeys.textKey(slot)), null, context, token);
+    }
+
+    private static void setRowIcon(androidx.preference.Preference row, String summary,
+            Context context, String token) {
+        if (row == null) {
+            return;
+        }
+        Drawable icon = Hotkeys.drawableOf(context, token);
+        if (icon != null) {
+            // One Drawable instance holds exactly one view callback — inflate per row.
+            row.N(icon);
+        }
+        if (summary != null) {
+            row.n(summary);
+        }
     }
 
     /**
-     * Redraws every row's icon from the store, once per screen instance (and once more after each
-     * successful import — that tap's once-a-pass runs *before* the blob lands).
+     * Redraws every row's icon from the store, once per screen instance at first tap, and again
+     * wholesale after a successful import — the rows show what the store holds, not the XML.
      *
      * <p>The rows' XML icons are the slot *defaults*: the port exposes no row-bind hook a
-     * compile-time stub can override, so a stored override can't appear at inflation. Any tap on
-     * the screen runs this first, so the defaults a user might be looking at heal on the way in.
+     * compile-time stub can override, so a stored override can't appear at inflation.
      */
     private void syncRowIconsOnce() {
         if (iconsSynced) {
@@ -202,23 +386,12 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             return;
         }
         iconsSynced = true;
+        redrawAllRows(context);
+    }
+
+    private void redrawAllRows(Context context) {
         for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
-            String token = Hotkeys.currentIconToken(context, slot);
-            androidx.preference.Preference iconRow = d(Hotkeys.iconKey(slot));
-            if (iconRow != null) {
-                Drawable icon = Hotkeys.drawableOf(context, token);
-                if (icon != null) {
-                    iconRow.N(icon);
-                }
-                iconRow.n(Hotkeys.displayName(token));
-            }
-            androidx.preference.Preference textRow = d(Hotkeys.textKey(slot));
-            if (textRow != null) {
-                Drawable textIcon = Hotkeys.drawableOf(context, token);
-                if (textIcon != null) {
-                    textRow.N(textIcon);
-                }
-            }
+            redrawSlot(context, slot);
         }
     }
 }
