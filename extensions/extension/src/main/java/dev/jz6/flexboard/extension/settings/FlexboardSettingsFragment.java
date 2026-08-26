@@ -450,7 +450,9 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             return;
         }
         String text = Hotkeys.textOf(context, slot);
-        row.n(text.isEmpty() ? "Tap to edit" : text);
+        // The stored text is painted verbatim, but the empty-test mirrors the toolbar's
+        // shown-gate: a whitespace-only slot draws no button, so it claims "Tap to edit".
+        row.n(text.trim().isEmpty() ? "Tap to edit" : text);
         Drawable icon = Hotkeys.drawableOf(context, Hotkeys.currentIconToken(context, slot));
         if (icon != null) {
             row.N(icon);

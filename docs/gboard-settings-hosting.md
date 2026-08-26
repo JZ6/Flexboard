@@ -118,9 +118,11 @@ Preference.I()V                    the ported performClick
   -> s:Landroid/content/Intent;    fallback when aA returns false
 ```
 
-`super.aA(preference)` keeps the untouched rows working (the swipe slider, About — and the
-hotkey rows' own stock text editors when our composite dialog is unavailable), since it is the
-base implementation, not a null default.
+`super.aA(preference)` keeps the untouched rows working (the swipe slider, the About row), since
+it is the base implementation, not a null default. Do **not** hand a hotkey row back to it: the
+hotkeys are plain Preferences on purpose (a dialog-backed row shows the stock editor ahead of
+`aA` — the two-dialogs bug), so "fall back to super" is a dead row. The hotkey tap's real
+fallback is the summary note written by the fragment.
 
 The obfuscated surface this rides on, all pinned by body shape **and access flags** in
 preflight's settings section:
@@ -188,8 +190,8 @@ doesn't matter to the read; its *name* does, which is what the preflight pin ass
   findPreference — the first is absent, the second is protected (see "Intercepting row clicks").
 - A hotkey edit doesn't reach the toolbar → the write went to a key the toolbar emission does
   not read (`Hotkeys.textKey`/`iconKey` are the single source; the row's XML key must equal
-  `textKey`, and the composite dialog must call `i()` too or the screen shows a different value
-  than the store holds).
+  `textKey`, and the composite dialog's OK path writes the file lane only — the summary is
+  repainted from the file by redrawSlot).
 - Row tap crashes with `Fragment$InstantiationException` → the class name on the row does not
   match the extension class, or the constructor/visibility contract broke.
 - Screen opens blank → `aB()` returned 0 (no Context, or the resource name in the XML and the

@@ -111,8 +111,8 @@
           slot row above opens the composite editor (text field + icon grid of the bundled
           pack), Export copies the blob AND shows it in a dialog, Import shows a paste box with
           Apply. The dialogs hang off the tapped row's own context (the port's context field,
-          pinned in preflight); when that's unavailable a slot row falls through to its stock
-          EditText editor and Import reads the clipboard.
+          pinned in preflight); when that's unavailable a slot row reports the miss in its
+          summary instead of a dialog, and Import reads the clipboard.
         -->
         <Preference
             android:key="flexboard_hotkey_copy"

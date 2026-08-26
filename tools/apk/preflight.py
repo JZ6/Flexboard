@@ -1778,19 +1778,26 @@ def run(dl, apk=None):
               str(writes))
 
     # The composite dialog constructs a probe EditTextPreference on the spot to reach the layout
-    # id on the DialogPreference chain. Pins: the 2-arg ctor exists and is public (else
-    # construction dies at link time), and the chain really does pass through DialogPreference,
-    # whose `f` field the reflection walks down to.
+    # id on the DialogPreference chain. Pins: the 2-arg ctor exists, has a body, and is PUBLIC on
+    # a public concrete class — an invoke-direct to anything less throws IllegalAccessError, an
+    # Error that the dialogs' catch(Exception) fallback deliberately around would sail past. And
+    # the chain really does pass through DialogPreference, whose `f` field the reflection walks
+    # down to.
     etp = 'Landroidx/preference/EditTextPreference;'
-    c, ins = body(dl, f'{etp}-><init>({CONTEXT}Landroid/util/AttributeSet;)V')
-    if check('settings: the EditTextPreference 2-arg ctor exists', c is not None):
-        af = class_access_flags(dl, etp)
-        check('settings: EditTextPreference is public and concrete',
-              af is not None and af & 0x1 == 1 and af & 0x400 == 0,
-              f'access={af is not None and hex(af)}')
-        chain = superclass_chain(dl, etp)
-        check('settings: EditTextPreference descends from DialogPreference',
-              'Landroidx/preference/DialogPreference;' in chain, str(chain))
+    d_e, _s_e, cd_e = find_class(dl, etp)
+    ctors = [(m, af, co) for m, af, co in (d_e.class_methods(cd_e) if cd_e else [])
+             if m == f'{etp}-><init>({CONTEXT}Landroid/util/AttributeSet;)V']
+    check('settings: the EditTextPreference 2-arg ctor exists, public and concrete',
+          bool(ctors) and ctors[0][1] & 0x1 == 1 and ctors[0][1] & 0x400 == 0
+          and ctors[0][2] != 0,
+          f'access={ctors and hex(ctors[0][1])}')
+    af = class_access_flags(dl, etp)
+    check('settings: EditTextPreference is public and concrete',
+          af is not None and af & 0x1 == 1 and af & 0x400 == 0,
+          f'access={af is not None and hex(af)}')
+    chain = superclass_chain(dl, etp)
+    check('settings: EditTextPreference descends from DialogPreference',
+          'Landroidx/preference/DialogPreference;' in chain, str(chain))
 
     # The stock editor-dialog borrow: the popups inflate Gboard's own editor-dialog layout, the
     # id learned at runtime off DialogPreference's `f` field (the dialogLayoutResId). Pins: the

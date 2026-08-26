@@ -437,10 +437,6 @@ def _check_screen_contract(problems, kotlin):
 
     # Staged in smali with no settings row by design: step-scale's KDoc pins "nothing uses a UI
     # value for it" — the key stays int-typed against the pre-native Activity, and the engine
-    # just reads the seeded default. Declared here so the rule still covers keys nobody
-    # thought about.
-    # Staged in smali with no settings row by design: step-scale's KDoc pins "nothing uses a UI
-    # value for it" — the key stays int-typed against the pre-native Activity, and the engine
     # just reads the seeded default. HOLD_DELAY_KEY joins it — the row was dropped ("default 0,
     # nobody wants a delay") while the smali read stays so blobless users get exactly 0.
     # Declared here so the rule still covers keys nobody thought about.
