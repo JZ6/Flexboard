@@ -133,17 +133,17 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
      *
      * <p>The layout id is never written down: every port DialogPreference carries it in field
      * {@code f} (written in its 4-arg ctor from the theme's dialog-preference style, read by the
-     * dialog base's onCreateDialog — both facts pinned in preflight), so any hotkey row hands it
-     * over by reflection. Any failure answers null and the caller falls back to its plain
+     * dialog base's onCreateDialog — both facts pinned in preflight). This screen holds no
+     * DialogPreference rows to read it from (plain rows, on purpose — see aA), so a probe
+     * EditTextPreference is constructed on the spot: its public 2-argument constructor fills
+     * {@code f} the same way. Any failure answers null and the caller falls back to its plain
      * widgets.
      */
     private View stockEditorBlock(Context ui) {
-        androidx.preference.Preference editorRow = d(Hotkeys.textKey(1));
-        if (editorRow == null) {
-            return null;
-        }
         try {
-            Class<?> type = editorRow.getClass();
+            androidx.preference.EditTextPreference probe =
+                new androidx.preference.EditTextPreference(ui, null);
+            Class<?> type = probe.getClass();
             java.lang.reflect.Field layout = null;
             while (layout == null && type != null) {
                 try {
@@ -156,7 +156,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
                 return null;
             }
             layout.setAccessible(true);
-            int layoutId = layout.getInt(editorRow);
+            int layoutId = layout.getInt(probe);
             if (layoutId == 0) {
                 return null;
             }
@@ -188,12 +188,14 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
      * ({@code Preference.I()V} → the manager's hosted fragment) lands on the fragment class's
      * {@code aA} by name, which is why the obfuscated letters here and on the row stub are
      * load-bearing, and why {@code super.aA(...)} is the fallback that keeps the stock rows —
-     * falling back IS the point here: each hotkey row is still an {@code EditTextPreference},
-     * so a dead dialog path lands the user in the stock text editor rather than a dead row.
+     * the swipe slider and the About row — working.
      *
      * <p>One row per slot drives one composite dialog (text field + icon grid), intercepted by
-     * identity; Export/Import open the blob popups. Export needs no dialog context beyond best
-     * effort (clipboard + summary first), and Import without one reads the clipboard instead.
+     * identity; Export/Import open the blob popups. The hotkey rows are PLAIN Preferences:
+     * keep them EditTextPreference-shaped and the port's performClick opens the stock text
+     * editor <b>before</b> aA ever runs (performClick fires onClick, which for a DialogPreference
+     * shows a dialog, and only then the tree listener) — the two-stacked-dialogs bug. When the
+     * composite can't host at all, the failure surfaces in the row summary instead of a dialog.
      */
     @Override
     public boolean aA(androidx.preference.Preference preference) {
@@ -202,7 +204,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
             if (isRow(preference, Hotkeys.textKey(slot))) {
                 if (!editHotkey(preference, slot)) {
-                    return super.aA(preference);
+                    preference.n("couldn't open the editor — reopen Settings from the keyboard");
                 }
                 return true;
             }
@@ -238,8 +240,8 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     /**
      * One row's tap: the composite editor — the slot's text field above the bundled-pack icon
      * grid — when the row carries a host Activity context. Answers {@code false} when it can't
-     * host one, so the click falls to {@code super.aA} and the row's stock text editor opens:
-     * a row that does nothing is the failure this keeps impossible.
+     * so the caller can report instead of silently eating the tap (the row is a plain Preference;
+     * super.aA would show nothing at all).
      */
     private boolean editHotkey(androidx.preference.Preference row, int slot) {
         Context ui = dialogContext(row);
@@ -316,12 +318,6 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             .setPositiveButton("OK", (dlog, which) -> {
                 String text = field.getText().toString();
                 Hotkeys.setText(ui, slot, text);
-                // The store file and the bridge's in-memory store are two lanes feeding one
-                // screen — writing text through the row's own setter keeps them (and the stock
-                // editor, and the port's summary provider) in agreement, like on import.
-                if (row instanceof androidx.preference.EditTextPreference) {
-                    ((androidx.preference.EditTextPreference) row).i(text);
-                }
                 if (!pending[0].equals(seed)) {
                     Hotkeys.setIconToken(ui, slot, pending[0]);
                 }
@@ -443,16 +439,18 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     }
 
     /**
-     * Live-updates one slot row's icon from the store. The summary is the port's own
-     * SummaryProvider showing the committed text — never touch it with {@code n()}: that setter
-     * throws {@code IllegalStateException} when a provider is installed, and the port installs
-     * one on every EditTextPreference row.
+     * Live-updates one slot's row from the store: icon, and the summary showing the committed
+     * text ("Tap to edit" when empty). The summary is ours — the rows being plain Preferences is
+     * what makes {@code n()} safe to call on them (on an EditTextPreference row the port's
+     * ctor-installed SummaryProvider would have it throw).
      */
     private void redrawSlot(Context context, int slot) {
         androidx.preference.Preference row = d(Hotkeys.textKey(slot));
         if (row == null) {
             return;
         }
+        String text = Hotkeys.textOf(context, slot);
+        row.n(text.isEmpty() ? "Tap to edit" : text);
         Drawable icon = Hotkeys.drawableOf(context, Hotkeys.currentIconToken(context, slot));
         if (icon != null) {
             row.N(icon);
@@ -481,25 +479,12 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     }
 
     /**
-     * After a blob lands: push each slot's text through its row's own persistence lane
-     * ({@code EditTextPreference.i}, the ported setText), then repaint the icons.
+     * After a blob lands, repaint every row from the store — text summaries and icons alike.
      *
-     * <p>The blob write goes to the SharedPreferences file directly, but a row's dialog reads
-     * through the datastore bridge into Gboard's store, whose in-memory view never hears about
-     * our file write — the import took effect for the toolbar while the settings rows kept
-     * showing the pre-import text. {@code i} writes the same value through the bridge (and
-     * persists, so both lanes agree from then on), which is also why the fallback clipboard path
-     * needs it identically. {@code ae} alone would do the persist half, but it is protected —
-     * the stub deliberately omits it so that call fails to compile rather than to link on device.
+     * <p>The blob write goes to the store file directly; the rows' own summaries are painted by
+     * us from that same file (see redrawSlot), so there is no second store lane to leave behind.
      */
     private void onImportApplied(Context context) {
-        for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
-            androidx.preference.Preference row = d(Hotkeys.textKey(slot));
-            if (row instanceof androidx.preference.EditTextPreference) {
-                ((androidx.preference.EditTextPreference) row)
-                    .i(Hotkeys.textOf(context, slot));
-            }
-        }
         redrawAllRows(context);
     }
 

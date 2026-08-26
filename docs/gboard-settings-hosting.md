@@ -143,11 +143,13 @@ to compile instead). Row identity therefore rides the fragment's own chain:
 `d("flexboard_hotkey_3_text") == tapped`.
 
 Rows also cannot refresh at bind time — no bind-hook letter is known to the stub — so the
-settings fragment re-paints the row icons from the store on the *first intercepted tap* of each
-screen instance (`syncRowIconsOnce`). Between opening the screen and the first tap a row shows
-its XML default icon; the toolbar itself always reflects the store. The text rows' summaries are
-the port's own SummaryProvider (it shows the committed text) — do not `n()` an
-EditTextPreference row: its setter throws when a provider is installed.
+settings fragment re-paints the rows from the store (icon, and the summary showing the committed
+text) on the *first intercepted tap* of each screen instance (`syncRowIconsOnce`). Between
+opening the screen and the first tap a row shows its XML default icon and static summary; the
+toolbar itself always reflects the store. The hotkey rows are deliberately **plain**
+Preferences: a DialogPreference's onClick shows the stock dialog ahead of `aA` (the
+two-dialogs bug), so no dialog-backed row may sit on this screen. Plain rows also own `n()` —
+the provider-guarded throw only exists on EditTextPreference rows, of which there are none.
 
 ## Dialogs: popups off the row's own context
 
@@ -167,15 +169,14 @@ doesn't matter to the read; its *name* does, which is what the preflight pin ass
   primitives. The theme (`alertDialogTheme`, colours, corner shapes) inherits from the host
   Activity, so the chrome reads native; only the content is ours.
 - Every dialog path is wrapped in a typed catch. Any failure — no field, no activity, a
-  `BadTokenException` — falls back to the no-dialog behavior (each hotkey row is an
-  EditTextPreference and falls through to its stock text editor — icon editing is lost there,
-  nothing else; import reads the clipboard; export is clipboard + summary). The composite
-  hotkey editor is *added* on top of the stock dialog path, never instead of it.
+  `BadTokenException` — falls back to the no-dialog behavior (a hotkey row reports it in its
+  summary instead of showing an editor; import reads the clipboard; export is
+  clipboard + summary). The popups are layered on top of the screen, never instead of it.
 
 ## Failure checklist
 
-- Tap works but no popup appears (a hotkey shows only the small stock text editor; import reads
-  the clipboard silently) → the dialog path fell back: the `j` field moved (preflight's
+- Tap works but no popup appears (a hotkey row instead updates its summary with the unavailable
+  note; import reads the clipboard silently) → the dialog path fell back: the `j` field moved (preflight's
   performClick pin should have failed first) or the row context was not an Activity on that
   path. The fallback is deliberate; the regression to hunt is the missed popup, not a crash.
 - Row tap does nothing at all (no dialog, no outcome text) → the click chain moved: preflight's

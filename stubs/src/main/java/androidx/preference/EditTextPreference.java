@@ -1,21 +1,22 @@
 package androidx.preference;
 
+import android.content.Context;
+import android.util.AttributeSet;
+
 /**
- * Compile-time stub of the port's EditTextPreference — the text rows of the settings screen.
+ * Compile-time stub of the port's EditTextPreference.
  *
- * <p>One member matters: {@code i(String)} is the ported {@code setText} — public final on
- * Gboard 18.0.3; it stores the value into the row's field, persists it through the datastore
- * bridge into Gboard's own store, propagates dependency state and notifies the row. That is the
- * lane the stock editor dialog writes through, and the one a blob import must also use:
- * {@code Hotkeys.applyBlob} writes the SharedPreferences file directly, which leaves the store's
- * in-memory view stale — imports changed the toolbar but not the rows. ({@code ae(String)},
- * persistString, is {@code protected} — that is exactly why this seam is {@code i} and not a
- * direct persist; ask preflight before trusting either's visibility.)
+ * <p>The settings screen no longer rows any of these — a DialogPreference's {@code onClick} in
+ * the port's performClick fires the stock dialog ahead of the fragment's {@code aA} intercept —
+ * but the composite/popup dialogs still inflate the stock editor's content view, and the layout
+ * id lives on the superclass chain (DialogPreference's {@code f} field). The cost of learning it
+ * as a constant is a per-build lookup; instead this stub exists so the fragment can construct a
+ * probe instance on demand and read {@code f} off it reflectively. Only the constructor is
+ * needed.
  */
 public class EditTextPreference extends Preference {
 
-    /** setText — store + notify, through the row's own persistence lane. */
-    public void i(String text) {
-        // stub
+    public EditTextPreference(Context context, AttributeSet attrs) {
+        super();
     }
 }

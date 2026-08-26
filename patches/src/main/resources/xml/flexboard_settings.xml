@@ -46,66 +46,61 @@
           the next keyboard open through the start-input refresh.
         -->
         <!--
-          One plain text row per slot: what the tap commits. The EditTextPreference widget is
-          bundled by Gboard's androidx port, so the dialog is stock. A slot with no text passes
-          no shown-gate at toolbar build time, so blank rows simply don't render.
-        -->
-        <!--
           One row per slot is the whole editor: the tap is intercepted by
           FlexboardSettingsFragment.aA(Preference) — the port's click dispatch — and opens the
-          composite dialog (text field + the bundled-pack icon grid). The row stays an
-          EditTextPreference so a lost dialog path falls back to the stock text editor rather
-          than a dead row. The port installs a SummaryProvider on these rows by default (the
-          current text shows under the title, for free), and identification is by identity
-          against the screen tree — the port's getKey does not survive R8. The row icon shows a
-          slot default until the first-tap sync repaints from the store; the port exposes no
-          row-bind hook.
+          composite dialog (text field + the bundled-pack icon grid). The rows are PLAIN
+          Preference widgets on purpose: a DialogPreference's onClick fires the stock editor
+          ahead of our intercept, which is how one tap produced two stacked dialogs. So this
+          screen carries no dialog-backed rows at all.
+          Identification is by identity against the screen tree — the port's getKey does not
+          survive R8. The row's icon and its summary (the committed text) are painted from the
+          store by the first-tap sync; the port exposes no row-bind hook.
         -->
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_alternate_email"
             android:key="flexboard_hotkey_1_text"
             android:title="Hotkey 1" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_password"
             android:key="flexboard_hotkey_2_text"
             android:title="Hotkey 2" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_phone_enabled"
             android:key="flexboard_hotkey_3_text"
             android:title="Hotkey 3" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_local_post_office"
             android:key="flexboard_hotkey_4_text"
             android:title="Hotkey 4" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_home_pin"
             android:key="flexboard_hotkey_5_text"
             android:title="Hotkey 5" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_work"
             android:key="flexboard_hotkey_6_text"
             android:title="Hotkey 6" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_favorite"
             android:key="flexboard_hotkey_7_text"
             android:title="Hotkey 7" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_kid_star"
             android:key="flexboard_hotkey_8_text"
             android:title="Hotkey 8" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_credit_card"
             android:key="flexboard_hotkey_9_text"
             android:title="Hotkey 9" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_hexagon"
             android:key="flexboard_hotkey_10_text"
             android:title="Hotkey 10" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_hive"
             android:key="flexboard_hotkey_11_text"
             android:title="Hotkey 11" />
-        <androidx.preference.EditTextPreference
+        <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_sports_soccer"
             android:key="flexboard_hotkey_12_text"
             android:title="Hotkey 12" />
