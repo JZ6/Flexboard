@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
@@ -127,6 +128,62 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     }
 
     /**
+     * The dialog-content view Gboard's own text-editor dialog gets — inflated at runtime, so our
+     * popups look stock instead of a bare widget in a window.
+     *
+     * <p>The layout id is never written down: every port DialogPreference carries it in field
+     * {@code f} (written in its 4-arg ctor from the theme's dialog-preference style, read by the
+     * dialog base's onCreateDialog — both facts pinned in preflight), so any hotkey row hands it
+     * over by reflection. Any failure answers null and the caller falls back to its plain
+     * widgets.
+     */
+    private View stockEditorBlock(Context ui) {
+        androidx.preference.Preference editorRow = d(Hotkeys.textKey(1));
+        if (editorRow == null) {
+            return null;
+        }
+        try {
+            Class<?> type = editorRow.getClass();
+            java.lang.reflect.Field layout = null;
+            while (layout == null && type != null) {
+                try {
+                    layout = type.getDeclaredField("f");
+                } catch (NoSuchFieldException e) {
+                    type = type.getSuperclass();
+                }
+            }
+            if (layout == null) {
+                return null;
+            }
+            layout.setAccessible(true);
+            int layoutId = layout.getInt(editorRow);
+            if (layoutId == 0) {
+                return null;
+            }
+            return LayoutInflater.from(ui).inflate(layoutId, null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** The first EditText in a view tree (the stock block wraps one), or null. */
+    private static EditText findEditText(View view) {
+        if (view instanceof EditText) {
+            return (EditText) view;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                EditText hit = findEditText(group.getChildAt(i));
+                if (hit != null) {
+                    return hit;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Click dispatch on this screen's rows. The ported androidx click chain
      * ({@code Preference.I()V} → the manager's hosted fragment) lands on the fragment class's
      * {@code aA} by name, which is why the obfuscated letters here and on the row stub are
@@ -204,11 +261,20 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         int pad = dp(ui, 16);
         column.setPadding(pad, 0, pad, dp(ui, 8));
 
-        final EditText field = new EditText(ui);
+        // Stock look for the text half too when the editor dialog's own content inflates.
+        View stock = stockEditorBlock(ui);
+        final EditText field;
+        if (stock != null && findEditText(stock) != null) {
+            field = findEditText(stock);
+            column.addView(stock, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        } else {
+            field = new EditText(ui);
+            column.addView(field, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
         field.setText(Hotkeys.textOf(ui, slot));
         field.setHint("Text to commit");
-        column.addView(field, new ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // Grid of the bundled pack, dimmed on the current choice. The pick is pending until OK
         // — taps move the dim only — so Cancel discards both halves of the edit evenly.
@@ -336,15 +402,26 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     }
 
     private void showImportDialog(final Context ui, final androidx.preference.Preference row) {
-        final EditText field = new EditText(ui);
-        field.setMinLines(6);
-        field.setGravity(Gravity.TOP);
+        // Stock look when we can borrow the editor dialog's own content view (themed ScrollView
+        // + framed EditText); a bare padded field when we can't.
+        View stock = stockEditorBlock(ui);
+        final EditText field;
+        final View content;
+        if (stock != null && findEditText(stock) != null) {
+            field = findEditText(stock);
+            content = stock;
+        } else {
+            field = new EditText(ui);
+            field.setMinLines(6);
+            field.setGravity(Gravity.TOP);
+            int padding = dp(ui, 16);
+            field.setPadding(padding, padding, padding, padding);
+            content = field;
+        }
         field.setHint("Paste a Flexboard export here");
-        int padding = dp(ui, 16);
-        field.setPadding(padding, padding, padding, padding);
         new AlertDialog.Builder(ui)
             .setTitle("Import hotkeys")
-            .setView(field)
+            .setView(content)
             .setPositiveButton("Apply", (dlog, which) -> {
                 String blob = field.getText().toString();
                 String outcome = Hotkeys.importFromText(ui, blob);
