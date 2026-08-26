@@ -15,7 +15,15 @@ public class ViewGroup extends View {
         // stub
     }
 
+    public void addView(View child, LayoutParams params) {
+        // stub
+    }
+
     public static class LayoutParams {
+
+        /** API-stable since API 1. */
+        public static final int MATCH_PARENT = -1;
+        public static final int WRAP_CONTENT = -2;
 
         public LayoutParams(int width, int height) {
             // stub

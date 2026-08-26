@@ -106,8 +106,8 @@ namespace, as Gboard's own binaries carry it) and persists once, on first bind.
 ## Intercepting row clicks
 
 The screen's rows are all stock widgets, but a row whose tap must run Flexboard code — the
-per-slot Icon rows, the Export/Import buttons — is intercepted in the hosted fragment's
-`aA(Landroidx/preference/Preference;)Z`, the port of `PreferenceFragmentCompat.
+per-slot composite hotkey editor, the Export/Import buttons — is intercepted in the hosted
+fragment's `aA(Landroidx/preference/Preference;)Z`, the port of `PreferenceFragmentCompat.
 onPreferenceTreeClick`:
 
 ```
@@ -118,8 +118,9 @@ Preference.I()V                    the ported performClick
   -> s:Landroid/content/Intent;    fallback when aA returns false
 ```
 
-`super.aA(preference)` keeps the untouched rows (the EditText dialogs, anything that navigates)
-working — it is the base implementation, not a null default.
+`super.aA(preference)` keeps the untouched rows working (the swipe slider, About — and the
+hotkey rows' own stock text editors when our composite dialog is unavailable), since it is the
+base implementation, not a null default.
 
 The obfuscated surface this rides on, all pinned by body shape **and access flags** in
 preflight's settings section:
@@ -139,19 +140,21 @@ just existence: `Preference;->t(String)` *is* the real findPreference, sitting r
 the dex — but `protected`, so calling it from the fragment throws `IllegalAccessError` on the
 first tap (caught in review, before release; the extension's stub omits it so a stray call fails
 to compile instead). Row identity therefore rides the fragment's own chain:
-`d("flexboard_hotkey_3_icon") == tapped`.
+`d("flexboard_hotkey_3_text") == tapped`.
 
 Rows also cannot refresh at bind time — no bind-hook letter is known to the stub — so the
-settings fragment re-draws the icon rows from the store on the *first intercepted tap* of each
-screen instance (`syncRowIconsOnce`). Between opening the screen and the first tap, an icon row
-shows its XML default; the toolbar itself always reflects the store.
+settings fragment re-paints the row icons from the store on the *first intercepted tap* of each
+screen instance (`syncRowIconsOnce`). Between opening the screen and the first tap a row shows
+its XML default icon; the toolbar itself always reflects the store. The text rows' summaries are
+the port's own SummaryProvider (it shows the committed text) — do not `n()` an
+EditTextPreference row: its setter throws when a provider is installed.
 
 ## Dialogs: popups off the row's own context
 
-The icon picker and the export/import popups are hand-built dialogs — but they hang off
-**Gboard's** theme, not an invented one. Every row object carries the context it was constructed
-with (the settings host Activity) in the `j` field: written in the 4-arg constructor, and
-consumed by the ported `performClick` via `Context.startActivity` **without**
+The composite hotkey editor and the export/import popups are hand-built dialogs — but they hang
+off **Gboard's** theme, not an invented one. Every row object carries the context it was
+constructed with (the settings host Activity) in the `j` field: written in the 4-arg
+constructor, and consumed by the ported `performClick` via `Context.startActivity` **without**
 `FLAG_ACTIVITY_NEW_TASK` — the proof it is an Activity, not a wrapper. (The field's visibility
 doesn't matter to the read; its *name* does, which is what the preflight pin asserts.)
 
@@ -164,13 +167,15 @@ doesn't matter to the read; its *name* does, which is what the preflight pin ass
   primitives. The theme (`alertDialogTheme`, colours, corner shapes) inherits from the host
   Activity, so the chrome reads native; only the content is ours.
 - Every dialog path is wrapped in a typed catch. Any failure — no field, no activity, a
-  `BadTokenException` — falls back to the no-dialog behavior (icons tap-cycle, import reads the
-  clipboard, export is clipboard + summary). Sunset a fallback only when its caller proves dead.
+  `BadTokenException` — falls back to the no-dialog behavior (each hotkey row is an
+  EditTextPreference and falls through to its stock text editor — icon editing is lost there,
+  nothing else; import reads the clipboard; export is clipboard + summary). The composite
+  hotkey editor is *added* on top of the stock dialog path, never instead of it.
 
 ## Failure checklist
 
-- Tap works but no popup appears (icon tap cycles instead of opening the grid, import copies
-  from the clipboard silently) → the dialog path fell back: the `j` field moved (preflight's
+- Tap works but no popup appears (a hotkey shows only the small stock text editor; import reads
+  the clipboard silently) → the dialog path fell back: the `j` field moved (preflight's
   performClick pin should have failed first) or the row context was not an Activity on that
   path. The fallback is deliberate; the regression to hunt is the missed popup, not a crash.
 - Row tap does nothing at all (no dialog, no outcome text) → the click chain moved: preflight's
@@ -180,9 +185,10 @@ doesn't matter to the read; its *name* does, which is what the preflight pin ass
   `IllegalAccessError` instead → one of them changed visibility. Preflight's settings section
   pins each by shape **and** access flags. Never dispatch on `getKey()` or on `Preference`'s own
   findPreference — the first is absent, the second is protected (see "Intercepting row clicks").
-- Icon row tap changes the summary but not the toolbar picture → the write went to a key the
-  toolbar emission does not read (`Hotkeys.iconKey` is the single source; the row's XML key
-  must equal it).
+- A hotkey edit doesn't reach the toolbar → the write went to a key the toolbar emission does
+  not read (`Hotkeys.textKey`/`iconKey` are the single source; the row's XML key must equal
+  `textKey`, and the composite dialog must call `i()` too or the screen shows a different value
+  than the store holds).
 - Row tap crashes with `Fragment$InstantiationException` → the class name on the row does not
   match the extension class, or the constructor/visibility contract broke.
 - Screen opens blank → `aB()` returned 0 (no Context, or the resource name in the XML and the

@@ -179,7 +179,7 @@ EXPECTED = {
     'toolbar_refresh_method':
         'Lmln;->fn(Loru;Landroid/view/inputmethod/EditorInfo;ZLjava/util/Map;Lnve;)Z',
     'toolbar_refresh_registers': 14,
-    # The hotkey default icons live by name now: the picker cycles the Flexboard vector pack
+    # The hotkey default icons live by name now: the picker grid is the Flexboard vector pack
     # through getIdentifier, so the id table this used to pin has no consumer left and its
     # false alarms on a renumbering would guard nothing.
     # ---- text editing buttons
@@ -1763,7 +1763,7 @@ def run(dl, apk=None):
               any('SummaryProvider' in a for a in strings), str(strings))
 
     # N(Drawable) — setIcon: writes the icon field, clears the resource id, notifies. Both field
-    # writes are the identity; a rename that left them behind would draw nothing on a cycle.
+    # writes are the identity; a rename that left them behind would draw nothing on a pick.
     pc_ni = public_concrete(pref, 'N(Landroid/graphics/drawable/Drawable;)V')
     check('settings: N(Drawable)V is public and concrete',
           bool(pc_ni) and pc_ni[0][0] & 0x1 == 1 and pc_ni[0][0] & 0x400 == 0
