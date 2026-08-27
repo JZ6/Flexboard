@@ -289,15 +289,19 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         field.setText(Hotkeys.textOf(ui, slot));
         field.setHint("Text to commit");
 
-        // Grid of the bundled pack, dimmed on the current choice. Picks are instant — a tap
-        // writes the token and moves the dim and row icon — and the dialog is dismiss-anything:
-        // Done, back and outside-tap all mean "the field is what you meant". There is no
-        // Cancel by design; an edit is its own checkpoint.
+        // Grid of the bundled pack, dimmed on the current choice. A tap moves the dim only —
+        // both halves (text and icon) commit together through the dismiss hook:
+        //   Save → commit both (the button itself just dismisses; the hook does the work).
+        //   Cancel → discard both (sets the flag the hook checks first).
+        //   Back / outside-tap → commit both, i.e. the autosave every other dismissal means.
+        // An "undo" that works everywhere stays "tap the old icon again".
         GridLayout grid = new GridLayout(ui);
         grid.setColumnCount(4);
         int cell = dp(ui, 48);
         int spacing = dp(ui, 8);
         final String seed = Hotkeys.currentIconToken(ui, slot);
+        final String[] pending = { seed };
+        final boolean[] discarded = { false };
         final List<ImageView> items = new ArrayList<>();
         final List<String> names = new ArrayList<>();
         for (String name : Hotkeys.choices()) {
@@ -326,20 +330,25 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         AlertDialog dialog = new AlertDialog.Builder(ui)
             .setTitle("Hotkey " + slot)
             .setView(column)
-            .setPositiveButton("Done", null)
+            .setNegativeButton("Cancel", (dlog, which) -> discarded[0] = true)
+            .setPositiveButton("Save", null)
             .show();
-        // Autosave: the text commits on dialog dismissal, however it happens.
+        // All dismissal roads lead here: the hook commits both halves unless Cancel said
+        // otherwise. (The buttons only manage the flag; the hook is the one writer.)
         dialog.setOnDismissListener(dlog -> {
+            if (discarded[0]) {
+                return;
+            }
             Hotkeys.setText(ui, slot, field.getText().toString());
+            if (!pending[0].equals(seed)) {
+                Hotkeys.setIconToken(ui, slot, pending[0]);
+            }
             redrawSlot(ui, slot);
         });
-        // Listeners attach after the dialog exists; a pick lands in the store immediately and
-        // the dim follows so the user sees it (no dismissal — the edit isn't over yet).
         for (int i = 0; i < items.size(); i++) {
             final int index = i;
             items.get(i).setOnClickListener(v -> {
-                Hotkeys.setIconToken(ui, slot, names.get(index));
-                redrawSlot(ui, slot);
+                pending[0] = names.get(index);
                 for (int j = 0; j < items.size(); j++) {
                     items.get(j).setAlpha(j == index ? 0.35f : 1f);
                 }
