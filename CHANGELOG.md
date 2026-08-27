@@ -1,3 +1,8 @@
+# [2.0.0-dev.6](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.5...v2.0.0-dev.6) (2026-08-27)
+
+* **Gboard:** refactor: hotkeys run at six slots
+* **Gboard:** feat: imports tolerate slots beyond this build's count
+
 # [2.0.0-dev.5](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.4...v2.0.0-dev.5) (2026-08-27)
 
 * **Gboard:** feat: paint rows at screen open, not first tap
