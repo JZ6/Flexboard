@@ -272,7 +272,9 @@ public final class Hotkeys {
 
     /**
      * Applies a blob held in hand — the import popup's Apply button hands the box's contents
-     * straight here. Same strict-any-bad-abort parse as the clipboard path, same store.
+     * straight here. Malformed lines abort-all, but a slot number past this build's count is
+     * *skipped* rather than fatal, so an export made on a wider build imports its overlapping
+     * slots instead of being refused wholesale; the outcome string says when that happened.
      */
     public static String importFromText(Context context, String blob) {
         if (blob == null || blob.trim().isEmpty()) {
@@ -281,11 +283,15 @@ public final class Hotkeys {
         if (!blob.startsWith(BLOB_VERSION)) {
             return "not a Flexboard export";
         }
-        boolean applied = applyBlob(context, blob);
-        if (!applied) {
+        int[] outcome = applyBlob(context, blob);
+        if (outcome == null) {
             return "export is malformed — nothing changed";
         }
-        return "imported " + countOccupied(context) + " slots";
+        String result = "imported " + countOccupied(context) + " slots";
+        if (outcome[1] > 0) {
+            result += " (" + outcome[1] + " beyond this build's slot count skipped)";
+        }
+        return result;
     }
 
     private static int countOccupied(Context context) {
@@ -321,17 +327,24 @@ public final class Hotkeys {
     }
 
     /**
-     * Strict-any-bad-abort parse of a pasted blob: anything wrong — a field count, a number, a
-     * slot twice — does not touch the store at all, and the next call replaces the bad paste
-     * with a fresh export instead of leaving a hint of it behind.
+     * Strict-any-bad-line parse of a pasted blob: a wrong field count, a non-number, a duplicate
+     * slot, or a slot that's not ≥ 1 rejects the whole paste without touching the store. The one
+     * tolerated divergence is slot *beyond this build's slot count* — those lines are skipped
+     * (counted for the outcome string) rather than fatal, so a blob travels cleanly from a wider
+     * build into a trimmed one.
+     *
+     * @return {@code null} when the blob was rejected, else {written lines, skipped lines}.
      */
-    private static boolean applyBlob(Context context, String blob) {
+    private static int[] applyBlob(Context context, String blob) {
         String[] lines = blob.split("\n");
         if (lines.length < 1 || !lines[0].trim().equals(BLOB_VERSION)) {
-            return false;
+            return null;
         }
         String[] texts = new String[SLOT_COUNT + 1];
         String[] icons = new String[SLOT_COUNT + 1];
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        int skipped = 0;
+        int written = 0;
         for (int i = 1; i < lines.length; i++) {
             String line = lines[i].trim();
             if (line.isEmpty()) {
@@ -339,23 +352,28 @@ public final class Hotkeys {
             }
             String[] fields = line.split("\t", -1);
             if (fields.length != 3) {
-                return false;
+                return null;
             }
             int slot;
             try {
                 slot = Integer.parseInt(fields[0].trim());
             } catch (NumberFormatException e) {
-                return false;
+                return null;
             }
-            if (slot < 1 || slot > SLOT_COUNT || texts[slot] != null) {
-                return false;
+            if (slot < 1 || !seen.add(slot)) {
+                return null;
+            }
+            if (slot > SLOT_COUNT) {
+                skipped++;
+                continue;
             }
             String icon = fields[2].trim();
             if (icon.isEmpty()) {
-                return false;
+                return null;
             }
             texts[slot] = unescape(fields[1]);
             icons[slot] = icon;
+            written++;
         }
         SharedPreferences.Editor editor = Preferences.of(context).edit();
         for (int slot = 1; slot <= SLOT_COUNT; slot++) {
@@ -366,7 +384,7 @@ public final class Hotkeys {
             }
         }
         editor.apply();
-        return true;
+        return new int[] { written, skipped };
     }
 
     /** Escape for one scalar field; blobs aren't a binary format, just careful about the delimiters. */
