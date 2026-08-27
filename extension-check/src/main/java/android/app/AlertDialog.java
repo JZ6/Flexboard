@@ -21,6 +21,10 @@ public class AlertDialog {
         // stub
     }
 
+    public void setOnDismissListener(DialogInterface.OnDismissListener listener) {
+        // stub
+    }
+
     public static class Builder {
 
         public Builder(Context context) {

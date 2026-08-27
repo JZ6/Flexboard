@@ -289,14 +289,15 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         field.setText(Hotkeys.textOf(ui, slot));
         field.setHint("Text to commit");
 
-        // Grid of the bundled pack, dimmed on the current choice. The pick is pending until OK
-        // — taps move the dim only — so Cancel discards both halves of the edit evenly.
+        // Grid of the bundled pack, dimmed on the current choice. Picks are instant — a tap
+        // writes the token and moves the dim and row icon — and the dialog is dismiss-anything:
+        // Done, back and outside-tap all mean "the field is what you meant". There is no
+        // Cancel by design; an edit is its own checkpoint.
         GridLayout grid = new GridLayout(ui);
         grid.setColumnCount(4);
         int cell = dp(ui, 48);
         int spacing = dp(ui, 8);
         final String seed = Hotkeys.currentIconToken(ui, slot);
-        final String[] pending = { seed };
         final List<ImageView> items = new ArrayList<>();
         final List<String> names = new ArrayList<>();
         for (String name : Hotkeys.choices()) {
@@ -316,30 +317,29 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             names.add(name);
         }
         // The framework dialog's custom panel doesn't scroll on its own — on a short window the
-        // bottom cells (and the buttons) would be unreachable without the wrapper.
+        // bottom cells (and the button) would be unreachable without the wrapper.
         ScrollView scroll = new ScrollView(ui);
         scroll.addView(grid);
         column.addView(scroll, new ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        new AlertDialog.Builder(ui)
+        AlertDialog dialog = new AlertDialog.Builder(ui)
             .setTitle("Hotkey " + slot)
             .setView(column)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("OK", (dlog, which) -> {
-                String text = field.getText().toString();
-                Hotkeys.setText(ui, slot, text);
-                if (!pending[0].equals(seed)) {
-                    Hotkeys.setIconToken(ui, slot, pending[0]);
-                }
-                redrawSlot(ui, slot);
-            })
+            .setPositiveButton("Done", null)
             .show();
-        // Listeners attach after the dialog exists, so they can dim — and never dismiss.
+        // Autosave: the text commits on dialog dismissal, however it happens.
+        dialog.setOnDismissListener(dlog -> {
+            Hotkeys.setText(ui, slot, field.getText().toString());
+            redrawSlot(ui, slot);
+        });
+        // Listeners attach after the dialog exists; a pick lands in the store immediately and
+        // the dim follows so the user sees it (no dismissal — the edit isn't over yet).
         for (int i = 0; i < items.size(); i++) {
             final int index = i;
             items.get(i).setOnClickListener(v -> {
-                pending[0] = names.get(index);
+                Hotkeys.setIconToken(ui, slot, names.get(index));
+                redrawSlot(ui, slot);
                 for (int j = 0; j < items.size(); j++) {
                     items.get(j).setAlpha(j == index ? 0.35f : 1f);
                 }
