@@ -1,3 +1,8 @@
+# [2.0.1-dev.0](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.6...v2.0.1-dev.0) (2026-08-27)
+
+* **Gboard:** feat: add Cancel, rename Done to Save — autosave keeps dismissal
+* **Gboard:** feat: hotkey editor autosaves — dismiss-anything commits
+
 # [2.0.0-dev.6](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.5...v2.0.0-dev.6) (2026-08-27)
 
 * **Gboard:** refactor: hotkeys run at six slots
