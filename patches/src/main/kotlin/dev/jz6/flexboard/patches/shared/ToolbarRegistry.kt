@@ -343,14 +343,14 @@ private fun NativeToolbarButton.toSmali(
 }
 
 /** The hotkey slots Flexboard registers: everything emitted loops this range once. */
-internal const val HOTKEY_SLOTS = 12
+internal const val HOTKEY_SLOTS = 6
 
 /** Every flexboard toolbar id carries this prefix — how the constants checker tells the
  * generated per-slot keys from a typo. If it changes, `ToolbarSlotsPatch`'s strings move too. */
 internal const val HOTKEY_ID_PREFIX = "flexboard_hotkey_"
 
 // -------------------------------------------------------------------------------------------
-// Hotkeys says hi — a dozen buttons whose every attribute is runtime data
+// Per-slot toolbar buttons whose every attribute is runtime data
 // -------------------------------------------------------------------------------------------
 
 /**
@@ -397,13 +397,13 @@ internal fun BytecodePatchContext.emitNativeHotkeys(builder: AccessPointBuilder)
     val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
         hotkeyBlock(slot, builder, HOTKEY_CTOR_SITE, canvas.registerCall)
     } + "\n\nnop\n").trimIndent()
-    // WithLabels: the slot blocks carry twelve distinct internal `:…skip_N` labels, which the
+    // WithLabels: the slot blocks each carry their own internal `:…skip_N` label, which the
     // plain `addInstructions` rejects. The trailing `nop` is not decoration:
     // `addInstructionsWithLabels` (reversed-SubList-walk, `externalLabels[0]` on an empty array →
     // `ArrayIndexOutOfBoundsException: length=0; index=0`) crashes the patcher whenever a branch
-    // targets an internal label that has no instruction after it *in the same emission*. Eleven
-    // of our labels bind to the next block's opening instruction, but the twelfth would be
-    // past-the-end — one `nop` is its home. check_emission_lint.py greps for this shape too.
+    // targets an internal label that has no instruction after it *in the same emission*. Every
+    // slot's label but the last binds to the next block's opening instruction; the last needs a
+    // home past the end — one `nop` is it. check_emission_lint.py greps for this shape too.
     init.addInstructionsWithLabels(tailIndex, emission)
 }
 

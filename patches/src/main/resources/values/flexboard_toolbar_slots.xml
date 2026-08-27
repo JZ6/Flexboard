@@ -16,10 +16,4 @@
     <string name="flexboard_hotkey_4" translatable="false">flexboard_hotkey_4</string>
     <string name="flexboard_hotkey_5" translatable="false">flexboard_hotkey_5</string>
     <string name="flexboard_hotkey_6" translatable="false">flexboard_hotkey_6</string>
-    <string name="flexboard_hotkey_7" translatable="false">flexboard_hotkey_7</string>
-    <string name="flexboard_hotkey_8" translatable="false">flexboard_hotkey_8</string>
-    <string name="flexboard_hotkey_9" translatable="false">flexboard_hotkey_9</string>
-    <string name="flexboard_hotkey_10" translatable="false">flexboard_hotkey_10</string>
-    <string name="flexboard_hotkey_11" translatable="false">flexboard_hotkey_11</string>
-    <string name="flexboard_hotkey_12" translatable="false">flexboard_hotkey_12</string>
 </resources>

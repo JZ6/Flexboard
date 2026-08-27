@@ -87,16 +87,21 @@ COPY_WRITES = [
 # (docs/toolbar-access-points.md) is the first consumer back, mapped here explicitly. An
 # unmapped patch values file still fails the lane — the mapping is the review.
 VALUE_MERGES = [
-    # ToolbarSlotsPatch: the 12 admitted ids become strings, then array items.
+    # ToolbarSlotsPatch: every admitted id becomes a strings entry, then an array item.
     ("values/flexboard_toolbar_slots.xml", "res/values/strings.xml"),
 ]
 
 # Arrays the patch widens, replayed on the real decoded array: (sentinel id value whose
 # *referencing* string locates the holder array, how many ids get appended). Mirrors
 # widenAllowedIdSet() in ToolbarSlotsPatch.kt — the sentinel is a content pin precisely
-# because the array's name is obfuscated per build.
+# because the array's name is obfuscated per build. The appended count is read off the same
+# values fragment the patch splices in, so trimming/expanding the slot count never has to be
+# restated here (the patch's own require() holds fragment and HOTKEY_SLOTS in step).
 ARRAY_WIDENINGS = [
-    ("editor_info", 12),
+    ("editor_info",
+     len(re.findall(r'name="flexboard_hotkey_\d+"',
+                    (REPO / "patches/src/main/resources/values/"
+                     "flexboard_toolbar_slots.xml").read_text()))),
 ]
 
 # Any patch resource under values/ that is NOT covered by VALUE_MERGES. Values files are

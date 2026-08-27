@@ -25,7 +25,7 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  * patch itself would have staged.
  *
  * <p>Each slot's default icon is a fixed member of the bundled Flexboard pack, so an untouched
- * install already shows twelve distinguishable buttons. The settings screen's single row per
+ * install already shows six distinguishable buttons. The settings screen's single row per
  * slot opens a composite editor (text field + grid over the same pack, chosen by name), so a
  * preference written by the dialog, by an import, or by neither resolves through one path.
  */
@@ -37,7 +37,7 @@ public final class Hotkeys {
     private static final String PREF_ICON_SUFFIX = "_icon";
 
     /** Must match HOTKEY_SLOTS in the patch's ToolbarSlotsPatch and the XML's count maximum. */
-    private static final int SLOT_COUNT = 12;
+    private static final int SLOT_COUNT = 6;
 
     /** The slot count, for screens that iterate every row. */
     public static int slotCount() {

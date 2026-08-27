@@ -80,30 +80,6 @@
             android:icon="@drawable/flexboard_icon_work"
             android:key="flexboard_hotkey_6_text"
             android:title="Hotkey 6" />
-        <androidx.preference.Preference
-            android:icon="@drawable/flexboard_icon_favorite"
-            android:key="flexboard_hotkey_7_text"
-            android:title="Hotkey 7" />
-        <androidx.preference.Preference
-            android:icon="@drawable/flexboard_icon_kid_star"
-            android:key="flexboard_hotkey_8_text"
-            android:title="Hotkey 8" />
-        <androidx.preference.Preference
-            android:icon="@drawable/flexboard_icon_credit_card"
-            android:key="flexboard_hotkey_9_text"
-            android:title="Hotkey 9" />
-        <androidx.preference.Preference
-            android:icon="@drawable/flexboard_icon_hexagon"
-            android:key="flexboard_hotkey_10_text"
-            android:title="Hotkey 10" />
-        <androidx.preference.Preference
-            android:icon="@drawable/flexboard_icon_hive"
-            android:key="flexboard_hotkey_11_text"
-            android:title="Hotkey 11" />
-        <androidx.preference.Preference
-            android:icon="@drawable/flexboard_icon_sports_soccer"
-            android:key="flexboard_hotkey_12_text"
-            android:title="Hotkey 12" />
 
         <!--
           Real picker/buttons with popups, not text fields full of serialization. The host
