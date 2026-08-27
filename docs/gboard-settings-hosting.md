@@ -191,9 +191,9 @@ doesn't matter to the read; its *name* does, which is what the preflight pin ass
   pins each by shape **and** access flags. Never dispatch on `getKey()` or on `Preference`'s own
   findPreference — the first is absent, the second is protected (see "Intercepting row clicks").
 - A hotkey edit doesn't reach the toolbar → the write went to a key the toolbar emission does
-  not read (`Hotkeys.textKey`/`iconKey` are the single source; the row's XML key must equal
-  `textKey`, and the composite dialog's OK path writes the file lane only — the summary is
-  repainted from the file by redrawSlot).
+  not read. `Hotkeys.textKey`/`iconKey` are the single source; the row's XML key must equal
+  `textKey`, and the composite dialog autosaves (dismiss-anything writes, then the row summary
+  is repainted from the store).
 - Row tap crashes with `Fragment$InstantiationException` → the class name on the row does not
   match the extension class, or the constructor/visibility contract broke.
 - Screen opens blank → `aB()` returned 0 (no Context, or the resource name in the XML and the
