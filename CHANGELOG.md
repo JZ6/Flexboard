@@ -1,3 +1,8 @@
+# [2.0.0-dev.5](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.4...v2.0.0-dev.5) (2026-08-27)
+
+* **Gboard:** feat: paint rows at screen open, not first tap
+* **Gboard:** feat: counter_0 icon joins the picker pack
+
 # [2.0.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.1...v2.0.0-dev.4) (2026-08-27)
 
 * **Gboard:** fix: review fallout of the dialog fix — honest pins, swept docs
