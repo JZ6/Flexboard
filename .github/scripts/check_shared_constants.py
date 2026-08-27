@@ -55,6 +55,11 @@ XML_ROWS = [
         "slider_min_value": "MAX_WORDS_MIN",
         "slider_max_value": "MAX_WORDS_NO_LIMIT",
     }),
+    ("TOOLBAR_MAX_KEY", {
+        "android:defaultValue": "TOOLBAR_MAX_DEFAULT",
+        "slider_min_value": "TOOLBAR_MAX_MIN",
+        "slider_max_value": "TOOLBAR_MAX_CAP",
+    }),
 ]
 
 # Hex is accepted because resource ids are written that way on both sides -- and on the Kotlin side

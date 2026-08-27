@@ -3,7 +3,7 @@
 
 # Roadmap entries written by the user verbatim.
 
-make the import look nicer
+should we move select all copy paste to same as the hotkey buttons
 
 some settings disabled like grammer check and ai writing tools, rambler mode etc
 

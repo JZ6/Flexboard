@@ -54,8 +54,10 @@ overflow drawer as their own escape hatch. No geometry work belongs to this patc
    On the same apply path, `GboardSettings`-style writers stage `access_points_count_on_bar` and
    `foldable_access_points_count_on_bar` to the same int (id-resolved strings, same pattern as
    existing force-* writes).
-2. **Patch**: one smali tail insert after `iput m` in the bar ctor: call the extension, compare,
-   keep the larger. Scratch registers from preflight verification at that insertion point.
+2. **Patch**: four branchless instructions right after the `iput` whose target field is derived
+   at patch time (the one int-writing iput after the flag read — the work slot is read back,
+   `maxFor` answers the bigger of it and the slider value, the slot is written back). Scratch
+   registers from preflight verification at that insertion point (v2/v5 pinned dead there).
 3. **Settings**: one InlineSlider row "Slots on the toolbar (max)" under the existing Flexboard
    screen. default 0 = "stock, don't raise" — stock is device-dependent (phones 5, large screens
    more), so the slider only ever ADDS headroom.
@@ -78,7 +80,10 @@ rename `AccessPointsBar`.
 
 ## Rollout
 
-One user-visible patch, default on, default slider 0 (= stock, no raise). Device test: stock bar
-unchanged at 0 on phone and foldable alike; slider=12 shows up to 12 as more are dragged in from
-customize on both screens; overflow drawer unchanged. NOT IMPLEMENTED YET — this doc is the plan;
-the seam and pins above are what the implementation patch must preserve.
+One user-visible patch, default on, default slider 0 (= stock, no raise). SHIPPED as
+BiggerToolbarPatch + the ToolbarCapacity extension (the user-visible row lives in the static
+settings XML with the rest). The positional `pc 72` pin from this plan list became the shape-based
+pins already standing in preflight (ctor register count, flag read, single int-write after it,
+scratch liveness) plus the two count-preference key ids added to the pinned key table. Device test:
+stock bar unchanged at 0 on phone and foldable alike; slider=12 shows up to 12 as more are dragged
+in from customize on both screens; overflow drawer unchanged.
