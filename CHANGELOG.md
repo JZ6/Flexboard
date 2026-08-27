@@ -1,3 +1,11 @@
+# [2.0.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.1...v2.0.0-dev.4) (2026-08-27)
+
+* **Gboard:** fix: review fallout of the dialog fix — honest pins, swept docs
+* **Gboard:** fix: one tap, one dialog — kill the double-dialog on hotkey rows
+* **Gboard:** feat: popups borrow Gboard's own editor-dialog layout
+* **Gboard:** feat: one row per hotkey — the composite editor dialog
+* **Gboard:** fix: after an import, the settings rows keep showing the old text
+
 # [2.0.0-dev.3](https://github.com/JZ6/Flexboard/compare/v2.0.0-dev.2...v2.0.0-dev.3) (2026-08-26)
 
 * **Gboard:** feat: popups borrow Gboard's own editor-dialog layout
