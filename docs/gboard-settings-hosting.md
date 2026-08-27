@@ -146,12 +146,14 @@ to compile instead). Row identity therefore rides the fragment's own chain:
 
 Rows also cannot refresh at bind time — no bind-hook letter is known to the stub — so the
 settings fragment re-paints the rows from the store (icon, and the summary showing the committed
-text) on the *first intercepted tap* of each screen instance (`syncRowIconsOnce`). Between
-opening the screen and the first tap a row shows its XML default icon and static summary; the
-toolbar itself always reflects the store. The hotkey rows are deliberately **plain**
-Preferences: a DialogPreference's onClick shows the stock dialog ahead of `aA` (the
-two-dialogs bug), so no dialog-backed row may sit on this screen. Plain rows also own `n()` —
-the provider-guarded throw only exists on EditTextPreference rows, of which there are none.
+text) from a **main-looper post inside `aB()`**: inflation finishes synchronously right after
+`aB()` returns the screen id, and a posted runnable necessarily lands after that — after the
+rows exist, before any tap. If the pass finds no rows or no context (cold open before the
+keyboard's first run) it no-ops and the first tap repaints instead (`syncRowIconsOnce`).
+The hotkey rows are deliberately **plain** Preferences: a DialogPreference's onClick shows the
+stock dialog ahead of `aA` (the two-dialogs bug), so no dialog-backed row may sit on this
+screen. Plain rows also own `n()` — the provider-guarded throw only exists on
+EditTextPreference rows, of which there are none.
 
 ## Dialogs: popups off the row's own context
 

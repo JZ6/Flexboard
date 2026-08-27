@@ -51,10 +51,10 @@
           composite dialog (text field + the bundled-pack icon grid). The rows are PLAIN
           Preference widgets on purpose: a DialogPreference's onClick fires the stock editor
           ahead of our intercept, which is how one tap produced two stacked dialogs. So this
-          screen carries no dialog-backed rows at all.
-          Identification is by identity against the screen tree — the port's getKey does not
-          survive R8. The row's icon and its summary (the committed text) are painted from the
-          store by the first-tap sync; the port exposes no row-bind hook.
+          screen carries no dialog-backed rows at all. Identification is by identity against
+          the screen tree — the port's getKey does not survive R8. The row's icon and its summary
+          (the committed text) are painted from the store by a looper-posted pass in aB() (rows
+          don't exist before the XML they live on inflates); the first-tap sync is its backup.
         -->
         <androidx.preference.Preference
             android:icon="@drawable/flexboard_icon_alternate_email"

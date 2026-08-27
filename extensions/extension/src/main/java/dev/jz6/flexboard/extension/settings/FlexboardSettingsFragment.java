@@ -4,6 +4,8 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -73,6 +75,14 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
      * <p>Returning 0 makes the fragment inflate nothing — a blank screen, not a crash — which is
      * the deliberate failure mode for "no Context could be produced", because the alternative is
      * the settings host going down with the tap.
+     *
+     * <p>The posted runnable is the open-time paint: the rows don't exist until the XML this id
+     * names is inflated (long after this method returns), and the port exposes no bind hook a
+     * stub can override. But inflation completes synchronously on the main thread right after
+     * {@code aB()} returns, so a post to the main looper runs on the next looper iteration —
+     * after the rows exist, before any tap can arrive. Handler/Looper are framework symbols, so
+     * nothing here is pin-shaped. If the pass lands against a missing row or a missing context
+     * it no-ops silently and the first-tap sync ({@code syncRowIconsOnce}) remains as backup.
      */
     @Override
     public int aB() {
@@ -80,6 +90,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         if (context == null) {
             return 0;
         }
+        new Handler(Looper.getMainLooper()).post(this::paintRowsFromStore);
         return context.getResources()
             .getIdentifier(SCREEN_NAME, "xml", context.getPackageName());
     }
@@ -460,24 +471,31 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     }
 
     /**
-     * Redraws every row's icon from the store, once per screen instance at first tap, and again
-     * wholesale after a successful import — the rows show what the store holds, not the XML.
-     *
-     * <p>The rows' XML icons are the slot *defaults*: the port exposes no row-bind hook a
-     * compile-time stub can override, so a stored override can't appear at inflation.
+     * Paints every row from the store — text summary and icon alike. Called by the looper-posted
+     * pass from {@link #aB()} (rows can't be painted before the XML inflates, and that one lands
+     * after it) and — through the latch — by any first tap, for cold opens before the keyboard
+     * has ever run.
+     */
+    private void paintRowsFromStore() {
+        Context context = processContext();
+        if (context == null) {
+            // Only latch on a real paint: an opening without a context available yet must not
+            // burn the trigger that would have fixed the screen.
+            return;
+        }
+        iconsSynced = true;
+        redrawAllRows(context);
+    }
+
+    /**
+     * The first-tap trigger for the same paint. The {@link #aB()} post usually beats any tap;
+     * this stays so a screen that somehow got here unpainted still fixes itself.
      */
     private void syncRowIconsOnce() {
         if (iconsSynced) {
             return;
         }
-        Context context = processContext();
-        if (context == null) {
-            // Latch only after a context exists: a settings screen opened before the keyboard
-            // ever ran must not burn its one sync pass drawing nothing.
-            return;
-        }
-        iconsSynced = true;
-        redrawAllRows(context);
+        paintRowsFromStore();
     }
 
     /**
