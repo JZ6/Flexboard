@@ -76,6 +76,7 @@ public final class Hotkeys {
     private static final String[] EXTRA_ICON_NAMES = new String[] {
         "flexboard_icon_snowflake",
         "flexboard_icon_token",
+        "flexboard_icon_counter_0",
         "flexboard_icon_counter_1",
         "flexboard_icon_counter_2",
         "flexboard_icon_counter_3",

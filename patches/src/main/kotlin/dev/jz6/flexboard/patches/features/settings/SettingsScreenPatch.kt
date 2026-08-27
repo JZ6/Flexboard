@@ -70,7 +70,7 @@ internal val HOTKEY_DEFAULT_SYMBOLS = listOf(
  * grid. Java mirrors it as Hotkeys.EXTRA_ICON_NAMES, same checker. */
 internal val HOTKEY_EXTRA_SYMBOLS = listOf(
     "snowflake", "token",
-    "counter_1", "counter_2", "counter_3", "counter_4", "counter_5",
+    "counter_0", "counter_1", "counter_2", "counter_3", "counter_4", "counter_5",
     "counter_6", "counter_7", "counter_8", "counter_9",
 )
 
