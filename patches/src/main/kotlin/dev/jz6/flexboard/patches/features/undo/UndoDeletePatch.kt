@@ -66,7 +66,8 @@ import dev.jz6.flexboard.patches.shared.opcodeName
 @Suppress("unused")
 val swipeRightToUndoPatch = bytecodePatch(
     name = "Swipe Right to Undo",
-    description = "Swipe right after deleting to put the words back. Uses Gboard's own undo, " +
+    description = "Swipe right after deleting to put the words back — the swipe starts on the " +
+        "Delete key, or anywhere when Swipe to Delete is also applied. Uses Gboard's own undo, " +
         "which already records what a delete swipe removed.",
     default = true,
 ) {

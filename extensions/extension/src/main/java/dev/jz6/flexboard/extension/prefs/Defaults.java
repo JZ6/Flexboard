@@ -38,7 +38,11 @@ public final class Defaults {
     // without the build saying so — and this is the one that decides what a keyboard actually
     // does on first run.
 
-    /** Must match STEP_SCALE_KEY / STEP_SCALE_DEFAULT in ScrubTuningPatch.kt. */
+    /**
+     * Must match STEP_SCALE_KEY / STEP_SCALE_DEFAULT in ScrubTuningPatch.kt. Currently read by
+     * nothing: the swipe-length scaling that consumes it is parked pending that investigation,
+     * and the seed is kept so re-enabling it finds an established value rather than a fresh one.
+     */
     private static final String KEY_STEP_SCALE = "flexboard_scrub_step_scale";
 
     private static final int STEP_SCALE_DEFAULT = 60;

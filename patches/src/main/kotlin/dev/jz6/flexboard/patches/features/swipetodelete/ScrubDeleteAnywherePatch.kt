@@ -15,6 +15,7 @@ import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
+import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.usesField
 
@@ -201,6 +202,16 @@ private fun MutableMethod.writeWildcardStartKey() {
         "The keycode constant is at $keyIndex, after the $CONFIG_CONSTRUCTOR call at $configIndex"
     }
 
+    // Order alone does not prove the constant feeds the config: a future build could have another
+    // `const/16 …, 67` earlier in the method and nothing here would say so. Assert the call reads
+    // the exact register the constant landed in, so that build fails loudly instead of being
+    // rewritten on position.
+    val configCall = instructions[configIndex]
+    check((0 until configCall.invokeRegisterCount()).any { configCall.invokeRegisterAt(it) == startKeyRegister }) {
+        "The keycode constant is in v$startKeyRegister, which the $CONFIG_CONSTRUCTOR call at " +
+            "$configIndex never reads — the constant being replaced is not the one feeding the config"
+    }
+
     replaceInstruction(keyIndex, "const/16 v$startKeyRegister, $WILDCARD_START_KEYCODE")
 }
 
@@ -359,6 +370,15 @@ private fun MutableMethod.trackAcrossFullKeyboard() {
             "The write to $field in $SCRUB_MOTION_EVENT_HANDLER->g targets v${write.registerB}, " +
                 "but $RECT_BOTTOM targets v$rectRegister — these are not the same Rect"
         }
+    }
+
+    // The override rewrites both edges after the `bottom` write, which is only sound if the stock
+    // `top` write happened earlier. If a build ever swapped them, the override's `top = 0` would be
+    // overwritten back and the corridor would silently reopen on one axis — so it is checked.
+    val (topIndex) = soleWrite(RECT_TOP)
+    check(topIndex < bottomIndex) {
+        "The write to $RECT_TOP is at $topIndex, after the write to $RECT_BOTTOM at " +
+            "$bottomIndex — the full-height override below would leave the stock top edge in place"
     }
 
     // Gboard's own full-width override, which this mirrors. Asserting it is still there is what

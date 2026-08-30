@@ -369,6 +369,15 @@ def regs(arg):
     return [int(x) for x in re.findall(r'v(\d+)', arg)]
 
 
+def invoke_regs(arg):
+    """An invoke's register list, expanding `/range`'s `{vA .. vB}` form, which `regs` would
+    otherwise read as just its two endpoints."""
+    m = re.search(r'\{v(\d+) \.\. v(\d+)\}', arg)
+    if m:
+        return list(range(int(m.group(1)), int(m.group(2)) + 1))
+    return regs(arg)
+
+
 # Mnemonics whose first register operand is a *source*, not a destination. Everything else that
 # names a register writes the first one, which is what makes `writes_before` usable as a liveness
 # test rather than a guess.
@@ -682,6 +691,10 @@ def run(dl, apk=None):
                      f'found {len(cfgs)}')
         if ok_k and ok_c:
             check('scrubdelete: keycode precedes the config ctor', keys[0] < cfgs[0])
+            # The patch also asserts the call consumes the constant's own register: order alone
+            # stops proving feeding as soon as a build has a second `const/16 …, 67`.
+            check('scrubdelete: the config ctor consumes the keycode register',
+                  regs(ins[keys[0]][2])[0] in invoke_regs(ins[cfgs[0]][2]))
 
     c, ins = body(dl, f'{SCRUB}->g(Landroid/view/MotionEvent;)V')
     if check('scrubdelete: g() exists', ins is not None):
@@ -714,6 +727,15 @@ def run(dl, apk=None):
         check('scrubdelete: every Rect edge is the same object',
               len({v[1] for v in rect_regs.values()}) == 1,
               str({k: v[1] for k, v in rect_regs.items()}))
+        # The full-height override is inserted after the `bottom` write and rewrites both edges,
+        # which is only sound if the stock `top` write happened first. A build that swapped them
+        # would silently reopen the top of the corridor.
+        order = {e: [i for i, (pc, n, a) in enumerate(ins)
+                     if n == 'iput' and f'Landroid/graphics/Rect;->{e}:I' in a]
+                 for e in ('top', 'bottom')}
+        check('scrubdelete: the top edge is written before the bottom edge',
+              all(order[e] for e in order) and order['top'][0] < order['bottom'][0],
+              str(order))
 
         width = [i for i, (pc, n, a) in enumerate(ins)
                  if f'{KEYBOARD_VIEW}->getWidth()I' in a]
