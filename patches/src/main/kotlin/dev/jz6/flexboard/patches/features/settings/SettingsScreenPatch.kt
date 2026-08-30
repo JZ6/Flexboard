@@ -3,6 +3,7 @@ package dev.jz6.flexboard.patches.features.settings
 import app.morphe.patcher.patch.ResourcePatchContext
 import app.morphe.patcher.patch.resourcePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.Constants.GBOARD_SETTINGS_LEGACY_XML
 import dev.jz6.flexboard.patches.shared.Constants.GBOARD_SETTINGS_XML
 import dev.jz6.flexboard.patches.shared.Constants.SETTINGS_FRAGMENT_CLASS
 import dev.jz6.flexboard.patches.shared.androidAttribute
@@ -101,15 +102,17 @@ internal val settingsScreenPatch = resourcePatch(
             "FLEXBOARD_VERSION" to readVersion(),
         ))
 
-        document(GBOARD_SETTINGS_XML).use { settings ->
-            settings.addFlexboardEntry()
+        // Both top-level screens: Gboard picks between them at runtime (SettingsActivity.t()), and
+        // the legacy one is what ColorOS/OxygenOS and any pre-36 device actually show. Adding the
+        // row to only the modern screen left it invisible on exactly those devices.
+        for (screen in listOf(GBOARD_SETTINGS_XML, GBOARD_SETTINGS_LEGACY_XML)) {
+            document(screen).use { it.addFlexboardEntry(screen) }
         }
     }
 }
 
 private const val PREFERENCE_SCREEN_TAG = "PreferenceScreen"
 private const val PREFERENCE_CATEGORY_TAG = "androidx.preference.PreferenceCategory"
-private const val FOOTER_PREFERENCE_TAG = "com.android.settingslib.widget.FooterPreference"
 
 /**
  * The row whose icon Flexboard uses, and the Flexboard screen's row widget on the other side.
@@ -194,10 +197,10 @@ private fun readVersion(): String {
     return text
 }
 
-private fun Document.addFlexboardEntry() {
+private fun Document.addFlexboardEntry(screen: String) {
     val root = documentElement
     check(root.tagName == PREFERENCE_SCREEN_TAG) {
-        "$GBOARD_SETTINGS_XML has root <${root.tagName}>, expected <$PREFERENCE_SCREEN_TAG> — " +
+        "$screen has root <${root.tagName}>, expected <$PREFERENCE_SCREEN_TAG> — " +
             "Gboard's settings are no longer the androidx screen this patch appends to"
     }
 
@@ -216,22 +219,16 @@ private fun Document.addFlexboardEntry() {
         setAndroidAttribute("fragment", SETTINGS_FRAGMENT_CLASS)
     }
 
-    // First row of the first category, so it opens at the top of the screen rather than buried
-    // down beside About. Inside a category rather than above one, because a row that is a direct
-    // child of the screen renders without the inset and grouping every other row has.
+    // Top of the screen either way. The modern screen groups its rows into categories, so the row
+    // goes first in the first category — inside one rather than above it, because a row that is a
+    // direct child of a categorised screen renders without the inset and grouping the others have.
+    // The legacy screen has no categories at all: its rows are direct children of the root, so the
+    // row goes first there too, where it shares exactly the styling of every sibling.
     //
     // `insertBefore(entry, firstChild)` is deliberate over building an index: `firstChild` may be
     // a whitespace text node, and inserting ahead of it still lands at position zero — while a
-    // null firstChild (an empty category) makes this an append, which is the right answer there
-    // too.
-    //
-    // Appending to the root is what the fallbacks avoid: it would land the row *after* the
-    // footer, reading as a stray control rather than a settings entry.
+    // null firstChild (an empty parent) makes this an append, which is the right answer there too.
     val category = root.childElements(PREFERENCE_CATEGORY_TAG).firstOrNull()
-    val footer = root.childElements(FOOTER_PREFERENCE_TAG).firstOrNull()
-    when {
-        category != null -> category.insertBefore(entry, category.firstChild)
-        footer != null -> root.insertBefore(entry, footer)
-        else -> root.appendChild(entry)
-    }
+    val parent = category ?: root
+    parent.insertBefore(entry, parent.firstChild)
 }

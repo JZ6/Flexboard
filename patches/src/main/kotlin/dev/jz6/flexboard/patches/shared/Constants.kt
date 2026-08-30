@@ -26,6 +26,15 @@ internal object Constants {
     const val GBOARD_SETTINGS_XML = "res/xml/settings.xml"
 
     /**
+     * Gboard's legacy top-level settings screen. `SettingsActivity.t()` inflates this one instead
+     * of [GBOARD_SETTINGS_XML] whenever the "expressive design" gate is off — which it is on
+     * `SDK_INT < 36` and on Android 16 devices whose OEM does not set `is_expressive_design_enabled`
+     * (ColorOS/OxygenOS among them). The row must be added to both screens or it goes missing on
+     * exactly those devices. Keeps its real name like the modern screen does.
+     */
+    const val GBOARD_SETTINGS_LEGACY_XML = "res/xml/settings_legacy.xml"
+
+    /**
      * Signatures and target carried over verbatim from the build this was developed against.
      * The hooks are pinned to exactly one Gboard build; anything else must fail to match rather
      * than patch something it does not understand.
