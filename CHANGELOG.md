@@ -1,3 +1,9 @@
+# [2.0.2-dev.1](https://github.com/JZ6/Flexboard/compare/v2.0.1...v2.0.2-dev.1) (2026-08-31)
+
+* **Gboard:** fix: patch Flexboard setting into gboard legacy setting
+* **Gboard:** fix: swipe review fallout — louder asserts, honest descriptions
+* **Gboard:** feat: Bigger Toolbar — a slider for the bar's capacity
+
 # [2.0.1](https://github.com/JZ6/Flexboard/compare/v2.0.0...v2.0.1) (2026-08-31)
 
 * **Gboard:** feat: add Cancel, rename Done to Save — autosave keeps dismissal
