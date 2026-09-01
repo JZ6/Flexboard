@@ -45,7 +45,7 @@ val biggerToolbarPatch = bytecodePatch(
     name = "Bigger Toolbar",
     description = "Let Gboard's toolbar hold more buttons — a slider in Flexboard's settings " +
         "(default 0 = stock capacity). Ordering and overflow stay Gboard's own.",
-    default = true,
+    default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
