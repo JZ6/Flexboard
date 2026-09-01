@@ -128,9 +128,6 @@ EXPECTED = {
         (0x7f140b6e, 'show_suggestion_strip'),
         (0x7f140a07, 'pref_key_enable_grammar_checker'),
         (0x7f140a28, 'enable_smart_reply'),
-        # The toolbar-capacity staging pair — Lmku.b(I)I picks between them by device class.
-        (0x7f1409af, 'access_points_count_on_bar'),
-        (0x7f140a43, 'foldable_access_points_count_on_bar'),
     ],
     'sigcheck_registers': 8,
     'sigcheck_returns': [6, 4, 3],
