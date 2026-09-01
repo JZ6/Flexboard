@@ -43,7 +43,9 @@ The native answer:
   (`Lnmm.f` in `Lmku.b` — preflight already pins the foldable enum constant).
 
 The width-fit reality (a 320dp bar can't hold 12 buttons) is handled by Gboard's own measure
-paths (`onMeasure` reads the same field `m`); the user-tunes-until-pretty bit is theirs, with the
+path — `onMeasure` sets the bar's width to the parent's MeasureSpec (`getSize(widthMS)` at pc
+0-8) and `K(getMeasuredWidth(), count)` computes the per-item width from it; the capacity field
+`m` gates the *count*, never the bar width. The user-tunes-until-pretty bit is theirs, with the
 overflow drawer as their own escape hatch. No geometry work belongs to this patch.
 
 ## The patch shape
