@@ -7,6 +7,8 @@ import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.emitHotkeyRefresh
 import dev.jz6.flexboard.patches.shared.emitNativeHotkeys
 import dev.jz6.flexboard.patches.shared.resolveAccessPointBuilder
+import dev.jz6.flexboard.patches.shared.selectedSettingsSections
+import dev.jz6.flexboard.patches.shared.SettingsSection
 
 /**
  * Six toolbar buttons whose label, icon and action all come from settings — the patch emits
@@ -30,6 +32,9 @@ val toolbarHotkeysPatch = bytecodePatch(
     dependsOn(toolbarSlotsPatch)
 
     execute {
+        // Tell the settings patch to keep the Hotkeys section — we're selected.
+        selectedSettingsSections += SettingsSection.HOTKEYS
+
         val builder = resolveAccessPointBuilder()
         emitNativeHotkeys(builder)
         emitHotkeyRefresh(builder)

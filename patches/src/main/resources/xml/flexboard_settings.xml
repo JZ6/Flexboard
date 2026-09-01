@@ -22,6 +22,7 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     android:title="Flexboard">
 
+    <!-- @SECTION_SWIPE_TO_DELETE@ -->
     <PreferenceCategory android:title="Swipe to delete">
 
         <com.google.android.libraries.inputmethod.preferencewidgets.InlineSliderPreference
@@ -35,7 +36,9 @@
             slider_text_right="No limit" />
 
     </PreferenceCategory>
+    <!-- @END_SECTION_SWIPE_TO_DELETE@ -->
 
+    <!-- @SECTION_HOTKEYS@ -->
     <PreferenceCategory android:title="Hotkeys">
 
         <!--
@@ -100,6 +103,7 @@
             android:title="Import" />
 
     </PreferenceCategory>
+    <!-- @END_SECTION_HOTKEYS@ -->
 
     <PreferenceCategory android:title="About">
 

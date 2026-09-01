@@ -9,6 +9,8 @@ import dev.jz6.flexboard.patches.shared.Constants.SETTINGS_FRAGMENT_CLASS
 import dev.jz6.flexboard.patches.shared.androidAttribute
 import dev.jz6.flexboard.patches.shared.childElements
 import dev.jz6.flexboard.patches.shared.descendants
+import dev.jz6.flexboard.patches.shared.SettingsSection
+import dev.jz6.flexboard.patches.shared.selectedSettingsSections
 import dev.jz6.flexboard.patches.shared.setAndroidAttribute
 import org.w3c.dom.Document
 
@@ -80,6 +82,13 @@ internal val settingsScreenPatch = resourcePatch(
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
+    execute {
+        // Clears the section registry for this run. All executes complete before any finalize
+        // begins, so when the finalize below reads the set it holds exactly the sections whose
+        // features were ticked in Morphe (each of which registered in its own execute).
+        selectedSettingsSections.clear()
+    }
+
     finalize {
         // The icon as a new drawable resource. aapt2 assigns its id during recompilation, and the
         // preference XML below references it by name.
@@ -89,8 +98,10 @@ internal val settingsScreenPatch = resourcePatch(
         // symbol lists above. All resolve by name at runtime through getIdentifier, so aapt2's
         // numbering never leaks into preferences — a blob exported on one device round-trips on
         // another, and the picker's grid table needs no resource ids of its own.
-        for (symbol in HOTKEY_DEFAULT_SYMBOLS + HOTKEY_EXTRA_SYMBOLS) {
-            writePatchResource("flexboard_icon_$symbol.xml", "res/drawable")
+        if (SettingsSection.HOTKEYS in selectedSettingsSections) {
+            for (symbol in HOTKEY_DEFAULT_SYMBOLS + HOTKEY_EXTRA_SYMBOLS) {
+                writePatchResource("flexboard_icon_$symbol.xml", "res/drawable")
+            }
         }
 
         // The screen itself. Written under res/xml so aapt2 compiles it into the table; the
@@ -100,7 +111,7 @@ internal val settingsScreenPatch = resourcePatch(
         // can never disagree.
         writePatchResource("flexboard_settings.xml", "res/xml", mapOf(
             "FLEXBOARD_VERSION" to readVersion(),
-        ))
+        ), ::filterSettingsSections)
 
         // Both top-level screens: Gboard picks between them at runtime (SettingsActivity.t()), and
         // the legacy one is what ColorOS/OxygenOS and any pre-36 device actually show. Adding the
@@ -146,6 +157,36 @@ private const val ENTRY_TITLE = "Flexboard"
 private const val ENTRY_SUMMARY = "Gesture settings"
 
 /**
+ * Filters the settings template to only the sections whose features were ticked, removing
+ * sentinel-marked blocks (`@SECTION_X@` … `@END_SECTION_X@`) for sections not in the registry.
+ *
+ * Called with the template's text after placeholder substitution, before the XML parse check.
+ * The sentinel comments are stripped from the output either way — they're template scaffolding,
+ * not APK content. The preflight pin for the row keys still validates the template, not the
+ * output, so checkers are untouched.
+ */
+internal fun filterSettingsSections(xml: String): String {
+    val withMarkers = xml.replace(
+        Regex("<!--\\s*@SECTION_(\\w+)@\\s*-->.*?<!--\\s*@END_SECTION_\\1@\\s*-->",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.MULTILINE)),
+    ) { match ->
+        val section = match.groupValues[1]
+        if (SettingsSection.entries.any { it.name == section &&
+                    it in selectedSettingsSections }) {
+            // Keep, but strip the sentinel comments from the output
+            match.value
+                .replace(Regex("<!--\\s*@SECTION_\\w+@\\s*-->"), "")
+                .replace(Regex("<!--\\s*@END_SECTION_\\w+@\\s*-->"), "")
+                .trim()
+        } else {
+            // Drop the entire block
+            ""
+        }
+    }
+    return withMarkers
+}
+
+/**
  * Copies a patch resource from `patches/src/main/resources/` into the APK's `res/` tree so aapt2
  * compiles it and assigns a resource id.
  *
@@ -162,7 +203,12 @@ private fun writePatchResource(name: String, target: String) =
     writePatchResource(name, target, emptyMap())
 
 context(context: ResourcePatchContext)
-private fun writePatchResource(name: String, target: String, placeholders: Map<String, String>) {
+private fun writePatchResource(
+    name: String,
+    target: String,
+    placeholders: Map<String, String>,
+    sectionFilter: (String) -> String = { it },
+) {
     val source = "${target.removePrefix("res/")}/$name"
     var xml = {}.javaClass.classLoader
         ?.getResourceAsStream(source)
@@ -173,6 +219,7 @@ private fun writePatchResource(name: String, target: String, placeholders: Map<S
         require(token in xml) { "$source lacks the @$key@ placeholder it was supposed to carry" }
         xml = xml.replace(token, value)
     }
+    xml = sectionFilter(xml)
     // Parse before write: a malformed file otherwise only surfaces thousands of lines into
     // Morphe's resource-id pass ("expected: END_TAG ... resources @7141:1"), with no hint of
     // which patch resource produced it. Failing here costs milliseconds and names the file.

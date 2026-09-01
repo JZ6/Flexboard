@@ -17,6 +17,8 @@ import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.selectedSettingsSections
+import dev.jz6.flexboard.patches.shared.SettingsSection
 import dev.jz6.flexboard.patches.shared.usesField
 
 /**
@@ -90,6 +92,9 @@ val swipeToDeletePatch = bytecodePatch(
     dependsOn(scrubTuningPatch)
 
     execute {
+        // Tell the settings patch to keep the Swipe section — we're selected.
+        selectedSettingsSections += SettingsSection.SWIPE_TO_DELETE
+
         ScrubDeleteConstructorFingerprint.method.writeWildcardStartKey()
 
         // Both edit `g()`, and both add an instruction to it. Neither depends on running first:
