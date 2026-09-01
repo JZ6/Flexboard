@@ -33,7 +33,7 @@ dependencies {
     // Same version gradle/libs.versions.toml pins for the patches build; bump them together.
     implementation("app.morphe:morphe-patcher:1.8.0")
     // Explicit: morphe-patcher's published POM carries no transitive coordinates.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 }
 
 java {
