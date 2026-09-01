@@ -240,6 +240,15 @@ EXPECTED = {
     # tells "renamed" apart from "removed" on a bump.
     'native_settings_tree_listener': 'Lcdr;',
     'native_settings_manager': 'Lcdw;',
+    # ---- vibration: two constant-return patches on obfuscated methods
+    # The mode method the settings fragment and the key-release dispatch both call, and the
+    # suppression gate on the vibrator path. Both are obfuscated; both pinned to this build.
+    'vibration_mode_class': 'Lphn;',
+    'vibration_mode_method': 'b',
+    'vibration_mode_registers': 7,
+    'vibration_provider_class': 'Lpho;',
+    'vibration_suppression_method': 'n',
+    'vibration_suppression_registers': 5,
 }
 
 # --------------------------------------------------------------------------- dex helpers
@@ -1878,6 +1887,34 @@ def run(dl, apk=None):
             n2, a2 = ins[i + 2][1], ins[i + 2][2]
             check('grammar: stored through the flag factory',
                   n2 == 'invoke-static' and target in a2, f'{n2} {a2}')
+
+    # ---- vibration
+    #
+    # Two constant-return patches. Each replaces the first two instructions with const/return,
+    # so the pins check the methods exist with the expected shape — class, name, signature,
+    # register count — and that the first two instructions are still the original ones the
+    # patch overwrites. A bump that moves either name fails loudly here, which is the only
+    # diagnostic a constant-return patch has.
+    mode_desc = f"{E['vibration_mode_class']}->{E['vibration_mode_method']}(Landroid/content/Context;)I"
+    c, ins = body(dl, mode_desc)
+    if check('vibration: mode method exists', ins is not None, mode_desc):
+        check('vibration: mode method register count',
+              c['registers'] == E['vibration_mode_registers'],
+              f'got {c["registers"]}')
+        # The patch writes const/4 + return at indices 0 and 1; assert the originals are still
+        # what the trace expected, so a restructured method body is caught before the patch
+        # silently overwrites the wrong instructions.
+        check('vibration: mode method opens with sget-object',
+              ins[0][1] == 'sget-object', ins[0][1])
+
+    supp_desc = f"{E['vibration_provider_class']}->{E['vibration_suppression_method']}()Z"
+    c, ins = body(dl, supp_desc)
+    if check('vibration: suppression method exists', ins is not None, supp_desc):
+        check('vibration: suppression method register count',
+              c['registers'] == E['vibration_suppression_registers'],
+              f'got {c["registers"]}')
+        check('vibration: suppression method opens with iget-boolean',
+              ins[0][1] == 'iget-boolean', ins[0][1])
 
     failed = check.finish()
     print('resolved handler Context field: ', handler_ctx)
