@@ -1,3 +1,8 @@
+# [2.0.2-dev.3](https://github.com/JZ6/Flexboard/compare/v2.0.2-dev.2...v2.0.2-dev.3) (2026-09-01)
+
+* **Gboard:** revert: remove Bigger Toolbar (pre-release)
+* **Gboard:** docs: toolbar width decoupling — research and plan
+
 # [2.0.2-dev.2](https://github.com/JZ6/Flexboard/compare/v2.0.2-dev.1...v2.0.2-dev.2) (2026-09-01)
 
 * **Gboard:** chore: Bigger Toolbar off by default — pre-release
