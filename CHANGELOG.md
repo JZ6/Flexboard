@@ -1,3 +1,8 @@
+# [2.0.2-dev.2](https://github.com/JZ6/Flexboard/compare/v2.0.2-dev.1...v2.0.2-dev.2) (2026-09-01)
+
+* **Gboard:** chore: Bigger Toolbar off by default — pre-release
+* **Gboard:** feat: vibration everywhere — slider on every device
+
 # [2.0.2-dev.1](https://github.com/JZ6/Flexboard/compare/v2.0.1...v2.0.2-dev.1) (2026-08-31)
 
 * **Gboard:** fix: patch Flexboard setting into gboard legacy setting
