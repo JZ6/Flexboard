@@ -49,12 +49,34 @@ public final class Preferences {
 
     private Preferences() {}
 
-    /** Gboard's default preference file, opened against the context Gboard itself would use. */
+    /**
+     * Gboard's default preference file, opened against the context Gboard itself would use.
+     *
+     * <p>Memoised, because {@code createDeviceProtectedStorageContext()} in {@link
+     * #deviceProtected} builds a fresh {@code ContextImpl} on every call rather than returning a
+     * cached one, and Gboard's own application context is not device-protected, so that branch
+     * runs every time. The toolbar emission reads four values per shown slot -- text, icon, label
+     * and content description -- so a six-slot bar allocated twenty-four of them, and the hotkey
+     * refresh is spliced into the start-input path, meaning that repeats every time the keyboard
+     * is raised for a new editor rather than once per process.
+     *
+     * <p>Unsynchronised on purpose. Two threads racing here both end up calling
+     * {@code getSharedPreferences} for the same file, and the framework returns a process-wide
+     * singleton per file, so the loser of the race stores an object identical to the winner's.
+     */
     public static SharedPreferences of(Context context) {
+        SharedPreferences local = cached;
+        if (local != null) {
+            return local;
+        }
         Context storage = deviceProtected(context);
-        return storage.getSharedPreferences(
+        local = storage.getSharedPreferences(
                 storage.getPackageName() + SUFFIX, Context.MODE_PRIVATE);
+        cached = local;
+        return local;
     }
+
+    private static volatile SharedPreferences cached;
 
     @SuppressLint("NewApi") // Both methods are API 24; Gboard's minSdkVersion is 26.
     private static Context deviceProtected(Context context) {

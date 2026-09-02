@@ -130,6 +130,13 @@ public final class Hotkeys {
      * the bundled-id era (dev.7 and earlier) degrade gracefully rather than blanking.
      */
     public static int iconOf(Context context, int slot) {
+        // Bounds-checked like shown() above. Both readers index DEFAULT_ICON_NAMES[slot - 1]
+        // directly, and are safe today only because the emitted smali gates them behind shown()
+        // and the fragment loops 1..slotCount(). The array being longer than SLOT_COUNT is what
+        // has been hiding the omission; SLOT_COUNT is documented as a number someone may raise.
+        if (slot < 1 || slot > SLOT_COUNT) {
+            return 0;
+        }
         String raw = Preferences.of(context).getString(iconKey(slot), "");
         int resolved = resolveIcon(context, raw);
         if (resolved != 0) {
@@ -174,6 +181,13 @@ public final class Hotkeys {
      * row from after a pick or an import.
      */
     public static String currentIconToken(Context context, int slot) {
+        // Bounds-checked like shown() above. Both readers index DEFAULT_ICON_NAMES[slot - 1]
+        // directly, and are safe today only because the emitted smali gates them behind shown()
+        // and the fragment loops 1..slotCount(). The array being longer than SLOT_COUNT is what
+        // has been hiding the omission; SLOT_COUNT is documented as a number someone may raise.
+        if (slot < 1 || slot > SLOT_COUNT) {
+            return "";
+        }
         String raw = Preferences.of(context).getString(iconKey(slot), "");
         return raw.isEmpty() ? DEFAULT_ICON_NAMES[slot - 1] : raw;
     }
