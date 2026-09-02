@@ -17,14 +17,15 @@ import dev.jz6.flexboard.patches.shared.basePatch
  *
  * On its own this patch is inert: the ids admitted here draw nothing unless another patch
  * registers an access point under the same id — names without a registry entry are skipped at
- * render (`Lmlh.w` does a map lookup and drops misses). The consumers arrive with the hotkey
- * patches.
+ * render (`Lmlh.w` does a map lookup and drops misses). Both toolbar patches are consumers, and
+ * either one selected alone admits the other's ids too, which costs a few array members that
+ * nothing draws.
  *
- * Unnamed on purpose: nothing about it is user-meaningful alone, and a "Toolbar Slots" tickbox
- * would invite deselecting a dependency the hotkey patches can never actually exclude
- * (they `dependsOn` it). It runs whenever a consumer is selected, and never on its own.
+ * Unnamed on purpose: nothing about it is user-meaningful alone, and a tickbox for it would
+ * invite deselecting a dependency its consumers can never actually exclude (they `dependsOn`
+ * it). It runs whenever one of them is selected, and never on its own.
  */
-internal val toolbarSlotsPatch = resourcePatch(
+internal val toolbarIdAdmissionPatch = resourcePatch(
     description = "Admit Flexboard's toolbar button ids natively, widening Gboard's own " +
         "allowed-set array. No other change; reorder and persistence stay stock.",
 ) {
@@ -37,7 +38,7 @@ internal val toolbarSlotsPatch = resourcePatch(
 
 /** The slot count lives in shared/ToolbarHotkeys.kt, which emits the per-slot blocks and owns it. */
 
-private const val SLOT_STRINGS = "values/flexboard_toolbar_slots.xml"
+private const val ADMITTED_IDS = "values/flexboard_toolbar_slots.xml"
 
 /**
  * The member of the allowed set that cannot be renamed: values inside the array are plain text
@@ -57,22 +58,22 @@ private const val ADMITTED_ID_COUNT = HOTKEY_SLOTS + 3
 context(context: ResourcePatchContext)
 private fun widenAllowedIdSet() {
     val fragment = {}.javaClass.classLoader
-        ?.getResourceAsStream(SLOT_STRINGS)
+        ?.getResourceAsStream(ADMITTED_IDS)
         ?.bufferedReader()?.use { it.readText() }
-        ?: error("$SLOT_STRINGS not found in patch resources")
+        ?: error("$ADMITTED_IDS not found in patch resources")
 
     // Every id Flexboard admits, not just the hotkey slots: the text action buttons mint their
     // own too, rather than squatting on ids Gboard ships dormant. Admission without registration
     // is inert by Gboard's own design, so a build that selects only one of the two patches simply
     // carries a few array members nothing draws.
-    val slotIds = Regex("""name="(flexboard_\w+)"""").findAll(fragment)
+    val admittedIds = Regex("""name="(flexboard_\w+)"""").findAll(fragment)
         .map { it.groupValues[1] }.toList()
-    val hotkeyIds = slotIds.filter { it.startsWith(HOTKEY_ID_PREFIX) }
+    val hotkeyIds = admittedIds.filter { it.startsWith(HOTKEY_ID_PREFIX) }
     require(hotkeyIds.size == HOTKEY_SLOTS) {
-        "$SLOT_STRINGS carries ${hotkeyIds.size} hotkey ids, expected $HOTKEY_SLOTS"
+        "$ADMITTED_IDS carries ${hotkeyIds.size} hotkey ids, expected $HOTKEY_SLOTS"
     }
-    require(slotIds.size == ADMITTED_ID_COUNT) {
-        "$SLOT_STRINGS carries ${slotIds.size} admitted ids, expected $ADMITTED_ID_COUNT — a new " +
+    require(admittedIds.size == ADMITTED_ID_COUNT) {
+        "$ADMITTED_IDS carries ${admittedIds.size} admitted ids, expected $ADMITTED_ID_COUNT — a new " +
             "id needs a patch registering it, or it is an inert array member nobody meant to add"
     }
 
@@ -80,7 +81,7 @@ private fun widenAllowedIdSet() {
     //    set is built from values and the encoder from names, and making them identical keeps
     //    both directions a no-op lookup.
     val stringsFile = context.get("res/values/strings.xml", true)
-    val stringsMerged = spliceValues(fragment, stringsFile.readText(), marker = slotIds.first())
+    val stringsMerged = spliceValues(fragment, stringsFile.readText(), marker = admittedIds.first())
     assertWellFormedXml(stringsMerged, stringsFile.name)
     stringsFile.writeText(stringsMerged)
 
@@ -88,7 +89,7 @@ private fun widenAllowedIdSet() {
     val arraysFile = context.get("res/values/arrays.xml", true)
     val arrays = arraysFile.readText()
 
-    if ("@string/${slotIds.first()}" in arrays) return  // already widened; repeat finalize is legal
+    if ("@string/${admittedIds.first()}" in arrays) return  // already widened; repeat finalize is legal
 
     // Which strings.xml name holds the sentinel id? Gboard's names are obfuscated, so locate it
     // by value: <string name="X">editor_info</string>.
@@ -106,7 +107,7 @@ private fun widenAllowedIdSet() {
         "expected exactly one string array containing $sentinelRef, found ${holders.size}"
     }
     val holder = holders.single()
-    val itemLines = slotIds.joinToString("\n") { "    <item>@string/$it</item>" }
+    val itemLines = admittedIds.joinToString("\n") { "    <item>@string/$it</item>" }
     val widened = holder.value.replace("</array>", "$itemLines\n  </array>")
     val merged = arrays.replace(holder.value, widened)
     assertWellFormedXml(merged, arraysFile.name)

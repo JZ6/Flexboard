@@ -50,7 +50,7 @@ each needs a fresh rewrite on the native registration helper. Bigger Toolbar ove
 gone. Hotkeys need enough dormant allowed-set ids to make it useful; past scope, see "widening
 0x7f0300dc" below.
 
-**Widen the allowed-set array when hotkeys return.** Done — `ToolbarSlotsPatch` splices the
+**Widen the allowed-set array when hotkeys return.** Done — `toolbarIdAdmissionPatch` splices the
 twelve `flexboard_hotkey_N` ids into the allowed-set array via `res/values` (strings + items),
 zero dex change; research in [`docs/toolbar-access-points.md`](toolbar-access-points.md). Inert
 until a patch registers those ids — which is the hotkeys return, when it comes.
@@ -153,7 +153,7 @@ The dormant allowed-set ids, none of which Flexboard uses any more:
 
 | id                          | status                                        |
 | --------------------------- | --------------------------------------------- |
-| `editor_info`               | the sentinel `ToolbarSlotsPatch` finds the array by |
+| `editor_info`               | the sentinel `toolbarIdAdmissionPatch` finds the array by |
 | `undo_cooperative`          | free                                          |
 | `muse_toggle_playground_ap` | free                                          |
 | `jetson_feedback`           | free                                          |
@@ -188,7 +188,7 @@ inert row today is the swipe slider, and the hotkeys block *works* even with its
 
 **Step 1 — how the screen knows what was patched in (per feature):**
 
-- *Hotkeys: free probe, zero patch code.* `ToolbarSlotsPatch` splices `flexboard_hotkey_N`
+- *Hotkeys: free probe, zero patch code.* `toolbarIdAdmissionPatch` splices `flexboard_hotkey_N`
   strings into resources, so `getIdentifier("flexboard_hotkey_1", "string", pkg) != 0` at
   runtime == hotkeys are in the APK. Nothing to write, nothing to stale.
 - *Swipe (and anything without a resource probe): store marker.* The feature patch seeds

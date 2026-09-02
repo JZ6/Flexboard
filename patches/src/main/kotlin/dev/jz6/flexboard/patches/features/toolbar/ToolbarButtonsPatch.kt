@@ -52,7 +52,7 @@ val toolbarButtonsPatch = bytecodePatch(
     // Admits this patch's three ids into Gboard's allowed-set array. Without it the register call
     // logs "Invalid access point" and drops them — the same dependency, for the same reason, that
     // Toolbar Hotkeys carries.
-    dependsOn(toolbarSlotsPatch)
+    dependsOn(toolbarIdAdmissionPatch)
 
     execute {
         val builder = resolveAccessPointBuilder()
@@ -87,7 +87,7 @@ private const val TEXT_ACTION_CTOR = "Ldev/jz6/flexboard/extension/textaction/Te
  * draws none of them.
  *
  * The toolbar ids are Flexboard's own, admitted into Gboard's allowed-set array by
- * [toolbarSlotsPatch] — the same mechanism the hotkey slots use. See `ToolbarCanvas.kt` for why
+ * [toolbarIdAdmissionPatch] — the same mechanism the hotkey slots use. See `ToolbarCanvas.kt` for why
  * the id has to be in that set at all.
  *
  * These three used to squat on ids Gboard ships in the allowed set but never registers a handler

@@ -221,7 +221,7 @@ EXPECTED = {
     # definition would clobber a real Gboard AP with the same id). One entry per registered
     # button, so a future bump that adds a real handler for one is caught here before it ships.
     # The ids ToolbarButtonsPatch registers. These are Flexboard's own now, admitted into the
-    # allowed-set array by toolbarSlotsPatch, so unlike the dormant Gboard ids they replaced they
+    # allowed-set array by toolbarIdAdmissionPatch, so unlike the dormant Gboard ids they replaced they
     # are deliberately NOT in the stock array this file reads -- only the dormancy check below
     # applies to them.
     'native_button_ids': [
@@ -229,7 +229,7 @@ EXPECTED = {
         'flexboard_copy',
         'flexboard_paste',
     ],
-    # The stock id toolbarSlotsPatch locates the allowed-set array by. Nothing registers against
+    # The stock id toolbarIdAdmissionPatch locates the allowed-set array by. Nothing registers against
     # it; it just has to still be in the array, because the array's own name is obfuscated per
     # build and its contents are the only stable way to find it.
     'native_allowed_set_sentinel': 'editor_info',
@@ -1573,7 +1573,7 @@ def run(dl, apk=None):
                   len(members) == E['native_allowed_array_size'],
                   f'got {len(members)}, expected {E["native_allowed_array_size"]}')
             # Not the button ids: those are Flexboard's own and get spliced in by
-            # toolbarSlotsPatch, so their absence from the stock array is the expected state.
+            # toolbarIdAdmissionPatch, so their absence from the stock array is the expected state.
             # What has to be here is the sentinel the splice locates the array by.
             sentinel = E['native_allowed_set_sentinel']
             check(f'native: the allowed-set sentinel {sentinel!r} is in the array',

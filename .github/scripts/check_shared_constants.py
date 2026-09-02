@@ -409,7 +409,7 @@ def _check_stock_package_name(problems):
 
 
 def _check_allowed_set_sentinel(problems):
-    """ToolbarSlotsPatch and preflight agree on which stock id locates the allowed-set array.
+    """toolbarIdAdmissionPatch and preflight agree on which stock id locates the allowed-set array.
 
     The array's own name is obfuscated per build, so both find it by looking for a known member.
     They each spell that member out separately -- SENTINEL_ID in the patch, and
@@ -417,9 +417,16 @@ def _check_allowed_set_sentinel(problems):
     id the patch no longer looks for, while the patch fails at run time against an array preflight
     said was fine.
     """
-    kt = re.search(
-        r'SENTINEL_ID\s*=\s*"([^"]+)"',
-        (PATCHES / "dev/jz6/flexboard/patches/features/toolbar/ToolbarSlotsPatch.kt").read_text(),
+    # Located by content, not by filename. Hardcoding the path meant that renaming the file --
+    # which happened the moment the patch stopped being hotkey-specific -- turned this check into
+    # a FileNotFoundError traceback instead of a finding. It still failed, which is the important
+    # part, but a stack trace is a worse diagnostic than a sentence.
+    kt = next(
+        (m for m in (
+            re.search(r'SENTINEL_ID\s*=\s*"([^"]+)"', f.read_text())
+            for f in sorted(PATCHES.rglob("*.kt"))
+        ) if m),
+        None,
     )
     pf = re.search(
         r"'native_allowed_set_sentinel':\s*'([^']+)'",
@@ -432,7 +439,7 @@ def _check_allowed_set_sentinel(problems):
         )
     elif kt.group(1) != pf.group(1):
         problems.append(
-            f"  ToolbarSlotsPatch locates the allowed-set array by {kt.group(1)!r} but preflight "
+            f"  toolbarIdAdmissionPatch locates the allowed-set array by {kt.group(1)!r} but preflight "
             f"pins {pf.group(1)!r} — one of them is checking an array the other cannot find"
         )
 

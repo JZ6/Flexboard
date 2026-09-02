@@ -24,7 +24,7 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 internal const val HOTKEY_SLOTS = 6
 
 /** Every flexboard toolbar id carries this prefix — how the constants checker tells the
- * generated per-slot keys from a typo. If it changes, `ToolbarSlotsPatch`'s strings move too. */
+ * generated per-slot keys from a typo. If it changes, the admitted strings move too. */
 internal const val HOTKEY_ID_PREFIX = "flexboard_hotkey_"
 
 // -------------------------------------------------------------------------------------------
@@ -49,7 +49,7 @@ internal const val HOTKEY_ID_PREFIX = "flexboard_hotkey_"
  *  - `v4` is the shown-guard's scratch — dead before and after the block's own use.
  *
  * Admission changed hands since the first implementation: the ids are widened into Gboard's
- * own allowed-set array by `ToolbarSlotsPatch` now (docs/toolbar-access-points.md), so no dex
+ * own allowed-set array by `toolbarIdAdmissionPatch` now (docs/toolbar-access-points.md), so no dex
  * touches the order-read filter at all.
  */
 internal fun BytecodePatchContext.emitNativeHotkeys(builder: AccessPointBuilder) {

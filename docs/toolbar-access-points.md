@@ -3,7 +3,7 @@
 > **Superseded in part.** This was written when Flexboard's buttons squatted on ids
 > Gboard ships dormant, and it argues for minting our own instead. That argument
 > won: the hotkey slots did it first and the text action buttons followed, so every
-> Flexboard button now uses a `flexboard_*` id admitted by `ToolbarSlotsPatch`. The
+> Flexboard button now uses a `flexboard_*` id admitted by `toolbarIdAdmissionPatch`. The
 > mechanism described below is what ships; the framing of the dormant ids as the
 > resource being budgeted is history.
 
