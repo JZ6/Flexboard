@@ -84,7 +84,7 @@ before the parse check. The checkers parse the template and are untouched.
 | file | change |
 |---|---|
 | `shared/SettingsSections.kt` | **new** — enum + mutable set |
-| `features/settings/SettingsScreenPatch.kt` | clear in `execute`, filter in `finalize`, gate the icon-drawable loop on HOTKEYS |
+| `shared/SettingsScreenPatch.kt` | clear in `execute`, filter in `finalize`, gate the icon-drawable loop on HOTKEYS |
 | `swipetodelete/ScrubDeleteAnywherePatch.kt` | one line: register SWIPE_TO_DELETE in `execute` |
 | `toolbar/ToolbarHotkeysPatch.kt` | one line: register HOTKEYS in `execute` |
 | vibration patches (once they want settings rows) | same one line |

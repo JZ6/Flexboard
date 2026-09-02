@@ -40,7 +40,6 @@ internal data class AccessPointBuilder(
     val setLabel: String,
     val setContentDescription: String,
     val setAction: String,
-    val putExtra: String,
     val build: String,
     /**
      * Where a **literal** label goes, for a button whose name is not a Gboard string.
@@ -231,8 +230,6 @@ internal fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilde
         setLabel = label.setter,
         setContentDescription = contentDescription.setter,
         setAction = soleBuilderMethod("(Ljava/lang/Runnable;)V", "Runnable action setter")
-            .toDescriptor(),
-        putExtra = soleBuilderMethod("(Ljava/lang/String;Ljava/lang/Object;)V", "extras setter")
             .toDescriptor(),
         build = build.toDescriptor(),
         labelField = labelField,

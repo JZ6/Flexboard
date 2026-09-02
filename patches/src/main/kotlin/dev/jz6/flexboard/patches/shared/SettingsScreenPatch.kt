@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.features.settings
+package dev.jz6.flexboard.patches.shared
 
 import app.morphe.patcher.patch.ResourcePatchContext
 import app.morphe.patcher.patch.resourcePatch
@@ -6,12 +6,6 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.Constants.GBOARD_SETTINGS_LEGACY_XML
 import dev.jz6.flexboard.patches.shared.Constants.GBOARD_SETTINGS_XML
 import dev.jz6.flexboard.patches.shared.Constants.SETTINGS_FRAGMENT_CLASS
-import dev.jz6.flexboard.patches.shared.androidAttribute
-import dev.jz6.flexboard.patches.shared.childElements
-import dev.jz6.flexboard.patches.shared.descendants
-import dev.jz6.flexboard.patches.shared.SettingsSection
-import dev.jz6.flexboard.patches.shared.selectedSettingsSections
-import dev.jz6.flexboard.patches.shared.setAndroidAttribute
 import org.w3c.dom.Document
 
 /**
