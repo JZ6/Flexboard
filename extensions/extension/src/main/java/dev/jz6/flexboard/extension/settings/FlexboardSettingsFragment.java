@@ -444,7 +444,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         }
         String outcome = Hotkeys.importFromClipboard(context);
         row.n(outcome);
-        if (outcome.startsWith("imported")) {
+        if (Hotkeys.applied(outcome)) {
             onImportApplied(context);
         }
     }
@@ -474,7 +474,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
                 String blob = field.getText().toString();
                 String outcome = Hotkeys.importFromText(ui, blob);
                 row.n(outcome);
-                if (outcome.startsWith("imported")) {
+                if (Hotkeys.applied(outcome)) {
                     onImportApplied(ui);
                 }
             })
