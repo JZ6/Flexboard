@@ -390,7 +390,24 @@ def body(dl, descriptor):
 
 
 def regs(arg):
-    return [int(x) for x in re.findall(r'v(\d+)', arg)]
+    """The registers an operand text names, and nothing else.
+
+    Scanning the whole string for `v\\d+` also matches inside descriptors and literals, which this
+    dex is full of: `check-cast v3, Landroid/support/v7/widget/AppCompatTextView;` yielded [3, 7],
+    `const-string v0, 'SSLv3'` yielded [0, 3]. 1,671 method descriptors here contain that shape.
+    Phantoms entered `live_free` as sources and inflated liveness, so the anti-vacuity
+    counter-checks that assert a register is *not* live could pass for the wrong reason.
+
+    Registers only ever appear before the reference, so the descriptor is cut away first: an
+    invoke's braces close before its target, and everything else separates them with `, L` or
+    `, [`. Nothing currently analysed contains a phantom, so this changes no result today.
+    """
+    head = arg
+    if '}' in head:
+        head = head.split('}', 1)[0]
+    else:
+        head = re.split(r",\s*(?=[L\[])|,\s*(?=')", head)[0]
+    return [int(x) for x in re.findall(r'v(\d+)', head)]
 
 
 def invoke_regs(arg):

@@ -43,10 +43,18 @@ for o in range(0x90, 0xb0): _n(o, f'binop{o:02x}', '23x')
 for o in range(0xb0, 0xd0): _n(o, f'binop2addr{o:02x}', '12x')
 for o in range(0xd0, 0xd8): _n(o, f'lit16_{o:02x}', '22s')
 for o in range(0xd8, 0xe3): _n(o, f'lit8_{o:02x}', '22b')
+# The tail dexlib2 knows and this table used to stop short of. Missing entries fell through to the
+# `10x` default below and were sized as one code unit, so a single one of these in an analysed
+# method would shift every instruction after it and quietly invalidate every register and
+# adjacency assertion built on the result -- while still printing PASS. None occur in 18.0.3
+# (0 hits across 105,133 code items), which is why it never showed.
+_n(0xfa, 'invoke-polymorphic', '45cc'); _n(0xfb, 'invoke-polymorphic/range', '4rcc')
+_n(0xfc, 'invoke-custom', '35c'); _n(0xfd, 'invoke-custom/range', '3rc')
+_n(0xfe, 'const-method-handle', '21c'); _n(0xff, 'const-method-type', '21c')
 
 SZ = {'10x':1,'12x':1,'11n':1,'11x':1,'10t':1,'20t':2,'22x':2,'21t':2,'21s':2,'21h':2,'21c':2,
       '23x':2,'22b':2,'22t':2,'22s':2,'22c':2,'30t':3,'31i':3,'31t':3,'31c':3,'32x':3,
-      '35c':3,'3rc':3,'51l':5}
+      '35c':3,'3rc':3,'51l':5,'45cc':4,'4rcc':4}
 
 FIELD_OPS = set(range(0x52, 0x60)) | set(range(0x60, 0x6e))
 METH_OPS = set(range(0x6e, 0x73)) | set(range(0x74, 0x79))
@@ -67,7 +75,14 @@ def disasm(d, c):
                 w = struct.unpack_from('<H', b, p+2)[0]; s = struct.unpack_from('<I', b, p+4)[0]
                 n = (s*w + 1)//2 + 4
             out.append((pc, 'payload', f'{n} units')); p += 2*n; continue
-        name, fmt = N.get(op, (f'op{op:02x}', '10x'))
+        if op not in N:
+            # Assuming `10x` here desynchronises the stream for anything wider, and every
+            # downstream check keeps reporting PASS against garbage. Refuse instead.
+            raise ValueError(
+                f'no instruction format for opcode 0x{op:02x} at pc {pc} — dis.py cannot size it, '
+                f'and guessing would silently shift every instruction that follows'
+            )
+        name, fmt = N[op]
         n = SZ[fmt]
         u1 = struct.unpack_from('<H', b, p+2)[0] if n > 1 else 0
         u2 = struct.unpack_from('<H', b, p+4)[0] if n > 2 else 0
