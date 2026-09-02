@@ -118,9 +118,9 @@ are half an exception — *editing* a snippet takes effect immediately, because 
 the button is tapped, but its name on the toolbar and whether the button exists at all are decided
 when the bar is built.
 
-The screen shows every section whether or not you ticked the patch it belongs to — it is one merged
-class and cannot tell which patches you chose. A slider for a patch you did not apply moves and
-stores and does nothing.
+Each section appears only if you ticked the patch it belongs to. The patches register the sections
+they own while they run, and the settings screen keeps just those — so there are no rows for
+features that are not in your build.
 
 ### The backspace key still behaves the way Gboard built it
 

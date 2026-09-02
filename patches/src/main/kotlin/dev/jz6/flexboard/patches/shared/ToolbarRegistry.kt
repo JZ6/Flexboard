@@ -468,7 +468,9 @@ private fun hotkeyBlock(
     site: HotkeySite,
     registerCall: String,
 ): String {
-    // const/4 only encodes -8..7; slots 8–12 need const/16.
+    // const/4 only encodes -8..7. At [HOTKEY_SLOTS] = 6 the widening branch is unreachable today;
+    // it stays because the slot count is a constant someone may raise, and a silently truncated
+    // slot ordinal would be far harder to spot than an extra branch here.
     val constOp = if (slot in 1..7) "const/4" else "const/16"
     // Plain unbraced names in the template: `${site.x}` inside an invoke's `{ ... }` would put a
     // `}` mid-register-list, and the constants checker's emitted-call parser would silently stop
@@ -595,8 +597,6 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
     }
     start.assertRegisterCount(START_INPUT_REGISTER_COUNT, startDescriptor)
 
-    val returnIndex = start.implementation!!.instructions
-        .indexOfLast { it.opcodeName().startsWith("RETURN") }
     // The other two emitters validate their scratch set; this one used to only assert the register
     // count, which does not rule out a collision. At 14 registers with 6 arguments the parameters
     // occupy v8..v13, leaving v0/v1/v2/v4 as locals that are dead at the return.
@@ -616,13 +616,15 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
             "before the last one would leave the other paths without it"
     }
 
+    val returnIndex = start.implementation!!.instructions
+        .indexOfLast { it.opcodeName().startsWith("RETURN") }
     check(returnIndex >= 0) { "$startDescriptor has no return — shape moved" }
 
     val refreshSite = hotkeyRefreshSite(controllerField)
     val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
         hotkeyBlock(slot, builder, refreshSite, canvas.registerCall)
     } + "\n\nnop\n").trimIndent()
-    // Same trailing-label rule as the constructor emission: the nop houses the twelfth branch.
+    // Same trailing-label rule as the constructor emission: the nop houses the last slot's branch.
     start.addInstructionsWithLabels(returnIndex, emission)
 }
 

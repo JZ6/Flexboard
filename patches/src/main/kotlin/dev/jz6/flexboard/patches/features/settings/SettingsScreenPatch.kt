@@ -102,7 +102,7 @@ internal val settingsScreenPatch = resourcePatch(
         // preference XML below references it by name.
         writePatchResource("flexboard_settings_icon.xml", "res/drawable")
 
-        // The hotkey icon pack: the twelve per-slot defaults plus the picker's extras, both
+        // The hotkey icon pack: the slot defaults plus the picker's extras, both
         // symbol lists above. All resolve by name at runtime through getIdentifier, so aapt2's
         // numbering never leaks into preferences — a blob exported on one device round-trips on
         // another, and the picker's grid table needs no resource ids of its own.

@@ -36,8 +36,13 @@ internal object Constants {
 
     /**
      * Signatures and target carried over verbatim from the build this was developed against.
-     * The hooks are pinned to exactly one Gboard build; anything else must fail to match rather
-     * than patch something it does not understand.
+     *
+     * **This is metadata, not a gate.** `Patcher` never reads `compatiblePackages` — only the host
+     * UI does — so it records which build the hooks were derived against and may warn a user, but
+     * it does not stop the patches running against a different one. Anything that must not be
+     * applied to the wrong build has to establish that itself, by matching on shape rather than on
+     * an R8 letter. Justifications elsewhere in this bundle of the form "what makes this
+     * positional match acceptable is the pin" are relying on a guarantee that does not exist.
      */
     val COMPATIBILITY_GBOARD = Compatibility(
         name = "Gboard",
