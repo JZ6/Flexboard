@@ -1,3 +1,14 @@
+# [2.1.0-dev.1](https://github.com/JZ6/Flexboard/compare/v2.1.0-dev.0...v2.1.0-dev.1) (2026-09-02)
+
+* **Gboard:** fix: the vibration patch was turning vibration off
+* **Gboard:** fix: link only where a section exists, and make the parsers fail loudly
+* **Gboard:** refactor: the foundation no longer imports a feature, and drops a dead pin
+* **Gboard:** fix: one definition of an occupied slot, and an import that says what it destroyed
+* **Gboard:** fix: recognise the obfuscated shapes this lane was walking past
+* **Gboard:** fix: pin the hotkey row-key format instead of spelling it three times
+* **Gboard:** fix: a stale Gboard resource id no longer crashes the keyboard at startup
+* **Gboard:** fix: rotating mid-edit no longer overwrites the hotkey being edited
+
 # [2.1.0-dev.0](https://github.com/JZ6/Flexboard/compare/v2.0.2-dev.3...v2.1.0-dev.0) (2026-09-02)
 
 * **Gboard:** chore(deps): bump gradle-wrapper from 9.7.0 to 9.7.1

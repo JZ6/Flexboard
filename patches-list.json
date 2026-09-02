@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "2.1.0-dev.0",
+  "version": "2.1.0-dev.1",
   "patches": [
     {
       "name": "Bypass Gboard Signature",
@@ -287,7 +287,7 @@
     },
     {
       "name": "Vibration slider everywhere",
-      "description": "Forces Gboard to show its own vibration strength slider on every device, rather than deferring to the system haptic settings page. The slider actually reaches the vibrator instead of being suppressed by a server-side rollout.",
+      "description": "Forces Gboard to show its own vibration strength slider on every device, rather than deferring to the system haptic settings page, so the strength is adjustable instead of being fixed by whichever rollout the device landed in.",
       "default": true,
       "dependencies": [
         "BytecodePatch"
