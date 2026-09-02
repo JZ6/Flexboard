@@ -23,9 +23,9 @@ import dev.jz6.flexboard.patches.features.swipetodelete.SCRUB_MOTION_EVENT_HANDL
 import dev.jz6.flexboard.patches.features.swipetodelete.StartKeyChain
 import dev.jz6.flexboard.patches.features.swipetodelete.branchOnStartKey
 import dev.jz6.flexboard.patches.features.swipetodelete.resolveStartKeyChain
-import dev.jz6.flexboard.patches.features.swipetodelete.ScrubDeleteConstructorFingerprint
-import dev.jz6.flexboard.patches.features.swipetodelete.ScrubDispatchFingerprint
-import dev.jz6.flexboard.patches.features.swipetodelete.ScrubEngineConstructorFingerprint
+import dev.jz6.flexboard.patches.features.swipetodelete.scrubDeleteConstructorFingerprint
+import dev.jz6.flexboard.patches.features.swipetodelete.scrubDispatchFingerprint
+import dev.jz6.flexboard.patches.features.swipetodelete.scrubEngineConstructorFingerprint
 import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.PACKED_INVOKE_REGISTER_LIMIT
@@ -78,12 +78,12 @@ internal val scrubTuningPatch = bytecodePatch(
         // gesture, which key the finger went down on — see `swipetodelete/StartKey.kt`.
         val startKey = resolveStartKeyChain()
 
-        ScrubEngineConstructorFingerprint.method.substituteHoldDelay(this)
+        scrubEngineConstructorFingerprint().method.substituteHoldDelay(this)
         // Swipe-length scaling disabled — the slider has no effect on distance for now.
         // See the swipe-length investigation in docs/roadmap.md.
-        //ScrubDeleteConstructorFingerprint.method.scaleStepTable(this)
-        //ScrubDispatchFingerprint.method.useStockDistanceFromBackspace(this, startKey)
-        ScrubDispatchFingerprint.method.capWordCount(this, startKey)
+        //scrubDeleteConstructorFingerprint().method.scaleStepTable(this)
+        //scrubDispatchFingerprint().method.useStockDistanceFromBackspace(this, startKey)
+        scrubDispatchFingerprint().method.capWordCount(this, startKey)
     }
 }
 

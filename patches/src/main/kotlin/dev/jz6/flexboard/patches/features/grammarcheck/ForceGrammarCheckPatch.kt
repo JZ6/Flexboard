@@ -53,7 +53,7 @@ val forceGrammarCheckPatch = bytecodePatch(
     dependsOn(basePatch)
 
     execute {
-        GrammarCheckerFlagClinitFingerprint.method.forceDefaultOn()
+        grammarCheckerFlagClinitFingerprint().method.forceDefaultOn()
     }
 }
 
@@ -62,7 +62,7 @@ val forceGrammarCheckPatch = bytecodePatch(
  * `const-string` + `const/4` + `Lnxs;->a` triples — one per flag — and the string is what R8
  * cannot move, so we anchor on it and assert the shape rather than trusting a line number.
  */
-private object GrammarCheckerFlagClinitFingerprint : Fingerprint(
+private fun grammarCheckerFlagClinitFingerprint() = Fingerprint(
     definingClass = "Ljpf;",
     name = "<clinit>",
     parameters = emptyList(),

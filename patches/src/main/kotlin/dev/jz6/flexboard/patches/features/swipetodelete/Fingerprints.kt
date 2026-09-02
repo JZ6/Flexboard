@@ -111,9 +111,28 @@ internal fun BytecodePatchContext.checkPreferenceStorePins() {
 
 /**
  * The shared engine's entry point. Holds the single comparison that decides whether a scrub may
+ * ### Why these are functions and not `object`s
+ *
+ * `Fingerprint` memoises its `Match` in `_matchOrNull`, and `matchOrNull(context)` returns that
+ * cache without ever checking the cached `Match` came from the context being asked. The patcher's
+ * cleanup does not save you: `clearFingerprints()` calls `clearMatch()` on every registered
+ * fingerprint and *then* empties the registry, while a `Fingerprint` only registers itself from its
+ * constructor. A Kotlin `object` runs that constructor once per classloader, so it is registered
+ * for the first run and never again — run two resolves fresh and is then never cleared, and run
+ * three onwards hands back a `Match` bound to a discarded `BytecodePatchContext`. The edits land in
+ * the previous run's object graph and the output APK is quietly unpatched, with every
+ * `assertRegisterCount` still passing because the numbers are identical.
+ *
+ * That needs the host to reuse the bundle's classloader across patching sessions, which the local
+ * driver never does — one session per JVM — so it cannot reproduce here. A factory sidesteps the
+ * question entirely: a fresh instance has nothing cached and re-registers itself for the run it
+ * belongs to. Resolve once per `execute` and share the result, rather than calling twice.
+ *
+ * ---
+ *
  * begin, for every subclass — delete, spacebar move, and inline suggestion alike.
  */
-object ScrubHandleMotionEventFingerprint : Fingerprint(
+fun scrubHandleMotionEventFingerprint() = Fingerprint(
     definingClass = SCRUB_MOTION_EVENT_HANDLER,
     name = "g",
     parameters = listOf("Landroid/view/MotionEvent;"),
@@ -125,7 +144,7 @@ object ScrubHandleMotionEventFingerprint : Fingerprint(
  * the `Lpvs;` config it hands to the shared engine, the first argument of which is the keycode the
  * drag must start on.
  */
-object ScrubDeleteConstructorFingerprint : Fingerprint(
+fun scrubDeleteConstructorFingerprint() = Fingerprint(
     definingClass = SCRUB_DELETE_MOTION_EVENT_HANDLER,
     name = "<init>",
     parameters = listOf("Landroid/content/Context;", "Lpvo;"),
@@ -140,7 +159,7 @@ object ScrubDeleteConstructorFingerprint : Fingerprint(
  * `InlineSuggestionScrubSpaceMotionEventHandler` calls the four-argument form directly with 50 ms,
  * so it never passes through here.
  */
-object ScrubEngineConstructorFingerprint : Fingerprint(
+fun scrubEngineConstructorFingerprint() = Fingerprint(
     definingClass = SCRUB_MOTION_EVENT_HANDLER,
     name = "<init>",
     parameters = listOf("Landroid/content/Context;", "Lpvo;", "Lpvs;"),
@@ -152,7 +171,7 @@ object ScrubEngineConstructorFingerprint : Fingerprint(
  * bucket walk and the past-the-table extrapolation — and both multiply a magnitude by the
  * direction, which is what makes them identifiable.
  */
-object ScrubDispatchFingerprint : Fingerprint(
+fun scrubDispatchFingerprint() = Fingerprint(
     definingClass = SCRUB_MOTION_EVENT_HANDLER,
     name = "r",
     parameters = listOf("Landroid/view/MotionEvent;", "Z"),

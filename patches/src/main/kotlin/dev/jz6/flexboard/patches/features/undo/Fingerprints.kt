@@ -114,7 +114,7 @@ internal const val SCRUB_STATE_TAKE_TEXT = "Lomu;->a(I)Ljava/lang/CharSequence;"
  * Named `d` on 17.7.7 and `q` on 18. Nothing about the method changed but its name and register
  * allocation; the anchor region this patch keys off is instruction-for-instruction identical.
  */
-internal object LatinImeHandleEventFingerprint : Fingerprint(
+internal fun latinImeHandleEventFingerprint() = Fingerprint(
     definingClass = LATIN_IME,
     name = "q",
     parameters = listOf("Lnur;"),

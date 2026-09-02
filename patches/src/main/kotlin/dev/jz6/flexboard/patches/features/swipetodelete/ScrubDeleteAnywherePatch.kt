@@ -92,16 +92,25 @@ val swipeToDeletePatch = bytecodePatch(
     dependsOn(scrubTuningPatch)
 
     execute {
-        // Tell the settings patch to keep the Swipe section — we're selected.
-        selectedSettingsSections += SettingsSection.SWIPE_TO_DELETE
-
-        ScrubDeleteConstructorFingerprint.method.writeWildcardStartKey()
+        scrubDeleteConstructorFingerprint().method.writeWildcardStartKey()
 
         // Both edit `g()`, and both add an instruction to it. Neither depends on running first:
         // each locates what it needs by a shape the other does not produce. See the note on
         // [trackAcrossFullKeyboard] for why that mattered enough to design for.
-        ScrubHandleMotionEventFingerprint.method.acceptWildcardStartKey()
-        ScrubHandleMotionEventFingerprint.method.trackAcrossFullKeyboard()
+        //
+        // Resolved once and shared. Two calls would match the same method twice — correct, since
+        // matching runs against the original definition rather than the mutated one, but it is
+        // wasted work and reads as though the second edit wanted a fresh view of the first's
+        // output, which it explicitly does not.
+        val handleMotionEvent = scrubHandleMotionEventFingerprint().method
+        handleMotionEvent.acceptWildcardStartKey()
+        handleMotionEvent.trackAcrossFullKeyboard()
+
+        // Registered last, on purpose. A failing patch does not abort the run: the patcher records
+        // the exception and moves on, and `settingsScreenPatch` — which did not fail — still
+        // finalizes and reads this set. Registering before the edits above would ship the Swipe
+        // rows for a build whose bytecode never got the feature.
+        selectedSettingsSections += SettingsSection.SWIPE_TO_DELETE
     }
 }
 

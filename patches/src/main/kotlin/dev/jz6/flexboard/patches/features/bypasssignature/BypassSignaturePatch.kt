@@ -69,11 +69,11 @@ val bypassGboardSignaturePatch = bytecodePatch(
     dependsOn(basePatch)
 
     execute {
-        SignatureCheckFingerprint.method.forceSignatureChecksToPass()
+        signatureCheckFingerprint().method.forceSignatureChecksToPass()
     }
 }
 
-object SignatureCheckFingerprint : Fingerprint(
+fun signatureCheckFingerprint() = Fingerprint(
     definingClass = "Lrpv;",
     name = "a",
     accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),

@@ -128,6 +128,43 @@ def lint_block(problems, name, line_no, payload, externals, consts, labeled):
                 )
 
 
+FINGERPRINT_SINGLETON = re.compile(
+    r"^\s*(?:internal |private )?object\s+(\w+)\s*:\s*Fingerprint\(", re.M
+)
+
+
+def lint_fingerprint_singletons(texts):
+    """R6: a Fingerprint declared as an `object` caches a Match across patcher runs.
+
+    `matchOrNull` returns its memoised Match without checking which context built it, and the
+    patcher's `clearFingerprints()` empties the registry it iterates — while a Fingerprint only
+    registers itself from its constructor, which an `object` runs once per classloader. So the
+    cache is cleared after run one and never again: run three onwards resolves against a discarded
+    context and the edits silently go nowhere, with every register assertion still passing.
+
+    Declare fingerprints as factory functions instead, and resolve once per execute.
+    """
+    problems = []
+    for path, text in sorted(texts.items(), key=lambda kv: kv[0].name):
+        for match in FINGERPRINT_SINGLETON.finditer(text):
+            # Detected on the comment-stripped text so a declaration quoted in a doc block is not
+            # a finding, but reported against the real file: a line number counted after stripping
+            # points somewhere else entirely, which is worse than no line number at all.
+            declaration = re.compile(
+                r"^\s*(?:internal |private )?object\s+%s\s*:\s*Fingerprint\(" % match.group(1),
+                re.M,
+            ).search(path.read_text())
+            line_no = (
+                path.read_text()[: declaration.start()].count("\n") + 1 if declaration else "?"
+            )
+            problems.append(
+                f"  {path.name}:{line_no} declares {match.group(1)} as an `object` (R6) — a "
+                f"Fingerprint singleton keeps its Match across patcher runs; use "
+                f"`fun {match.group(1)[0].lower() + match.group(1)[1:]}() = Fingerprint(...)`"
+            )
+    return problems
+
+
 def main():
     consts = {}
     texts = {}
@@ -137,6 +174,7 @@ def main():
         consts.update(KOTLIN_CONST.findall(text))
 
     problems = []
+    problems += lint_fingerprint_singletons(texts)
     for path, text in sorted(texts.items(), key=lambda kv: kv[0].name):
         for line_no, variant, args in collect_calls(text):
             m = RAW_STRING.search(args)

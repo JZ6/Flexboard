@@ -2,7 +2,7 @@ package dev.jz6.flexboard.patches.features.swipetodelete
 
 import app.morphe.patcher.patch.bytecodePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
-import dev.jz6.flexboard.patches.shared.ApplyPreferenceValuesFingerprint
+import dev.jz6.flexboard.patches.shared.applyPreferenceValuesFingerprint
 import dev.jz6.flexboard.patches.shared.callAtAppStart
 
 /**
@@ -53,7 +53,7 @@ internal val forceScrubPreferencesPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_GBOARD)
 
     execute {
-        ApplyPreferenceValuesFingerprint.method.callAtAppStart(FORCE_SCRUB_PREFERENCES)
+        applyPreferenceValuesFingerprint().method.callAtAppStart(FORCE_SCRUB_PREFERENCES)
     }
 }
 

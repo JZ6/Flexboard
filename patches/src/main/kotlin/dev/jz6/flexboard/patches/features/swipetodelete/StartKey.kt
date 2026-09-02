@@ -64,7 +64,7 @@ internal const val BACKSPACE_KEYCODE = "0x43"
 private const val ACTION_DEF = "Lcom/google/android/libraries/inputmethod/metadata/ActionDef;"
 
 internal fun BytecodePatchContext.resolveStartKeyChain(): StartKeyChain {
-    val g = ScrubHandleMotionEventFingerprint.method
+    val g = scrubHandleMotionEventFingerprint().method
     val body = g.instructionsOrFail()
     val where = "$SCRUB_MOTION_EVENT_HANDLER->g"
 

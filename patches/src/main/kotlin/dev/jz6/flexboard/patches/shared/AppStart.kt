@@ -39,7 +39,7 @@ import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
  * **No register is written.** The insertion reads a parameter and calls a static, so it needs no
  * liveness proof, and the three callers cannot interact whatever order they apply in.
  */
-object ApplyPreferenceValuesFingerprint : Fingerprint(
+fun applyPreferenceValuesFingerprint() = Fingerprint(
     definingClass = "Lcom/google/android/apps/inputmethod/latin/LatinApp;",
     name = "d",
     parameters = listOf(PREFERENCE_STORE_TYPE),
@@ -49,7 +49,7 @@ object ApplyPreferenceValuesFingerprint : Fingerprint(
 /**
  * Emits `invoke-static { p0 }, [descriptor]` at the head of Gboard's Application start.
  *
- * Call as `ApplyPreferenceValuesFingerprint.method.callAtAppStart(…)` from inside `execute`, where
+ * Call as `applyPreferenceValuesFingerprint().method.callAtAppStart(…)` from inside `execute`, where
  * resolving the fingerprint has a patch context to do it with.
  */
 internal fun MutableMethod.callAtAppStart(descriptor: String) {

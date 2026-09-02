@@ -2,7 +2,6 @@ package dev.jz6.flexboard.patches.features.undo
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
-import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
@@ -78,7 +77,7 @@ val swipeRightToUndoPatch = bytecodePatch(
     execute {
         // No `checkPreferenceStorePins()` here any more: this patch reads no preference, so the
         // store's descriptors are not among the things it can be broken by.
-        LatinImeHandleEventFingerprint.method.undoOnRightwardScrub(this)
+        latinImeHandleEventFingerprint().method.undoOnRightwardScrub()
     }
 }
 
@@ -244,7 +243,7 @@ private inline fun IntProgression.firstNonNullOf(
     transform: (Int) -> String?,
 ): String = firstNotNullOfOrNull(transform) ?: error("$onMissing in $LATIN_IME->q")
 
-private fun MutableMethod.undoOnRightwardScrub(context: BytecodePatchContext) {
+private fun MutableMethod.undoOnRightwardScrub() {
     assertRegisterCount(HANDLE_EVENT_REGISTER_COUNT, "$LATIN_IME->q")
 
     // Read out of Gboard's own undo handler rather than pinned. Four of these share a signature
