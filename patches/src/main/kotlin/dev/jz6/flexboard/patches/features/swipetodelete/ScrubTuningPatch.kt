@@ -68,7 +68,7 @@ internal val scrubTuningPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_GBOARD)
 
     // The seed is swipe-scoped (it writes exactly the keys this patch reads), so it hangs off the
-    // swipe tree rather than the base patch — deselecting Swipe to Delete now skips both.
+    // swipe tree rather than the base patch — deselecting Swipe Left to Delete now skips both.
 
     execute {
         checkPreferenceStorePins()

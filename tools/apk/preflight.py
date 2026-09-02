@@ -167,7 +167,7 @@ EXPECTED = {
     # the patch -- it reads the preference with whatever Gboard computed -- but it is the number the
     # settings slider displays while unset, so it has to stay true.
     'toolbar_stock_count': 5,
-    # ---- the native-registration path in ToolbarNativeTestPatch and ToolbarButtonsPatch
+    # ---- the native-registration path in ToolbarButtonsPatch
     #
     # The bar-controller's constructor is the hook site, so its register count is pinned. A bump
     # moves it and the insertion would write past the locals, which is invisible until the phone
@@ -208,11 +208,6 @@ EXPECTED = {
         ('Select all', 0x7f140576, 0x7f080218, 'M9,9h6v6L9,15L9,9z'),
         ('Copy', 0x7f140560, 0x7f080214, 'M19,21L8,21L8,7h11v14z'),
         ('Paste', 0x7f140570, 0x7f080217, 'M19,20L5,20L5,4h2v3h10L17,4h2v16z'),
-        # Toolbar Native Test ships, and its icon id was emitted with no pin of any kind while
-        # the three above were glyph-checked precisely because a renumbering still lands on
-        # something reading 'drawable/'. Its label is a Kotlin literal rather than a Gboard
-        # string, hence no label id -- the glyph is the whole of what there is to anchor.
-        ('Test', None, 0x7f0806fc, 'M19,9l1.25,-2.75L23,5'),
     ],
     # The generated builder's own words for the properties it refuses to build without. These are
     # string literals in the dex, which is why they are worth anchoring on: R8 renames the class,
@@ -230,8 +225,6 @@ EXPECTED = {
         'editor_info',
         'undo_cooperative',
         'muse_toggle_playground_ap',
-        # ToolbarNativeTestPatch (same id the dedicated check above fires off).
-        'flag_editor',
     ],
     'buttons_oncreate_registers': 12,
     # The keycode Gboard wraps a Runnable in, and the dispatcher that runs it. Two other classes

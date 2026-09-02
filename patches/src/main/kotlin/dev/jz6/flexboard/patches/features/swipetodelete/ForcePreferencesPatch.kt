@@ -37,7 +37,7 @@ import dev.jz6.flexboard.patches.shared.callAtAppStart
  * stopped it re-forcing glide typing off at every launch and let the user tick glide back on. That
  * switch is gone — see [swipeToDeletePatch] for why — so the writes now happen on every start for
  * as long as the patch is applied, and glide typing cannot be ticked back on while it is. Getting
- * glide typing back means re-patching without Swipe to Delete.
+ * glide typing back means re-patching without Swipe Left to Delete.
  *
  * That is the trade the removal made, and it is worth being explicit that it is user-visible rather
  * than purely internal. What it buys is one fewer preference read, which is one fewer place needing

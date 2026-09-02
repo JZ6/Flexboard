@@ -8,7 +8,7 @@ written from scratch.
 ## The symptom
 
 ```
-app.morphe.patcher.patch.PatchException: The patch "Swipe to Delete" depends on
+app.morphe.patcher.patch.PatchException: The patch "Swipe Left to Delete" depends on
 "BytecodePatch@…", which raised an exception:
 Caused by: java.util.NoSuchElementException: Collection is empty.
     at …SwipeDeletePointerPatchKt.installPointerHooks(SwipeDeletePointerPatch.kt:62)

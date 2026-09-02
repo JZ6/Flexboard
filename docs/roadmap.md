@@ -101,9 +101,10 @@ The bar controller `Lmlh` has `h: ArrayMap<String, mic>` — the actual AP regis
 the order manager. `mjv.n(ctx, mxf, h, c, extras)` then re-folds `extras` on every rebuild, so
 the button survives orientation/fold changes.
 
-The **Toolbar Native Test** patch (default-off) does this: hooks `Lmlh.<init>` tail, builds an
+The **Toolbar Native Test** patch (removed once it had served its purpose) did this: hooked the
+`Lmlh.<init>` tail, built an
 `mic` with id `flag_editor`, icon from stock, a literal "Test" label, and a click-runnable that
-commits "test" at the cursor via the extension's `TestAction`. If it works on device, the same
+committed "test" at the cursor via a small extension action. It worked on device, and the same
 shape becomes the long-term home for Text Actions + Hotkeys (each `g(...)s` its own id(s) into
 `h`), and `ToolbarMerge` shrinks back to "read the order string to seed the shown order"
 rather than the current half-broken injection.
@@ -123,7 +124,8 @@ After the test button proved out on device, the shape was promoted into a shared
 
 Any future toolbar feature consumes it as `emitNativeToolbarButtons(builder, listOf(...))` and
 never thinks about hook sites, `Builders`, or the allowed-set — picking from the dormant ids
-below. `ToolbarNativeTestPatch` is now a 30-line call into the helper.
+below. `ToolbarNativeTestPatch` was a 30-line call into the helper, and was deleted once
+Toolbar Buttons and Toolbar Hotkeys had both proven the mechanism in production.
 
 A checker convention flows from this: the spec's `actionCtor` has to be a `const val` in the
 patch file, full member-descriptor form; `check_shared_constants.py` then treats each as if
@@ -151,7 +153,6 @@ The remaining dormant allowed-set ids and their slots:
 
 | id                          | used by                          |
 | --------------------------- | -------------------------------- |
-| `flag_editor`               | `ToolbarNativeTestPatch`         |
 | `editor_info`               | Select all                       |
 | `undo_cooperative`          | Copy                             |
 | `muse_toggle_playground_ap` | Paste                            |
@@ -195,7 +196,7 @@ inert row today is the swipe slider, and the hotkeys block *works* even with its
 
 - *Tier 1 — text-disabled, zero new dex surface:* the existing first-tap sync pass
   (`FlexboardSettingsFragment.syncRowIconsOnce`, post-popup-build version) also reads the
-  probes; rows whose feature is absent get a summary like "needs the Swipe to Delete patch"
+  probes; rows whose feature is absent get a summary like "needs the Swipe Left to Delete patch"
   and `aA` short-circuits them (still returns true — no dialog, no cycle). No new pinned
   letters, fragment already falls through `d()` nulls safely. ~40 extension lines + the marker
   seed; checker contract untouched (rows always exist).
