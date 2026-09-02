@@ -69,7 +69,6 @@ internal val scrubTuningPatch = bytecodePatch(
 
     // The seed is swipe-scoped (it writes exactly the keys this patch reads), so it hangs off the
     // swipe tree rather than the base patch — deselecting Swipe to Delete now skips both.
-    dependsOn(seedDefaultsPatch)
 
     execute {
         checkPreferenceStorePins()
@@ -81,64 +80,12 @@ internal val scrubTuningPatch = bytecodePatch(
         scrubEngineConstructorFingerprint().method.substituteHoldDelay(this)
         // Swipe-length scaling disabled — the slider has no effect on distance for now.
         // See the swipe-length investigation in docs/roadmap.md.
-        //scrubDeleteConstructorFingerprint().method.scaleStepTable(this)
-        //scrubDispatchFingerprint().method.useStockDistanceFromBackspace(this, startKey)
         scrubDispatchFingerprint().method.capWordCount(this, startKey)
     }
 }
 
-/**
- * Preference keys. Deliberately plain string literals rather than resource ids: `Lqhy;` exposes a
- * string-keyed getter alongside its resource-id one, and a *new* resource has no id until aapt2
- * recompiles, which is long after this patch runs. Literals sidestep the problem entirely.
- *
- * **These are set by `res/xml/flexboard_settings.xml`**, written by `SettingsScreenPatch` — the
- * native slider rows persist integer-as-string values under them through Gboard's own preference
- * datastore. Two things follow: the readers below use the store's *parsing* getInt (see
- * `resolvePreferenceGetParsedInt` in `Fingerprints.kt`), and none of these keys can change without
- * the XML moving with it. `check_shared_constants.py` compares the two files and fails the build
- * when they drift.
- *
- * The `_swipe_` keys are the second generation — the hand-built Activity's int-typed
- * `flexboard_max_words`/`flexboard_scrub_hold_ms` were abandoned without migration when the screen
- * went native, because a String at an int key makes the old typed getter throw. The step-scale
- * seed keeps its original int-typed key: nothing uses a UI value for it.
- *
- * **The step-scale key currently has no reader at all.** Both consumers are parked with the
- * swipe-length investigation (see the commented-out calls in the `execute` block below) — the
- * seed is left in place deliberately, so that re-enabling scaling picks the value up as the
- * established default rather than surprising existing installs with a fresh one.
- */
-internal const val STEP_SCALE_KEY = "flexboard_scrub_step_scale"
 internal const val HOLD_DELAY_KEY = "flexboard_swipe_hold_ms"
 internal const val MAX_WORDS_KEY = "flexboard_swipe_max_words"
-
-/**
- * Percent of Gboard's own swipe distance.
- *
- * Sixty is a middle: 36 shipped up to `1.1.0-dev.1` on the reasoning that Gboard's distance assumes
- * a thumb travelling from the backspace key and a gesture starting under your thumb wants less,
- * which was sound in principle and too aggressive in practice; 100 is Gboard's own, which asks for
- * the whole journey the patch exists to remove. With the word cap at its default of 1 a swipe still
- * deletes one word however far it travels, so this only changes how far that is.
- *
- * **Written on first run rather than left to this fallback** — see `seedDefaultsPatch`. The two
- * agree so that behaviour is the same either way, but the stored value is what a user actually gets
- * and what a later change to this number will deliberately *not* move them off.
- */
-internal const val STEP_SCALE_DEFAULT = 60
-
-/**
- * The percentage at which scaling is a no-op, so the table is left alone rather than multiplied by
- * 1.0.
- *
- * **Deliberately a separate constant from [STEP_SCALE_DEFAULT].** They were one constant once; when
- * the default moved off 100 that made the sentinel follow it, so the one value the user had asked
- * for became the one value with no effect. Splitting them is what has since let the default move to
- * 36, back to 100 and now to 60 without dragging the sentinel along — and what keeps 100 meaning
- * "leave Gboard's table alone" for anyone who sets it there.
- */
-internal const val STEP_SCALE_IDENTITY = 100
 
 /** Milliseconds. Zero reproduces the flick behaviour that shipped before this was adjustable. */
 internal const val HOLD_DELAY_DEFAULT = 0
@@ -149,8 +96,8 @@ internal const val MAX_WORDS_DEFAULT = 1
 /**
  * The slider's top position, and "no limit": at or above it the clamp is skipped entirely, leaving
  * the engine's progressive delete exactly as Gboard wrote it. **Not the default**, for the same
- * reason as [STEP_SCALE_IDENTITY] — sharing them would put the sentinel at 1 and disable the cap
- * at every setting.
+ * reason a sentinel should never track a default — sharing them would put the sentinel at 1 and
+ * disable the cap at every setting.
  */
 internal const val MAX_WORDS_NO_LIMIT = 10
 
@@ -254,99 +201,6 @@ private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
             int-to-long v$delayRegister, v$scratchRegister
         """,
         ExternalLabel(STOCK_HOLD_LABEL, forward),
-    )
-}
-
-/**
- * Scales the distance table in place.
- *
- * `r()` counts how many entries of `Lpvs;->h:[F` the travelled distance has passed, and that count
- * is the number of words deleted — so the table *is* the swipe length, and scaling it by a
- * percentage is the whole knob. Unlike `Lpvr;`, the table field is not final, and array contents
- * are writable regardless, so this needs no constructor-argument substitution.
- *
- * Done in `ScrubDeleteMotionEventHandler.<init>` rather than the shared engine constructor because
- * the Context is still in a parameter register there — the engine constructor overwrites its own
- * Context register with `Resources` before the table is built.
- *
- * A positive scale preserves the strictly-increasing invariant the engine checks, so this cannot
- * trip the `Lpvs;->g:Z` bail-out. Where that flag is already set the table points at a *shared
- * static* fallback, so the scaling is skipped rather than corrupting global state.
- */
-private fun MutableMethod.scaleStepTable(context: BytecodePatchContext) {
-    val getInt = context.resolvePreferenceGetParsedInt()
-    val registerCount = assertRegisterCount(
-        DELETE_CONSTRUCTOR_REGISTER_COUNT,
-        "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>",
-    )
-
-    val superIndex = instructions.indexOfSoleCall(
-        THREE_ARGUMENT_ENGINE_CONSTRUCTOR,
-        "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>",
-    )
-    val superCall = instructions[superIndex]
-    check(superCall.invokeRegisterCount() == DELETE_CONSTRUCTOR_ARGUMENT_REGISTERS) {
-        "The engine constructor call takes ${superCall.invokeRegisterCount()} registers, " +
-            "expected $DELETE_CONSTRUCTOR_ARGUMENT_REGISTERS"
-    }
-
-    val contextArgument = TypedRegister(
-        superCall.invokeRegisterAt(1),
-        superCall.invokeParameterType(1),
-    )
-    context.checkAssignable(
-        contextArgument,
-        ANDROID_CONTEXT,
-        "Argument 1 of the engine super call, which $PREFERENCE_STORE_GET is handed",
-    )
-    val contextRegister = contextArgument.register
-    val configRegister = superCall.invokeRegisterAt(3)
-
-    // Once the super call has returned, every register it used is the only thing still live — the
-    // method's next instruction is its return. So the scratch set is everything else, low first,
-    // and capped at v15 because a 35c invoke packs its registers into nibbles.
-    val used = (0 until superCall.invokeRegisterCount()).map { superCall.invokeRegisterAt(it) }
-    val scratch = (0 until minOf(registerCount, PACKED_INVOKE_REGISTER_LIMIT))
-        .filterNot { it in used }
-        .take(SCRATCH_REGISTERS_NEEDED)
-    check(scratch.size == SCRATCH_REGISTERS_NEEDED) {
-        "Only ${scratch.size} free registers in $SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>, " +
-            "need $SCRATCH_REGISTERS_NEEDED"
-    }
-    val (store, table, length, index, element) = scratch
-
-    val afterSuper = instructions[superIndex + 1]
-
-    addInstructionsWithLabels(
-        superIndex + 1,
-        """
-            invoke-static { v$contextRegister }, $PREFERENCE_STORE_GET
-            move-result-object v$store
-            const-string v$table, "$STEP_SCALE_KEY"
-            const/16 v$length, $STEP_SCALE_DEFAULT
-            invoke-virtual { v$store, v$table, v$length }, $getInt
-            move-result v$store
-            const/16 v$table, $STEP_SCALE_IDENTITY
-            if-eq v$store, v$table, :$STEPS_DONE_LABEL
-            if-lez v$store, :$STEPS_DONE_LABEL
-            iget-boolean v$table, v$configRegister, $CONFIG_DISABLED_FIELD
-            if-nez v$table, :$STEPS_DONE_LABEL
-            iget-object v$table, v$configRegister, $CONFIG_STEP_TABLE_FIELD
-            if-eqz v$table, :$STEPS_DONE_LABEL
-            int-to-float v$store, v$store
-            const/high16 v$length, $ONE_HUNDRED_FLOAT
-            div-float/2addr v$store, v$length
-            array-length v$length, v$table
-            const/4 v$index, 0x0
-            :$STEPS_LOOP_LABEL
-            if-ge v$index, v$length, :$STEPS_DONE_LABEL
-            aget v$element, v$table, v$index
-            mul-float/2addr v$element, v$store
-            aput v$element, v$table, v$index
-            add-int/lit8 v$index, v$index, 0x1
-            goto :$STEPS_LOOP_LABEL
-        """,
-        ExternalLabel(STEPS_DONE_LABEL, afterSuper),
     )
 }
 
@@ -462,9 +316,6 @@ private fun MutableMethod.capWordCount(
     }
 }
 
-/** store, table, length, index, element. */
-private const val SCRATCH_REGISTERS_NEEDED = 5
-
 /**
  * store, key, limit — dead at both clamp sites in `r()`. Deliberately *not* the lowest free
  * registers: v4 carries the null `Lpnt;` and v1 the trailing int that the dispatch path passes to
@@ -484,24 +335,6 @@ private const val CAP_DONE_LABEL = "flexboard_capped"
 private const val CAP_LOW_LABEL = "flexboard_cap_low"
 private const val CAP_CLAMP_LABEL = "flexboard_clamp"
 
-/**
- * Scratch for the distance edit, which inserts **earlier** in `r()` than the clamp does and cannot
- * reuse [CLAMP_SCRATCH_REGISTERS] — v5 is still live there, carrying the -1 the count multiply
- * consumes.
- *
- * Established by backward liveness across the whole method, not by reading forward from the
- * insertion point. That distinction is not pedantry: reading forward says v3 is free, because the
- * `add-int/lit8` at the head of the table walk writes it. It is **wrong**. The `if-gt` guarding the
- * walk branches straight past that write to the extrapolation path, which reads v3 as the previous
- * bucket's threshold — zero, on the first iteration, from the `const/4` above. Borrowing v3 would
- * have silently corrupted the extrapolated word count for swipes past the end of the table, on a
- * path that only fires for long swipes. Nothing would have crashed.
- *
- * At the delta subtraction, v6 through v9 are all genuinely dead on every path. Three are taken
- * here and v6 left alone, since the next instruction overwrites it anyway.
- */
-private val DISTANCE_SCRATCH_REGISTERS = listOf(7, 8, 9)
-
 /** Unique in `r()`, and its `move-result` is the magnitude the table walk consumes. */
 private const val MATH_ABS_FLOAT = "Ljava/lang/Math;->abs(F)F"
 
@@ -509,97 +342,11 @@ private const val STOCK_DISTANCE_LABEL = "flexboard_stock_distance"
 private const val SCALE_DELTA_LABEL = "flexboard_scale_delta"
 
 /**
- * Gives a swipe that started on the backspace key Gboard's own distance per word, undoing
- * [scaleStepTable] for that one case.
- *
- * ## Why a multiply rather than a second table
- *
- * [scaleStepTable] rewrites `Lpvs;->h:[F` in place at construction, so by the time `r()` walks the
- * table the stock thresholds are gone. Restoring them would mean keeping a copy and swapping which
- * array the walk reads — two arrays to maintain, and a field to swap them through.
- *
- * The arithmetic makes that unnecessary. The walk compares `|delta|` against the table, and the
- * table has been multiplied through by `scale/100`. Comparing `|delta| · scale/100` against
- * `T · scale/100` is the same test as comparing `|delta|` against `T`, so multiplying the delta by
- * the *same* factor exactly recovers the stock thresholds. One `mul-float`, no second array, and
- * `scaleStepTable` is left exactly as it was.
- *
- * It also means the cost falls on the case that is rarer for a Flexboard user: a swipe-anywhere
- * gesture does no extra arithmetic at all, because the table it walks is already the one it wants.
- *
- * ## Where it goes
- *
- * `Math.abs(F)F` is called exactly once in `r()`, and its `move-result` is the `|delta|` the walk
- * then consumes. Inserting immediately after it means the multiply lands after every path that
- * produces a delta and before every path that reads one, which is not something an offset could
- * promise.
- *
- * Reading the scale preference here rather than caching it mirrors [capWordCount], which already
- * reads `flexboard_max_words` from this same method on every event that produces a count. The store
- * resolves to a process-wide singleton over an in-memory map, so this is a lookup rather than I/O —
- * and doing it the same way as the code beside it is worth more than saving one of them.
- */
-private fun MutableMethod.useStockDistanceFromBackspace(
-    context: BytecodePatchContext,
-    startKey: StartKeyChain,
-) {
-    val getInt = context.resolvePreferenceGetParsedInt()
-    val (thisRegister, resolvedHandlerContext) = resolveDispatchEntry(context)
-
-    // `Math.abs` is the one unambiguous landmark in the walk; the delta is simply what it is
-    // handed. Walking back to where that register was last written finds the subtraction, which is
-    // the insertion point — far enough up the method that registers are still free there.
-    val absIndex = instructions.indexOfSoleCall(MATH_ABS_FLOAT, "$SCRUB_MOTION_EVENT_HANDLER->r")
-    val deltaRegister = instructions[absIndex].invokeRegisterAt(0)
-    val subtractIndex = (absIndex - 1 downTo 0).firstOrNull {
-        (instructions[it] as? OneRegisterInstruction)?.registerA == deltaRegister &&
-            !instructions[it].opcodeName().startsWith("IF_")
-    } ?: error(
-        "Nothing writes v$deltaRegister before $MATH_ABS_FLOAT in $SCRUB_MOTION_EVENT_HANDLER->r",
-    )
-    check(instructions[subtractIndex].opcodeName() == "SUB_FLOAT_2ADDR") {
-        "Expected the magnitude to come from a `sub-float/2addr` in " +
-            "$SCRUB_MOTION_EVENT_HANDLER->r, found " +
-            "`${instructions[subtractIndex].opcode.name}` — the delta is computed differently now"
-    }
-
-    val (store, key, fallback) = DISTANCE_SCRATCH_REGISTERS
-    validateScratchRegisters(
-        DISTANCE_SCRATCH_REGISTERS,
-        listOf(deltaRegister, thisRegister),
-        "$SCRUB_MOTION_EVENT_HANDLER->r",
-    )
-
-    val resume = instructions[subtractIndex + 1]
-
-    addInstructionsWithLabels(
-        subtractIndex + 1,
-        """
-            ${startKey.branchOnStartKey(thisRegister, store, key, SCALE_DELTA_LABEL, STOCK_DISTANCE_LABEL)}
-            :$SCALE_DELTA_LABEL
-            iget-object v$store, v$thisRegister, $resolvedHandlerContext
-            invoke-static { v$store }, $PREFERENCE_STORE_GET
-            move-result-object v$store
-            const-string v$key, "$STEP_SCALE_KEY"
-            const/16 v$fallback, $STEP_SCALE_DEFAULT
-            invoke-virtual { v$store, v$key, v$fallback }, $getInt
-            move-result v$store
-            if-lez v$store, :$STOCK_DISTANCE_LABEL
-            int-to-float v$store, v$store
-            const/high16 v$key, $ONE_HUNDRED_FLOAT
-            div-float/2addr v$store, v$key
-            mul-float/2addr v$deltaRegister, v$store
-        """,
-        ExternalLabel(STOCK_DISTANCE_LABEL, resume),
-    )
-}
-
-/**
  * Resolves the handler's inherited `Context` field, failing the patch when it has moved.
  *
- * Both [capWordCount] and [useStockDistanceFromBackspace] resolve the same field and run the same
- * assignability checks against it, so this is the one place the "Context has moved" error is
- * spelled. The longer message is kept: it names [PREFERENCE_STORE_GET], which is what actually
+ * [capWordCount] resolves this field and runs the assignability checks against it. A second
+ * caller, the parked swipe-length emitter, is why it is a helper rather than inline; it is kept
+ * as one because this is the single place the "Context has moved" error is spelled. The longer message is kept: it names [PREFERENCE_STORE_GET], which is what actually
  * receives the wrong value when this field is absent, and makes the failure easier to trace.
  */
 private fun BytecodePatchContext.resolveHandlerContext() =
@@ -616,7 +363,7 @@ private fun BytecodePatchContext.resolveHandlerContext() =
  *
  * Asserts the register count, derives `this` from it, resolves the inherited Context field, and
  * checks assignability both ways — the same six steps [capWordCount] and
- * [useStockDistanceFromBackspace] used to carry inline. Returns the `this` register and the
+ * the parked swipe-length emitter used to carry inline. Returns the `this` register and the
  * resolved Context field descriptor so each caller can emit against them without duplicating the
  * proof.
  */

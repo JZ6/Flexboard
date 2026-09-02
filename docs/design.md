@@ -5,16 +5,18 @@ reasoning behind the choices a user would otherwise have to guess at.
 
 ## What the swipe settings default to, and why
 
-**Swipe length, 60% — a middle.** This shipped at 36% up to `1.1.0-dev.1`, reasoning that Gboard's
-distance assumes a thumb travelling from the backspace key and back, which is the whole journey
-this patch exists to remove, so a gesture starting under your thumb wants a shorter one. The
-reasoning is sound and the number was too aggressive: at 36% an ordinary swipe crosses three or
-four thresholds, and the word cap is then doing the work of hiding it. It went to 100% — Gboard's
-own — as the safe correction, which asks for the whole journey again.
+**Swipe length — removed, Gboard's own distance is used.** This was a setting for several
+releases, on the reasoning that Gboard's distance assumes a thumb travelling from the backspace key
+and back, which is the whole journey this patch exists to remove, so a gesture starting under your
+thumb wants a shorter one. It shipped at 36%, which proved too aggressive — an ordinary swipe
+crossed three or four thresholds and the word cap ended up hiding it — then at 100%, then at 60%.
 
-Sixty keeps the reasoning without the overshoot. With the word cap at its default of 1 a swipe
-still deletes one word however far it travels, so this changes how far that is and nothing else,
-and 100% remains available to anyone who wants Gboard's distance exactly.
+The reasoning still looks right and the scaling is still gone. It was parked pending an
+investigation that did not happen, and a parked emitter is not free: it kept 125 lines of dead
+code, a patch inserting a call at Application start to seed a value nothing read, and constants
+pinned across two languages. With the cap at 1 a swipe deletes one word however far it travels,
+which is most of what the scaling was buying. Recovering it means git history, not a commented-out
+call.
 
 **Max words per swipe, 1 rather than no limit.** One word per swipe makes each deletion deliberate
 rather than a run that then has to be swiped back.
@@ -24,74 +26,40 @@ makes it feel like a press-and-drag rather than a flick. Zero is not an improvem
 as continuity: it is what Flexboard did before the delay was adjustable at all, so existing installs
 keep the feel they had.
 
-**Only the word cap is still a slider.** Swipe length and hold delay were, and are not: the swipe
-length consumers are commented out in `ScrubTuningPatch`, and the hold-delay row was dropped while
-its smali read stayed, so it is fixed at 0 ms. The reasoning above is kept because it is why the
+**Only the word cap is a slider.** Hold delay's row was dropped while its smali read stayed, so it
+is fixed at 0 ms; swipe length is gone entirely. The reasoning above is kept because it is why the
 fixed values are the values they are, not because all three are still adjustable.
 
-## Why the starting values are written rather than defaulted
+## Why a sentinel is never the default
 
-Every value in this project is read out of Gboard's preference store by patched bytecode, and the
-read carries a fallback operand. Making that operand the starting value is the obvious thing, costs
-one literal, and is what swipe length did for its first several releases.
+Several of these numbers do two jobs — the default *and* a control-flow sentinel, at which the
+clamp is skipped. Setting a default to its sentinel value makes the chosen setting the one setting
+that does nothing, so they are separate constants and `ScrubTuningPatch.kt` documents each.
 
-It has one property worth avoiding: **a read-side default follows the code.** Change the number in
-a later release and it moves every user who never touched the slider. Someone who has spent a month
-with a keyboard finds it different after an update they did not ask for, and nothing they did
-caused it.
+Swipe length was the worked example and is no longer here to be one: going to 36 forced the split
+in the first place, coming back to 100 made the default and the sentinel hold the same number and
+look redundant, and going to 60 separated them again. The pair went with the scaling emitters when
+those were removed. The rule survives them, in `MAX_WORDS_NO_LIMIT`.
 
-So the starting value is instead written into the store on the first run after installing —
-`seedDefaultsPatch`, one instruction, calling the extension's `Defaults.seed`. Afterwards it is an
-ordinary stored preference, indistinguishable from one the user set, and later releases can pick a
-different starting number for new installs without disturbing anyone.
+## Why starting values were once written rather than defaulted
 
-In practice this now seeds **one** key, `flexboard_scrub_step_scale`, and nothing reads it: the
-swipe-length scaling it exists for is parked. The patch is kept so re-enabling that finds an
-established value rather than a fresh one, but it currently has no runtime effect at all, and the
-reasoning above describes the three-value era rather than what ships.
+Kept because the reasoning is sound and may be wanted again, not because anything does this now.
 
-**It is also much less work than doing it in bytecode**, which is not the reason but is worth
-recording, because the first attempt went the other way. The extension has always been able to
-write preferences — it is how the settings screen stores a slider — so the patch does not need to
-reach a setter on Gboard's store at all. It hands `Defaults` a `Context` and stops. Doing it in
-smali would have meant deriving a string-keyed setter and reusing the `getInt` whose two
-same-signature siblings on that class are a documented trap, for an identical result.
+Every value here is read out of Gboard's preference store by patched bytecode, and the read carries
+a fallback operand. Making that operand the starting value is the obvious thing and costs one
+literal. It has one property worth avoiding: **a read-side default follows the code.** Change the
+number in a later release and it moves every user who never touched the slider — a keyboard that
+feels different after an update they did not ask for, from nothing they did.
 
-### The same mistake was already in two other patches
+The alternative was to write the starting value into the store on first run, so that afterwards it
+is an ordinary stored preference and later releases can pick a different starting number for new
+installs without disturbing anyone. That was `seedDefaultsPatch`, one instruction calling the
+extension's `Defaults.seed`.
 
-`forceScrubPreferencesPatch` and `suggestedSettingsPatch` write **Gboard's** own settings at startup, and
-both did it in bytecode through the store's id-keyed accessors. That looked unavoidable, because a
-Gboard preference is addressed by resource id rather than by name.
-
-It is not: `Lqhy;` resolves an id through `PreferenceKeyCache`, which is `Resources.getString`
-behind a map. So a preference key is a string resource's value, and both patches are now the same
-one-instruction handoff — `getString(id)` for the key, `SharedPreferences` for the write.
-
-What that deleted is the point. The id-keyed `contains` had to be *derived*, because its signature
-is shared with a sibling that answers "is it currently true?" rather than "has the user ever set
-this?" — and for flick keys, a write-once default, that difference is between behaving as a default
-and forcing the setting back on at every start. The framework's `contains` has no sibling. Two
-derivations, two register-liveness arguments and one silently-wrong failure mode, all gone, and the
-resource ids picked up a preflight check they never had.
-
-The general shape, worth applying to anything added later: **before deriving an accessor on an
-obfuscated class, ask whether the extension could do it against a framework API instead.** It can
-whenever the data is reachable from a `Context`, which for anything preference-shaped it is.
-
-The toolbar counts had no starting value at all before this: an unset preference fell through to
-whatever Gboard computed, and the 5 the settings screen showed was only ever displayed. That is why
-`README.md` no longer says leaving the slider alone changes nothing.
-
-**Neither of those two defaults could be moved by editing one number**, because each number was
-doing two jobs — the default *and* a control-flow sentinel, at which the scaling or the clamp is
-skipped. Setting a default to its sentinel value makes the chosen setting the one setting that does
-nothing. They are four constants rather than two for that reason, and `ScrubTuningPatch.kt`
-documents each.
-
-Swipe length is the worked example, and it has now moved three times. Going to 36 forced the split
-in the first place; coming back to 100 made `STEP_SCALE_DEFAULT` and `STEP_SCALE_IDENTITY` hold the
-same number and look redundant; going to 60 has separated them again. That third move cost one
-constant precisely because the second one did not collapse them.
+Both are gone. The patch ended up seeding exactly one key that nothing read, once the swipe-length
+scaling it existed for was parked, so it was an insertion at Application start on every patched
+build in exchange for nothing. The remaining settings read their fallback operand, which is fine
+while those numbers are not moving.
 
 ## Why the text editing buttons carry a Runnable rather than a keycode
 

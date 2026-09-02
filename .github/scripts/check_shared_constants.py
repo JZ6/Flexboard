@@ -29,8 +29,6 @@ SETTINGS_XML = ROOT / "patches/src/main/resources/xml/flexboard_settings.xml"
 # (Kotlin name, Java name). The names differ where each side reads more naturally on its own terms;
 # what has to match is the value.
 PAIRS = [
-    ("STEP_SCALE_KEY", "KEY_STEP_SCALE"),
-    ("STEP_SCALE_DEFAULT", "STEP_SCALE_DEFAULT"),
     # The ordinals the patch hands the extension's constructor. The extension maps them to
     # android.R.id.* so the framework constants stay symbolic in the one language that can name
     # them -- which means the number crossing the boundary is meaningless on its own, and a drift
@@ -534,12 +532,12 @@ def _check_screen_contract(problems, kotlin):
             f"either the key is typoed or the constant it feeds was renamed"
         )
 
-    # Staged in smali with no settings row by design: step-scale's KDoc pins "nothing uses a UI
-    # value for it" — the key stays int-typed against the pre-native Activity, and the engine
-    # just reads the seeded default. HOLD_DELAY_KEY joins it — the row was dropped ("default 0,
-    # nobody wants a delay") while the smali read stays so blobless users get exactly 0.
-    # Declared here so the rule still covers keys nobody thought about.
-    stage_only = {"STEP_SCALE_KEY", "HOLD_DELAY_KEY"}
+    # Staged in smali with no settings row by design: HOLD_DELAY_KEY's row was dropped ("default
+    # 0, nobody wants a delay") while the smali read stays, so blobless users get exactly 0.
+    # Declared here so the rule still covers keys nobody thought about. STEP_SCALE_KEY was the
+    # other entry, removed with the parked swipe-length scaling that was its only reader -- the
+    # dead-exemption check below is what caught it still being listed.
+    stage_only = {"HOLD_DELAY_KEY"}
     staged = set()
     for path in PATCHES.rglob("*.kt"):
         text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
