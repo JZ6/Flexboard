@@ -78,7 +78,9 @@ COPY_WRITES = [
             "hexagon", "hive", "sports_soccer",
         )]
         + ["flexboard_icon_snowflake", "flexboard_icon_token"]
-        + [f"flexboard_icon_counter_{n}" for n in range(1, 10)]
+        # 0..9, not 1..9. The counters start at zero, and the missing one was never DOM-parsed
+        # and never went through the arsclib encode — the exact lane that killed dev.3/dev.4.
+        + [f"flexboard_icon_counter_{n}" for n in range(0, 10)]
     )
 ]
 
@@ -275,6 +277,20 @@ def replay(scratch):
     if len(candidates) != 1:
         fail("replay", f"expected exactly one package dir under resources/, got {candidates}")
     pkg_dir = candidates[0]
+
+    # COPY_WRITES is a hand-maintained mirror of SettingsScreenPatch's writes, and a drawable
+    # missing from it is simply never replayed — not DOM-parsed, not put through the arsclib
+    # encode. That is the lane dev.3/dev.4 died in, and the counter_0 omission sat here unnoticed
+    # because nothing compared the list against the tree. BANNED_UNMAPPED_VALUES does this job
+    # for values/; this does it for the rest.
+    on_disk = {
+        f"{p.parent.name}/{p.name}"
+        for p in (REPO / "patches" / "src" / "main" / "resources").rglob("*.xml")
+        if p.parent.name != "values"
+    }
+    unreplayed = on_disk - {src for src, _ in COPY_WRITES}
+    if unreplayed:
+        fail("replay", f"patch resources never replayed through the encode: {sorted(unreplayed)}")
 
     for source_rel, target in COPY_WRITES:
         source = REPO / "patches" / "src" / "main" / "resources" / source_rel
