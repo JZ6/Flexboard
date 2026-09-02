@@ -1,4 +1,4 @@
-# Toolbar capacity — the plan, and why the last two attempts were wrong
+# Toolbar capacity — how it works, and why the last two attempts were wrong
 
 Flexboard admits **nine** toolbar ids on `dev` — six hotkeys (`flexboard_hotkey_1..6`) and three
 text actions (`flexboard_select_all`, `flexboard_copy`, `flexboard_paste`). Gboard's bar holds
@@ -108,7 +108,10 @@ returning after being removed*. That is the reason for the revert, and it was ne
 
 **The shared root cause: both attempts tried to own the count. The count belongs to the user.**
 
-## The plan
+## What the patch does
+
+Implemented as `biggerToolbarPatch` in
+`patches/src/main/kotlin/dev/jz6/flexboard/patches/features/toolbar/ToolbarCapacityPatch.kt`.
 
 Raise the capacity. Touch nothing else. Specifically, **no count override and no writes to any
 Gboard preference.**
@@ -153,15 +156,21 @@ Twelve. Nine Flexboard ids plus a few of Gboard's. Note that the old maximum of 
 without this rationale — `7c5dd48` says *"the range exists to be wide rather than uniformly
 comfortable"* — so the number is the same by coincidence, not by inheritance.
 
-### Pins this needs
+### Pins
 
-- both immediates, by value and by offset relative to the flag-name anchor;
-- the clamp's branch structure (`if-gt` / `if-lt` / `goto` / `move`) so a reshaped constructor
-  fails loudly rather than silently writing the wrong register;
-- `->m:I` is still the field the accepted value lands in;
-- the gate `Lmjv;->a(II)I` still takes the capacity and still produces the count's return value,
-  so that a future change to Gboard's own preference handling cannot quietly turn removals back
-  into resurrections.
+Eleven, under `toolbar:` in `tools/apk/preflight.py`, plus three `EXPECTED` values
+(`toolbar_capacity_flag`, `toolbar_stock_flag_default`, `toolbar_stock_ceiling`):
+
+- the bar's `<clinit>` and constructor both exist;
+- exactly one `config_max_access_points` string, and exactly one flag read in the constructor;
+- the flag's default is still `-1` and still feeds the flag factory within three instructions —
+  so a build that ships a real capacity of its own fails rather than having it overwritten;
+- exactly one stock `8` between the flag read and the int store;
+- that `8` is followed by `if-gt`, and the test compares the register it was loaded into — a bare
+  `8` elsewhere in the constructor is not the ceiling, and rewriting it would run silently;
+- the `if-lt` lower bound is still tested, since the patch depends on leaving it alone.
+
+Every one negative-tested by perturbing the pinned value and confirming the failure.
 
 ## Verification note
 

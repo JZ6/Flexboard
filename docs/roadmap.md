@@ -3,7 +3,7 @@
 
 # Roadmap entries written by the user verbatim.
 
-should we move select all copy paste to same as the hotkey buttons
+rename flexboard description
 
 some settings disabled like grammer check and ai writing tools, rambler mode etc
 

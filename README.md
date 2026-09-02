@@ -207,9 +207,32 @@ is the moment you actually need to know which is which.
 
 Long text is fine. The whole of it gets typed; only the first line, cut short, becomes the name.
 
-**Nine buttons is more than the bar holds.** With the three text actions plus a few hotkeys,
-whatever used to sit at the end of your toolbar moves into the overflow menu behind the chevron.
-Long-press the toolbar to reorder, and drop what you do not need.
+**Nine buttons is more than the bar holds** — unless *Bigger toolbar* is applied, which is what it
+is for. Without it, the three text actions plus a few hotkeys push whatever used to sit at the end
+of your toolbar into the overflow menu behind the chevron. Long-press the toolbar to reorder, and
+drop what you do not need.
+
+## Bigger toolbar
+
+Gboard's toolbar holds five icons. Flexboard adds nine of its own — six hotkeys and three text
+actions — and those nine compete with the emoji, clipboard and settings buttons already there. So
+the bar is the limit on everything above, and this patch raises it to twelve.
+
+**It does not decide how many you see.** Choosing what sits on the bar is Gboard's own job, done by
+long-pressing the toolbar and dragging icons in or out, and this patch does not touch it. All it
+changes is the ceiling that choice runs into. Take a button off and it stays off; the count is
+yours.
+
+That distinction is the whole patch, and it is the part two earlier attempts got wrong. Both tried
+to set the number of icons themselves, and both ended up fighting the toolbar customise screen —
+one of them putting buttons back after they had been removed. Gboard treats *"take this off the
+bar"* as lowering the count, so anything that forces the count up undoes the removal. Raising only
+the ceiling cannot do that.
+
+Two things worth knowing. Twelve icons on a phone are narrow — the bar divides the width it has
+rather than scrolling — so twelve is the room available, not a recommendation. And if you had
+already trimmed your toolbar before applying this, you will still see your old number until you
+drag more icons onto the bar, because that number is your setting and the patch leaves it alone.
 
 ## Flick keys for symbols
 
