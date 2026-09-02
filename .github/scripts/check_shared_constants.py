@@ -204,7 +204,11 @@ def _declares(body, class_name, member, params, returns, needs_static):
                     declared.append(tokens[-2].split(".")[-1])
         if declared != params:
             continue
-        if needs_static and "static" not in modifiers:
+        # Both directions. Requiring static-when-invoke-static caught a Java member losing its
+        # modifier, but emitting invoke-virtual against a method that is still static went
+        # through — an IncompatibleClassChangeError on the device, from a lane whose docstring
+        # says the opcode matters.
+        if ("static" in modifiers) != needs_static:
             continue
         return True
     return False
@@ -450,7 +454,10 @@ DOTTED_EXTENSION_CLASS = re.compile(r"dev\.jz6\.flexboard\.extension(?:\.\w+)*\.
 
 # The emitted smali stages a key as `const-string v$x, "$SOME_KEY"` — the consumers of the
 # screen's keys are the injected readers, not extension Java.
-EMITTED_KEY_READ = re.compile(r'const-string\s+v\$\w+,\s*"\$(\w*KEY\w*)"')
+# Any register spelling, not just an interpolated one. `const-string v$key, "$SOME_KEY"` was
+# matched and `const-string v3, "$SOME_KEY"` was not, so the ordinary form staged a key the screen
+# never wrote and this rule said nothing.
+EMITTED_KEY_READ = re.compile(r'const-string\s+[vp][\w${}]+\s*,\s*"\$\{?(\w+)\}?"')
 
 
 def _check_screen_contract(problems, kotlin):
@@ -493,7 +500,19 @@ def _check_screen_contract(problems, kotlin):
     for path in PATCHES.rglob("*.kt"):
         text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
         for const_name in EMITTED_KEY_READ.findall(text):
-            staged.add((path.name, const_name))
+            # The register spelling is no longer part of the match, so filter on the name here
+            # instead: this rule is about preference keys, not every interpolated constant.
+            if "KEY" in const_name:
+                staged.add((path.name, const_name))
+
+    # An exemption for a key nothing stages any more is not neutral — it silently widens as the
+    # code moves, exactly like the pins PIN_LESS is checked against in check_dex_pins.py.
+    for name in sorted(stage_only - {const for _, const in staged}):
+        problems.append(
+            f"  {name} is exempted from the staged-key rule but no patch stages it — the "
+            f"exemption now covers nothing and should go"
+        )
+
     for file_name, const_name in sorted(staged):
         if const_name in stage_only:
             continue
