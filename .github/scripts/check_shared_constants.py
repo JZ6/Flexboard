@@ -365,6 +365,19 @@ SETTINGS_SECTIONS_KT = ROOT / (
 )
 
 
+
+def _java_string_constant(name):
+    """The value of a `private static final String NAME = "...";` anywhere in the extension."""
+    for source in EXTENSION_ROOT.rglob("*.java"):
+        m = re.search(
+            rf'static\s+final\s+String\s+{re.escape(name)}\s*=\s*"([^"]*)"',
+            source.read_text(),
+        )
+        if m:
+            return m.group(1)
+    return None
+
+
 def _check_section_sentinels(problems):
     """The template's @SECTION_X@ vocabulary is exactly the SettingsSection enum.
 
@@ -542,12 +555,33 @@ def _check_screen_contract(problems, kotlin):
     # above can't see either: a 13th row is a dead control, an 11th is a slot with no editor,
     # a revived icon row splits the edit surface in two.
     slot_count = int(kotlin.get("HOTKEY_SLOTS", "0"))
-    want = {f"flexboard_hotkey_{n}_text" for n in range(1, slot_count + 1)}
-    got = {k for k in keys if re.fullmatch(r"flexboard_hotkey_\d+_text", k)}
+
+    # The key *format* is built at runtime from three Java constants -- prefix + slot + suffix in
+    # Hotkeys.textKey -- and appears again as literal row keys in the settings XML, and a third
+    # time as the pattern this checker matches with. Nothing compared them. Renaming the prefix
+    # left every row dead (isRow compares against d(textKey(slot)), which then finds nothing),
+    # every hotkey silently un-editable, and Hotkey.run reading a key nothing writes, with all
+    # three lanes green. Hotkeys.java's own comment predicted exactly that.
+    #
+    # So the pattern is derived from the Java rather than spelled here.
+    java_prefix = _java_string_constant("PREF_TEXT_PREFIX")
+    java_suffix = _java_string_constant("PREF_TEXT_SUFFIX")
+    if not java_prefix or not java_suffix:
+        problems.append(
+            "  Hotkeys.PREF_TEXT_PREFIX/PREF_TEXT_SUFFIX could not be parsed, so the hotkey row "
+            "keys are being matched against a pattern nothing pins"
+        )
+        java_prefix, java_suffix = "flexboard_hotkey_", "_text"
+    row_pattern = re.compile(
+        re.escape(java_prefix) + r"\d+" + re.escape(java_suffix)
+    )
+
+    want = {f"{java_prefix}{n}{java_suffix}" for n in range(1, slot_count + 1)}
+    got = {k for k in keys if row_pattern.fullmatch(k)}
     if got != want:
         problems.append(
             f"  flexboard_settings.xml should carry exactly the {slot_count} merged "
-            f"hotkey rows (flexboard_hotkey_1..{slot_count}_text); "
+            f"hotkey rows ({java_prefix}1..{slot_count}{java_suffix}); "
             f"missing {sorted(want - got)}, extra {sorted(got - want)}"
         )
     icon_rows = sorted(k for k in keys if re.fullmatch(r"flexboard_hotkey_\d+_icon", k))
