@@ -91,6 +91,19 @@ BINDINGS = {
     # stores through. The class names move every build; the strings inside are what R8 cannot.
     'grammar_flags': 'Ljpf;',
     'flag_store': 'Lnxs;',
+    # Letters that used to sit inline in the check bodies below, where the module docstring's
+    # "edit BINDINGS and the register counts; everything else is structural and should carry
+    # over untouched" was a promise this file did not keep. They fail loudly rather than
+    # silently, but a maintainer following the documented bump procedure would not have touched
+    # any of them.
+    'start_key_holder': 'Lpnu;',          # holds the start keycode the scrub engine compares
+    'key_selector': 'Lpmy;',              # the sget-object the start-key read goes through
+    'flag_box': 'Lnxp;',                  # boxed phenotype flag read by the scrub gate
+    'access_point_map': 'Lays;',          # the map the toolbar register call writes into
+    'immutable_set': 'Lvxe;',             # the allowed-set the order helper stores
+    'ime_base': 'Lad;',                   # expected in the settings-fragment superclass chain
+    'fragment_host': 'Lbhp;',             # declares the K( transaction the settings row uses
+    'fragment_args': 'Lcdm;',             # f(Bundle)V, the argument sink for the hosted screen
 }
 
 EXPECTED = {
@@ -195,6 +208,11 @@ EXPECTED = {
         ('Select all', 0x7f140576, 0x7f080218, 'M9,9h6v6L9,15L9,9z'),
         ('Copy', 0x7f140560, 0x7f080214, 'M19,21L8,21L8,7h11v14z'),
         ('Paste', 0x7f140570, 0x7f080217, 'M19,20L5,20L5,4h2v3h10L17,4h2v16z'),
+        # Toolbar Native Test ships, and its icon id was emitted with no pin of any kind while
+        # the three above were glyph-checked precisely because a renumbering still lands on
+        # something reading 'drawable/'. Its label is a Kotlin literal rather than a Gboard
+        # string, hence no label id -- the glyph is the whole of what there is to anchor.
+        ('Test', None, 0x7f0806fc, 'M19,9l1.25,-2.75L23,5'),
     ],
     # The generated builder's own words for the properties it refuses to build without. These are
     # string literals in the dex, which is why they are worth anchoring on: R8 renames the class,
@@ -813,8 +831,8 @@ def run(dl, apk=None):
                  if n == 'iput-object' and a.endswith(':Landroid/view/View;')]
         check('startkey: one View field written in g()', len(views) == 1, f'found {len(views)}')
         kd = [i for i, (pc, n, a) in enumerate(ins)
-              if n.startswith('invoke') and a.endswith(')Lpnu;')]
-        if check('startkey: one no-arg call returning Lpnu;', len(kd) == 1, f'found {len(kd)}'):
+              if n.startswith('invoke') and a.endswith(f"){B['start_key_holder']}")]
+        if check(f"startkey: one no-arg call returning {B['start_key_holder']}", len(kd) == 1, f'found {len(kd)}'):
             # The chain is walked back from that unique anchor; f() itself is called twice, so it
             # can only be identified by which call feeds the key-data accessor.
             action_reg = regs(ins[kd[0]][2])[0]
@@ -831,10 +849,10 @@ def run(dl, apk=None):
                 check('startkey: its action selector is loaded in g()', bool(si))
                 # Two Lpmy; statics are read in g(); the walk must land on the one the gate uses.
                 if si:
-                    sels = [a for pc, n, a in ins if n == 'sget-object' and 'Lpmy;' in a]
+                    sels = [a for pc, n, a in ins if n == 'sget-object' and B['key_selector'] in a]
                     check('startkey: the selector is disambiguated, not guessed', len(sels) > 1,
                           f'only {len(sels)} candidate(s) — check is not discriminating')
-        kc = [i for i, (pc, n, a) in enumerate(ins) if n == 'iget' and 'Lpnu;->' in a]
+        kc = [i for i, (pc, n, a) in enumerate(ins) if n == 'iget' and f"{B['start_key_holder']}->" in a]
         check('startkey: one Lpnu; field read in g()', len(kc) == 1, f'found {len(kc)}')
 
     c, ins = body(dl, f'{SCRUB}->r(Landroid/view/MotionEvent;Z)V')
@@ -924,7 +942,7 @@ def run(dl, apk=None):
                   f'got {literal and literal.group(1)}, '
                   f'expected {E["toolbar_stock_count"]}')
 
-        flag = [i for i, (pc, n, a) in enumerate(ins) if 'Lnxp;->g()Ljava/lang/Object;' in a]
+        flag = [i for i, (pc, n, a) in enumerate(ins) if f"{B['flag_box']}->g()Ljava/lang/Object;" in a]
         if check('toolbar: one flag read in the constructor', len(flag) == 1, f'found {len(flag)}'):
             # By field *type*, not by opcode: `iput` (0x59) covers int and float alike, and the two
             # dimensions read out of the same TypedArray follow just below. Restricting to after the
@@ -1409,10 +1427,11 @@ def run(dl, apk=None):
             # The icon is checked by *glyph*, not by type. A renumbering would still land on
             # something reading 'drawable/', so the path signature each was found by is the check.
             for name, label_id, icon_id, signature in E['buttons_resources']:
-                label = table.value(label_id)
-                check(f'buttons: the {name} label still reads "{name}"',
-                      str(label).lower() == name.lower(),
-                      f'{hex(label_id)} now reads {label!r}')
+                if label_id is not None:
+                    label = table.value(label_id)
+                    check(f'buttons: the {name} label still reads "{name}"',
+                          str(label).lower() == name.lower(),
+                          f'{hex(label_id)} now reads {label!r}')
                 drawable = table.name(icon_id)
                 if check(f'buttons: the {name} icon id is still a drawable',
                          str(drawable).startswith('drawable/'), f'reads {drawable!r}'):
@@ -1448,7 +1467,7 @@ def run(dl, apk=None):
                 if mc is None:
                     continue
                 walks = list(d_c.walk(mc))
-                if any('Lays;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;'
+                if any(f"{B['access_point_map']}->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
                        in (t or '') for _p, _n, _mn, t in walks):
                     registers.append(m_name)
             if check('native: exactly one Lays.put-based register call on the controller',
@@ -1548,12 +1567,15 @@ def run(dl, apk=None):
     if check('native: order-helper <init> exists for the allowed-set seam', ins is not None):
         check('native: order-helper <init> register count',
               c['registers'] == E['order_helper_init_registers'], f'got {c["registers"]}')
-        consts = [a for _, n, a in ins if n.startswith('const') and '0x7f0300dc' in a]
+        target = f'{E["native_allowed_array"]:#010x}'
+        # Was a hardcoded copy of the id declared 1385 lines above, so repointing the pin
+        # left this assertion happily confirming the old one.
+        consts = [a for _, n, a in ins if n.startswith('const') and target in a]
         check('native: allowed-array id loaded once in <init>', len(consts) == 1, str(consts))
         reads = [a for _, n, a in ins if 'getStringArray' in a]
         check('native: one getStringArray call', len(reads) == 1, str(reads))
         stores = [a for _, n, a in ins
-                  if n == 'iput-object' and a.rsplit(', ', 1)[-1].endswith(':Lvxe;')]
+                  if n == 'iput-object' and a.rsplit(', ', 1)[-1].endswith(f":{B['immutable_set']}")]
         check('native: one immutable set is stored', len(stores) == 1, str(stores))
 
     # The per-open refresh seam (hotkeys re-register on every start-input): the module's
@@ -1709,7 +1731,7 @@ def run(dl, apk=None):
                   ins2 is not None, sig)
         chain = superclass_chain(dl, host)
         check('settings: the host base descends from the ported Fragment chain',
-              'Lad;' in chain and '(not in dex)' not in chain, str(chain[-2:]))
+              B['ime_base'] in chain and '(not in dex)' not in chain, str(chain[-2:]))
 
     # ---- the extension's click seam: aA dispatch and the row letters
     #
@@ -1842,12 +1864,12 @@ def run(dl, apk=None):
     dlg = 'Landroidx/preference/DialogPreference;'
     c, ins = body(dl, f'{dlg}-><init>(Landroid/content/Context;Landroid/util/AttributeSet;II)V')
     if check('settings: the DialogPreference ctor exists', ins is not None):
-        k_calls = [a for _pc, _mn, a in ins if 'Lbhp;->K(' in a]
+        k_calls = [a for _pc, _mn, a in ins if f"{B['fragment_host']}->K(" in a]
         writes = [a for _pc, mn, a in ins
                   if mn == 'iput' and a.rsplit(', ', 1)[-1] == f'{dlg}->f:I']
         check('settings: the dialog layout id comes from the theme read and lands in f',
               len(k_calls) == 1 and len(writes) == 1, f'K={k_calls} writes={writes}')
-    c, ins = body(dl, 'Lcdm;->f(Landroid/os/Bundle;)V')
+    c, ins = body(dl, f"{B['fragment_args']}->f(Landroid/os/Bundle;)V")
     if check('settings: the dialog base still reads the layout id', ins is not None):
         reads = [a for _pc, mn, a in ins
                  if mn.startswith('iget') and a.rsplit(', ', 1)[-1] == f'{dlg}->f:I']
