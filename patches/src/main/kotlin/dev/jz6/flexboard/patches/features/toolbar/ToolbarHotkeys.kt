@@ -53,24 +53,9 @@ internal const val HOTKEY_ID_PREFIX = "flexboard_hotkey_"
  * touches the order-read filter at all.
  */
 internal fun BytecodePatchContext.emitNativeHotkeys(builder: AccessPointBuilder) {
-    val canvas = resolveControllerCanvas()
-    val init = mutableClassDefBy(canvas.controllerType).methods.single {
-        it.toDescriptor() == canvas.initDescriptor
-    }
-    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, canvas.initDescriptor)
-
-    val tailIndex = init.implementation!!.instructions
-        .indexOfLast { it.opcodeName() == "RETURN_VOID" }
-    check(tailIndex >= 0) {
-        "${canvas.initDescriptor} has no return-void — the constructor's shape has changed"
-    }
-
-    // p1 is the constructor's Context argument at this register count; p0 is the receiver.
-    validateScratchRegisters(
-        scratch = listOf(0, 1, 2, 4),
-        avoid = listOf(10, 11, 12),
-        what = canvas.initDescriptor,
-    )
+    // Four scratch registers rather than three: each slot's block branches past itself when the
+    // slot is empty, and that guard needs one of its own.
+    val (canvas, init, tailIndex) = resolveControllerInit(scratch = listOf(0, 1, 2, 4))
 
     val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
         hotkeyBlock(slot, builder, HOTKEY_CTOR_SITE, canvas.registerCall)

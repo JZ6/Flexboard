@@ -7,6 +7,9 @@ import com.android.tools.smali.dexlib2.iface.ClassDef
 import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
+import dev.jz6.flexboard.patches.shared.assertRegisterCount
+import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 import dev.jz6.flexboard.patches.shared.calledDescriptors
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.toDescriptor
@@ -127,3 +130,54 @@ private fun resolveInitDef(
 // -------------------------------------------------------------------------------------------
 // Emission
 // -------------------------------------------------------------------------------------------
+
+
+/**
+ * The controller's parameter registers at [CONTROLLER_INIT_REGISTER_COUNT]: `p0` the receiver,
+ * `p1` the `Context`, `p2` the module. Scratch has to stay clear of all three.
+ */
+private val CONTROLLER_INIT_PARAMETERS = listOf(10, 11, 12)
+
+/** The constructor an emitter appends to, and the index of its tail. */
+internal data class ControllerInit(
+    val canvas: ControllerCanvas,
+    val init: MutableMethod,
+    val tailIndex: Int,
+)
+
+/**
+ * Resolves the access-point controller's constructor and the point to append at.
+ *
+ * Both constructor emitters ran these eleven lines verbatim, error message included -- find the
+ * canvas, find `<init>` on it, pin its register count, locate the `return-void` to insert before,
+ * and check the scratch set against the parameters. A Gboard build that reshapes that constructor
+ * needed the same fix applied twice, in two files, which is exactly the drift
+ * [resolveControllerCanvas] was factored out to prevent; that just stopped one call too early.
+ *
+ * [scratch] is the only part that genuinely differed: the button emitter needs three registers,
+ * the hotkey emitter four, because its per-slot blocks branch.
+ *
+ * `emitHotkeyRefresh` deliberately does not use this. It shares the canvas and nothing after it --
+ * its target is the module's start-input method rather than the controller's constructor, with a
+ * different register count and a different insertion anchor.
+ */
+internal fun BytecodePatchContext.resolveControllerInit(scratch: List<Int>): ControllerInit {
+    val canvas = resolveControllerCanvas()
+    val init = mutableClassDefBy(canvas.controllerType).methods.single {
+        it.toDescriptor() == canvas.initDescriptor
+    }
+    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, canvas.initDescriptor)
+
+    val tailIndex = init.implementation!!.instructions
+        .indexOfLast { it.opcodeName() == "RETURN_VOID" }
+    check(tailIndex >= 0) {
+        "${canvas.initDescriptor} has no return-void — the constructor's shape has changed"
+    }
+
+    validateScratchRegisters(
+        scratch = scratch,
+        avoid = CONTROLLER_INIT_PARAMETERS,
+        what = canvas.initDescriptor,
+    )
+    return ControllerInit(canvas, init, tailIndex)
+}

@@ -145,27 +145,10 @@ internal fun BytecodePatchContext.emitNativeToolbarButtons(
 ) {
     check(buttons.isNotEmpty()) { "emitNativeToolbarButtons called with no buttons" }
 
-    val canvas = resolveControllerCanvas()
-    val init = mutableClassDefBy(canvas.controllerType).methods.single {
-        it.toDescriptor() == canvas.initDescriptor
-    }
-    init.assertRegisterCount(CONTROLLER_INIT_REGISTER_COUNT, canvas.initDescriptor)
-
-    val tailIndex = init.implementation!!.instructions
-        .indexOfLast { it.opcodeName() == "RETURN_VOID" }
-    check(tailIndex >= 0) {
-        "${canvas.initDescriptor} has no return-void — the constructor's shape has changed"
-    }
-
     // Three scratch registers cover everything a button's emission touches: v0 holds the builder
     // then the finished `mic`, v1 holds each argument in turn, and v2 is needed only when an
-    // action has an Int ordinal (the action instance sits in v1, the ordinal in v2). The
-    // receiver `p0` (v10 at this register count) is read as `g`'s target, never written.
-    validateScratchRegisters(
-        scratch = listOf(0, 1, 2),
-        avoid = listOf(10, 11, 12),
-        what = canvas.initDescriptor,
-    )
+    // action has an Int ordinal (the action instance sits in v1, the ordinal in v2).
+    val (canvas, init, tailIndex) = resolveControllerInit(scratch = listOf(0, 1, 2))
 
     val emission = buttons.joinToString("\n\n") { it.toSmali(builder, canvas.registerCall) }
     init.addInstructions(tailIndex, emission)
