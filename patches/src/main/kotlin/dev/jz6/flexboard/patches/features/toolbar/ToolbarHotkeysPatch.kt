@@ -2,11 +2,7 @@ package dev.jz6.flexboard.patches.features.toolbar
 
 import app.morphe.patcher.patch.bytecodePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
-import dev.jz6.flexboard.patches.shared.HOTKEY_ID_PREFIX  // const visible to the checker
 import dev.jz6.flexboard.patches.shared.basePatch
-import dev.jz6.flexboard.patches.shared.emitHotkeyRefresh
-import dev.jz6.flexboard.patches.shared.emitNativeHotkeys
-import dev.jz6.flexboard.patches.shared.resolveAccessPointBuilder
 import dev.jz6.flexboard.patches.shared.selectedSettingsSections
 import dev.jz6.flexboard.patches.shared.SettingsSection
 

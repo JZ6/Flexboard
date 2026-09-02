@@ -3,7 +3,6 @@ package dev.jz6.flexboard.patches.features.toolbar
 import app.morphe.patcher.patch.ResourcePatchContext
 import app.morphe.patcher.patch.resourcePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
-import dev.jz6.flexboard.patches.shared.HOTKEY_SLOTS
 import dev.jz6.flexboard.patches.shared.basePatch
 
 /**

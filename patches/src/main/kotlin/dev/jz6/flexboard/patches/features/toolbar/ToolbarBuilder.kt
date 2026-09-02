@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.shared
+package dev.jz6.flexboard.patches.features.toolbar
 
 import app.morphe.patcher.patch.BytecodePatchContext
 import com.android.tools.smali.dexlib2.iface.ClassDef
@@ -6,6 +6,11 @@ import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import dev.jz6.flexboard.patches.shared.fieldDescriptor
+import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
+import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.stringOrNull
+import dev.jz6.flexboard.patches.shared.toDescriptor
 
 /**
  * The derivation of Gboard's access-point builder API.
