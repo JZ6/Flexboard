@@ -321,7 +321,6 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         int spacing = dp(ui, 8);
         final String seed = Hotkeys.currentIconToken(ui, slot);
         final String[] pending = { seed };
-        final boolean[] discarded = { false };
         final List<ImageView> items = new ArrayList<>();
         final List<String> names = new ArrayList<>();
         for (String name : Hotkeys.choices()) {
@@ -347,24 +346,29 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         column.addView(scroll, new ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // Save is the only writer.
+        //
+        // This used to commit from an OnDismissListener, on the reasoning that "all dismissal
+        // roads lead here" so one hook could own the write. They do -- including the ones the
+        // user did not choose. An Activity teardown dismisses the dialog too, and the listener
+        // could not tell that from a deliberate tap-outside, so rotating the screen mid-edit
+        // committed whatever half-typed text was in the field over the stored hotkey. Silent,
+        // and unrecoverable.
+        //
+        // Tap-outside now discards, which is the conventional behaviour for a dialog with
+        // explicit buttons anyway.
         AlertDialog dialog = new AlertDialog.Builder(ui)
             .setTitle("Hotkey " + slot)
             .setView(column)
-            .setNegativeButton("Cancel", (dlog, which) -> discarded[0] = true)
-            .setPositiveButton("Save", null)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save", (dlog, which) -> {
+                Hotkeys.setText(ui, slot, field.getText().toString());
+                if (!pending[0].equals(seed)) {
+                    Hotkeys.setIconToken(ui, slot, pending[0]);
+                }
+                redrawSlot(ui, slot);
+            })
             .show();
-        // All dismissal roads lead here: the hook commits both halves unless Cancel said
-        // otherwise. (The buttons only manage the flag; the hook is the one writer.)
-        dialog.setOnDismissListener(dlog -> {
-            if (discarded[0]) {
-                return;
-            }
-            Hotkeys.setText(ui, slot, field.getText().toString());
-            if (!pending[0].equals(seed)) {
-                Hotkeys.setIconToken(ui, slot, pending[0]);
-            }
-            redrawSlot(ui, slot);
-        });
         for (int i = 0; i < items.size(); i++) {
             final int index = i;
             items.get(i).setOnClickListener(v -> {
