@@ -1,4 +1,4 @@
-package dev.jz6.flexboard.patches.shared
+package dev.jz6.flexboard.patches.features.toolbar
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
@@ -7,6 +7,9 @@ import com.android.tools.smali.dexlib2.iface.ClassDef
 import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import dev.jz6.flexboard.patches.shared.calledDescriptors
+import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.toDescriptor
 
 /**
  * The access-point controller the three toolbar emitters all write through.
