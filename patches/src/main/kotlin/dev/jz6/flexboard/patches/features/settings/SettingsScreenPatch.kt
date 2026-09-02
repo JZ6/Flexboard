@@ -174,24 +174,55 @@ private const val ENTRY_SUMMARY = "Gesture settings"
  * output, so checkers are untouched.
  */
 internal fun filterSettingsSections(xml: String): String {
-    val withMarkers = xml.replace(
+    // Both halves of the vocabulary, checked against the enum before anything is filtered.
+    //
+    // Every way this can go wrong is otherwise silent, and the output stays well-formed XML in
+    // each of them, so nothing downstream notices. A typo in an opening sentinel stops the block
+    // matching at all, so it ships unconditionally with the sentinel left in as a comment — and
+    // if that section was *not* ticked, its rows reference drawables the finalize below never
+    // wrote, which fails the aapt2 link only for users who deselected the feature. A renamed enum
+    // constant fails `it.name == section` instead, dropping the block forever: the feature ships,
+    // its icons ship, and the settings screen simply has no category for it.
+    val opened = Regex("<!--\\s*@SECTION_(\\w+)@\\s*-->").findAll(xml).map { it.groupValues[1] }
+    val closed = Regex("<!--\\s*@END_SECTION_(\\w+)@\\s*-->").findAll(xml).map { it.groupValues[1] }
+    val declared = opened.toList().sorted()
+    val terminated = closed.toList().sorted()
+    require(declared == terminated) {
+        "Settings template sentinels are unbalanced: opened $declared, closed $terminated"
+    }
+    val known = SettingsSection.entries.map { it.name }.toSet()
+    require(declared.toSet() == known) {
+        "Settings template marks ${declared.toSet()} but SettingsSection declares $known — a " +
+            "section the enum does not know is dropped from every build, and a section the " +
+            "template does not mark is emitted in every build"
+    }
+
+    val filtered = xml.replace(
         Regex("<!--\\s*@SECTION_(\\w+)@\\s*-->.*?<!--\\s*@END_SECTION_\\1@\\s*-->",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.MULTILINE)),
     ) { match ->
         val section = match.groupValues[1]
         if (SettingsSection.entries.any { it.name == section &&
                     it in selectedSettingsSections }) {
-            // Keep, but strip the sentinel comments from the output
+            // Keep, but strip this block's own sentinels. Anchored to the captured name rather
+            // than `\w+` so a nested block keeps its markers for its own pass to consume.
             match.value
-                .replace(Regex("<!--\\s*@SECTION_\\w+@\\s*-->"), "")
-                .replace(Regex("<!--\\s*@END_SECTION_\\w+@\\s*-->"), "")
+                .replace(Regex("<!--\\s*@SECTION_$section@\\s*-->"), "")
+                .replace(Regex("<!--\\s*@END_SECTION_$section@\\s*-->"), "")
                 .trim()
         } else {
             // Drop the entire block
             ""
         }
     }
-    return withMarkers
+
+    // Nothing may reach the APK. A surviving sentinel means the pairing above matched something
+    // this replace did not, and the block it guards is in the output unconditionally.
+    val survivors = Regex("@(?:END_)?SECTION_\\w+@").findAll(filtered).map { it.value }.toList()
+    require(survivors.isEmpty()) {
+        "Settings template sentinels survived filtering: $survivors"
+    }
+    return filtered
 }
 
 /**

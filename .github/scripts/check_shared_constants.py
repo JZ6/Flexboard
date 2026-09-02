@@ -356,6 +356,54 @@ def _xml_entries(text):
     return entries
 
 
+SETTINGS_SECTIONS_KT = ROOT / (
+    "patches/src/main/kotlin/dev/jz6/flexboard/patches/shared/SettingsSections.kt"
+)
+
+
+def _check_section_sentinels(problems):
+    """The template's @SECTION_X@ vocabulary is exactly the SettingsSection enum.
+
+    filterSettingsSections drops any block whose sentinel does not name an enum constant, and
+    leaves alone any block whose sentinels do not pair. Both produce well-formed XML, so the
+    patch succeeds and the APK links; the only symptom is a settings category that is silently
+    absent from every build, or silently present in every build with its markers left in as
+    comments. The patch asserts this too, but only once someone runs it -- this is the lane that
+    fails on a push.
+    """
+    enum_body = re.search(
+        r"enum class SettingsSection\s*\{(.*?)\}",
+        SETTINGS_SECTIONS_KT.read_text(),
+        re.S,
+    )
+    if not enum_body:
+        problems.append("  SettingsSection enum could not be parsed — the sentinel check is blind")
+        return
+    declared = set(re.findall(r"^\s*([A-Z][A-Z0-9_]*)\s*,", enum_body.group(1), re.M))
+
+    text = SETTINGS_XML.read_text()
+    opened = re.findall(r"<!--\s*@SECTION_(\w+)@\s*-->", text)
+    closed = re.findall(r"<!--\s*@END_SECTION_(\w+)@\s*-->", text)
+
+    if not declared or not opened:
+        problems.append(
+            f"  section sentinel check parsed nothing: enum {sorted(declared)}, "
+            f"template {sorted(set(opened))}"
+        )
+        return
+    if sorted(opened) != sorted(closed):
+        problems.append(
+            f"  flexboard_settings.xml sentinels are unbalanced: opened {sorted(opened)}, "
+            f"closed {sorted(closed)}"
+        )
+    if set(opened) != declared:
+        problems.append(
+            f"  flexboard_settings.xml marks {sorted(set(opened))} but SettingsSection declares "
+            f"{sorted(declared)} — a section the enum does not know is dropped from every build, "
+            f"and a section the template does not mark is emitted in every build"
+        )
+
+
 def _check_settings_xml(problems, kotlin):
     """The native settings rows agree with the smali readers about keys, defaults and bounds.
 
@@ -580,6 +628,7 @@ def main():
             )
 
     _check_extension_references(problems)
+    _check_section_sentinels(problems)
     _check_settings_xml(problems, kotlin)
     _check_dotted_extension_classes(problems)
     _check_screen_contract(problems, kotlin)
