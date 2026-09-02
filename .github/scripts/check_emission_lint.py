@@ -49,7 +49,7 @@ WIDTHS = {"const/4": (-8, 7), "const/16": (-32768, 32767)}
 
 
 def collect_calls(text):
-    """Yield (line_no, variant, arg_string) for each addInstructions* call site."""
+    """Yield (line_no, variant, arg_string, end_offset) for each addInstructions* call site."""
     for m in CALL.finditer(text):
         i = m.end()
         depth = 1
@@ -66,7 +66,7 @@ def collect_calls(text):
                     break
                 i = end + 2
             i += 1
-        yield start_line, m.group(1), text[m.end():i - 1]
+        yield start_line, m.group(1), text[m.end():i - 1], m.start()
 
 
 def expand(token, consts):
@@ -89,10 +89,18 @@ def lint_block(problems, name, line_no, payload, externals, consts, labeled):
         )
 
     if not labeled:
-        if ":" in payload:
+        # A colon alone is not a label: every field descriptor carries one, and rejecting
+        # `iget-object v0, p0, Lqhy;->a:Landroid/content/Context;` pushed authors toward
+        # addInstructionsWithLabels — or toward composing the payload elsewhere, out of this
+        # linter's reach. Only a definition or a branch that references one counts.
+        stray = [
+            ln.strip() for ln in useful
+            if LABEL_DEF.match(ln) or (BRANCH.match(ln) and LABEL_REF.search(ln))
+        ]
+        if stray:
             problems.append(
-                f"  {name}:{line_no} carries ':' in an addInstructions payload — labels "
-                f"need addInstructionsWithLabels or they are silently dead text (R2)"
+                f"  {name}:{line_no} carries label {stray[0]!r} in an addInstructions payload — "
+                f"labels need addInstructionsWithLabels or they are silently dead text (R2)"
             )
     else:
         defs, refs = set(), set()
@@ -113,7 +121,17 @@ def lint_block(problems, name, line_no, payload, externals, consts, labeled):
                 f"its ExternalLabel declarations (R2)"
             )
 
-    for ln in useful:
+    lint_widths(problems, name, line_no, payload)
+
+
+def lint_widths(problems, name, line_no, payload):
+    """R4 on its own, so fragments composed into a payload get it too.
+
+    Operand width is a property of the instruction alone — unlike the label rules it does not
+    depend on where the fragment ends up — so it is the one check worth running on a block this
+    linter can see but cannot place.
+    """
+    for ln in payload.split("\n"):
         cm = CONST_INSTR.match(ln)
         if cm:
             op, raw = cm.group(1), cm.group(2).lstrip("#")
@@ -147,16 +165,7 @@ def lint_fingerprint_singletons(texts):
     problems = []
     for path, text in sorted(texts.items(), key=lambda kv: kv[0].name):
         for match in FINGERPRINT_SINGLETON.finditer(text):
-            # Detected on the comment-stripped text so a declaration quoted in a doc block is not
-            # a finding, but reported against the real file: a line number counted after stripping
-            # points somewhere else entirely, which is worse than no line number at all.
-            declaration = re.compile(
-                r"^\s*(?:internal |private )?object\s+%s\s*:\s*Fingerprint\(" % match.group(1),
-                re.M,
-            ).search(path.read_text())
-            line_no = (
-                path.read_text()[: declaration.start()].count("\n") + 1 if declaration else "?"
-            )
+            line_no = text[: match.start()].count("\n") + 1
             problems.append(
                 f"  {path.name}:{line_no} declares {match.group(1)} as an `object` (R6) — a "
                 f"Fingerprint singleton keeps its Match across patcher runs; use "
@@ -165,26 +174,102 @@ def lint_fingerprint_singletons(texts):
     return problems
 
 
+PLAIN_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+IDENTIFIER_ARG = re.compile(r",\s*([A-Za-z_]\w*)\s*$", re.S)
+
+
+def initializer_of(text, name, before):
+    """Source of `val <name> = ...`, the last one declared before offset [before].
+
+    Parentheses and braces are balanced from the `=`, then the capture runs to the end of that
+    line so a trailing `.trimIndent()` comes along. Good enough for the one shape this codebase
+    builds payloads with, and anything it cannot parse is reported rather than skipped.
+    """
+    best = None
+    for m in re.finditer(rf"\bval\s+{re.escape(name)}\s*=", text):
+        if m.end() < before:
+            best = m
+    if not best:
+        return None
+    i, depth = best.end(), 0
+    while i < len(text):
+        c = text[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == "\n" and depth <= 0:
+            break
+        i += 1
+    return text[best.end():text.find("\n", i) if text.find("\n", i) > 0 else len(text)]
+
+
+def terminator_is_instruction(initializer):
+    """Whether a composed payload provably ends on something other than a label.
+
+    Morphe reads a block's terminal label as external and dies indexing an empty array, so a
+    composition whose last literal is a separator — or a fragment that ends on a label — is the
+    751b0d0 crash waiting to be reassembled. The last string literal in source order is the
+    composition's tail; require its final non-blank line to be an instruction.
+    """
+    literals = [m.group(1) for m in re.finditer(r'"""(.*?)"""', initializer, re.S)]
+    literals += [m.group(1) for m in PLAIN_STRING.finditer(re.sub(r'""".*?"""', "", initializer, flags=re.S))]
+    if not literals:
+        return False
+    tail = literals[-1].encode().decode("unicode_escape")
+    useful = [ln.strip() for ln in tail.split("\n") if ln.strip()]
+    return bool(useful) and not useful[-1].startswith(":")
+
+
 def main():
     consts = {}
     texts = {}
     for path in PATCHES.rglob("*.kt"):
-        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        # Block comments collapse to their own newlines rather than vanishing, so every line
+        # number this linter reports still refers to the real file. Reporting a finding against
+        # a line that moved is worse than reporting no line at all.
+        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub(
+            lambda m: "\n" * m.group(0).count("\n"), path.read_text()))
         texts[path] = text
         consts.update(KOTLIN_CONST.findall(text))
 
     problems = []
     problems += lint_fingerprint_singletons(texts)
     for path, text in sorted(texts.items(), key=lambda kv: kv[0].name):
-        for line_no, variant, args in collect_calls(text):
-            m = RAW_STRING.search(args)
-            if not m:
+        for line_no, variant, args, end in collect_calls(text):
+            labeled = variant == "addInstructionsWithLabels"
+            externals = {consts.get(t, t) for t in EXTERNAL_LABEL.findall(args)}
+
+            raw = RAW_STRING.search(args)
+            if raw:
+                lint_block(problems, path.name, line_no, raw.group(1), externals, consts, labeled)
                 continue
-            externals = set()
-            for tok in EXTERNAL_LABEL.findall(args):
-                externals.add(consts.get(tok, tok))
-            lint_block(problems, path.name, line_no, m.group(1), externals, consts,
-                       labeled=(variant == "addInstructionsWithLabels"))
+
+            # A payload handed over as an ordinary string is still a payload. These used to fall
+            # through the raw-string search and go unlinted entirely.
+            plain = PLAIN_STRING.search(args)
+            if plain:
+                lint_block(problems, path.name, line_no, plain.group(1), externals, consts, labeled)
+                continue
+
+            # Composed elsewhere and passed by name. The fragments cannot be assembled here, but
+            # the property that actually crashes Morphe — how the composition ends — can be.
+            named = IDENTIFIER_ARG.search(args)
+            initializer = initializer_of(text, named.group(1), end) if named else None
+            if initializer is None:
+                problems.append(
+                    f"  {path.name}:{line_no} passes a payload this linter cannot analyse (R7); "
+                    f"an unanalysed emission is an unguarded one"
+                )
+                continue
+            for fragment in re.finditer(r'"""(.*?)"""', initializer, re.S):
+                lint_widths(problems, path.name, line_no, fragment.group(1))
+            if labeled and not terminator_is_instruction(initializer):
+                problems.append(
+                    f"  {path.name}:{line_no} builds `{named.group(1)}` with no demonstrable "
+                    f"instruction at the end (R7) — Morphe resolves a terminal label as external "
+                    f"and dies at `length=0; index=0`"
+                )
 
     if problems:
         print("Smali emission lint:")
