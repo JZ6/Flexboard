@@ -546,6 +546,16 @@ def main():
             f"extension says {java_names}"
         )
 
+    # The list is read as DEFAULT_ICON_NAMES[slot - 1] for every slot, so it may be longer than the
+    # slot count (the surplus is the picker's front rows) but never shorter — that would be an
+    # index-out-of-bounds the first time an unassigned high slot drew its default.
+    declared_slots = int(kotlin.get("HOTKEY_SLOTS", "0"))
+    if kt_syms and declared_slots and len(kt_syms) < declared_slots:
+        problems.append(
+            f"  HOTKEY_DEFAULT_SYMBOLS has {len(kt_syms)} entries but HOTKEY_SLOTS is "
+            f"{declared_slots} — slot {len(kt_syms) + 1} has no default icon to resolve"
+        )
+
     # Same rule for the picker's back half: the patch writes the extra drawables, the extension
     # lays them out past the defaults in the same order. (Digits appear in counter_*, so
     # this pattern admits them where the defaults' does not.)

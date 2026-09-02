@@ -60,10 +60,13 @@ internal const val CONFIG_DISABLED_FIELD = "Lpvs;->g:Z"
 internal const val PREFERENCE_STORE = "Lqhy;"
 
 /**
- * These two are **signature-unique** on the store: no other method takes a `Context` and returns
- * the store, and no other takes `(String, Z)` and returns `Z`. So a rename cannot hide behind a
- * sibling, and [checkPreferenceStorePins] asserting they still exist is enough — the letter cannot
- * survive on the wrong member the way `AbstractIme->s` did.
+ * **Signature-unique** on the store: no other method takes a `Context` and returns the store. So a
+ * rename cannot hide behind a sibling, and [checkPreferenceStorePins] asserting it still exists is
+ * enough — the letter cannot survive on the wrong member the way `AbstractIme->s` did.
+ *
+ * The store's `(String, Z)Z` getter used to be pinned alongside this, from when the scrub patches
+ * read a boolean preference. Nothing emits it now, and an assertion guarding no emission can only
+ * fail a build that would otherwise have been fine, so it is gone rather than kept "for symmetry".
  */
 internal const val PREFERENCE_STORE_GET =
     "$PREFERENCE_STORE->I(Landroid/content/Context;)$PREFERENCE_STORE"
@@ -106,7 +109,6 @@ internal fun BytecodePatchContext.resolvePreferenceGetParsedInt(): String =
 /** Asserts the store descriptors that are safe to pin are still present. */
 internal fun BytecodePatchContext.checkPreferenceStorePins() {
     checkMethodExists(PREFERENCE_STORE_GET, "The preference store's singleton getter")
-    checkMethodExists(PREFERENCE_GET_BOOLEAN, "The store's string-keyed getBoolean")
 }
 
 /**

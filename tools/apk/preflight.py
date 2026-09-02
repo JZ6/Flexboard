@@ -548,10 +548,15 @@ def run(dl, apk=None):
     check = Report()
 
     # ---- preference store
+    #
+    # `k(String, Z)Z`, the boolean getter, used to be pinned here alongside these two. Nothing
+    # emits or derives against it since the scrub patches stopped reading a boolean preference, and
+    # a pin guarding nothing can only report a failure for a build that would have patched fine.
+    # `b(String, I)I` stays despite also never being emitted: the parsed-int derivation identifies
+    # its target by *excluding* it, so its disappearance would genuinely change that resolution.
     for sig, label in (
         (f'{store}->{E["store_singleton"]}({CONTEXT}){store}', 'singleton getter'),
         (f'{store}->b(Ljava/lang/String;I)I', 'getInt by string'),
-        (f'{store}->k(Ljava/lang/String;Z)Z', 'getBoolean by string'),
     ):
         c, _ = body(dl, sig)
         check(f'store: {label}', c is not None, sig)

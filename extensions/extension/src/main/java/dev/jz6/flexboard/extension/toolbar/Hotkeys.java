@@ -48,10 +48,13 @@ public final class Hotkeys {
     private static final int LABEL_MAX = 12;
 
     /**
-     * Default icon per slot: the Flexboard vector pack, resolved by NAME at runtime
-     * (getIdentifier), so aapt2's numbering never leaves the device it was baked on. Names match
-     * the symbol each holds — slot order mirrors HOTKEY_DEFAULT_SYMBOLS in
+     * The Flexboard vector pack's front half, resolved by NAME at runtime (getIdentifier) so
+     * aapt2's numbering never leaves the device it was baked on. Mirrors HOTKEY_DEFAULT_SYMBOLS in
      * SettingsScreenPatch.kt, locked in step by the constants checker.
+     *
+     * Read two ways, so it is deliberately longer than SLOTS: entries [0, SLOTS) are the per-slot
+     * defaults reached by DEFAULT_ICON_NAMES[slot - 1], while the array in full is the first part
+     * of ICON_CHOICES, the picker grid. Shortening it below SLOTS would index out of bounds.
      */
     private static final String[] DEFAULT_ICON_NAMES = new String[] {
         "flexboard_icon_alternate_email",

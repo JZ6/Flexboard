@@ -60,9 +60,17 @@ import org.w3c.dom.Document
  * Gboard's 33,287 entries do, and the settings screens are among them. That is the only reason
  * this patch can address them; see the addressability note in `docs/development.md`.
  */
-/** The default symbol per hotkey slot, in slot order. Kept as one list with the drawables loop
- * below; the Java side (Hotkeys.DEFAULT_ICON_NAMES) carries the same order — the constants
- * checker verifies both stay in step. */
+/**
+ * The front half of the icon pack, mirrored by `Hotkeys.DEFAULT_ICON_NAMES` and held in step with
+ * it by the constants checker.
+ *
+ * It has two readers, which is why it is longer than [HOTKEY_SLOTS] and must stay that way:
+ *  - the first [HOTKEY_SLOTS] entries are the per-slot defaults, read as `DEFAULT_ICON_NAMES[slot
+ *    - 1]`, so the list running short would be an index-out-of-bounds on an unassigned slot;
+ *  - the whole list, followed by [HOTKEY_EXTRA_SYMBOLS], is the icon picker's grid
+ *    (`ICON_CHOICES`), so entries past the slot count are the picker's front rows rather than
+ *    dead weight.
+ */
 internal val HOTKEY_DEFAULT_SYMBOLS = listOf(
     "alternate_email", "password", "phone_enabled", "local_post_office",
     "home_pin", "work", "favorite", "kid_star", "credit_card",
