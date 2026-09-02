@@ -1,3 +1,30 @@
+# [2.1.0-dev.0](https://github.com/JZ6/Flexboard/compare/v2.0.2-dev.3...v2.1.0-dev.0) (2026-09-02)
+
+* **Gboard:** chore(deps): bump gradle-wrapper from 9.7.0 to 9.7.1
+* **Gboard:** chore(deps): bump actions/setup-java from 5.7.0 to 6.0.0
+* **Gboard:** chore(deps): bump org.jetbrains.kotlinx:kotlinx-coroutines-core
+* **Gboard:** build: run the pins on push locally, and say in CI that it cannot
+* **Gboard:** docs: correct the notes that describe code which is not there
+* **Gboard:** docs: stop the README describing a patch that was deleted
+* **Gboard:** perf: stop rebuilding a Context per preference read, and guard the slots
+* **Gboard:** fix: stop the settings screen from being able to kill the keyboard
+* **Gboard:** fix: size every opcode, and stop reading registers out of descriptors
+* **Gboard:** fix: pin the Test icon, derive the array id, hoist the letters that hid
+* **Gboard:** fix: replay every written drawable, and notice when one is missing
+* **Gboard:** fix: catch the staged keys and wrong opcodes this checker was blind to
+* **Gboard:** fix: fail on a broken section sentinel instead of shipping the result
+* **Gboard:** fix: lint every emission site, not the half that inlines its payload
+* **Gboard:** docs: stop claiming guarantees the code does not provide
+* **Gboard:** chore: drop the store descriptor its assertion no longer uses
+* **Gboard:** chore: drop a pin that guards nothing, enforce one that guards something
+* **Gboard:** fix: assert the borrowed registers and derived types, not just the counts
+* **Gboard:** fix: register the settings section only once the feature has landed
+* **Gboard:** fix: fingerprints as factories, so no Match outlives its context
+* **Gboard:** fix: assert the shape of the methods the vibration patch blanks
+* **Gboard:** fix: name the vibration patch so the loader stops discarding it
+* **Gboard:** feat: settings sections land only when their patch is ticked
+* **Gboard:** docs: conditional settings rows — the selection registry plan
+
 # [2.0.2-dev.3](https://github.com/JZ6/Flexboard/compare/v2.0.2-dev.2...v2.0.2-dev.3) (2026-09-01)
 
 * **Gboard:** revert: remove Bigger Toolbar (pre-release)
