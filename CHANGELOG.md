@@ -1,3 +1,45 @@
+# [2.1.0](https://github.com/JZ6/Flexboard/compare/v2.0.1...v2.1.0) (2026-09-02)
+
+* **Gboard:** fix: the vibration patch was turning vibration off
+* **Gboard:** fix: link only where a section exists, and make the parsers fail loudly
+* **Gboard:** refactor: the foundation no longer imports a feature, and drops a dead pin
+* **Gboard:** fix: one definition of an occupied slot, and an import that says what it destroyed
+* **Gboard:** fix: recognise the obfuscated shapes this lane was walking past
+* **Gboard:** fix: pin the hotkey row-key format instead of spelling it three times
+* **Gboard:** fix: a stale Gboard resource id no longer crashes the keyboard at startup
+* **Gboard:** fix: rotating mid-edit no longer overwrites the hotkey being edited
+* **Gboard:** chore(deps): bump gradle-wrapper from 9.7.0 to 9.7.1
+* **Gboard:** chore(deps): bump actions/setup-java from 5.7.0 to 6.0.0
+* **Gboard:** chore(deps): bump org.jetbrains.kotlinx:kotlinx-coroutines-core
+* **Gboard:** build: run the pins on push locally, and say in CI that it cannot
+* **Gboard:** docs: correct the notes that describe code which is not there
+* **Gboard:** docs: stop the README describing a patch that was deleted
+* **Gboard:** perf: stop rebuilding a Context per preference read, and guard the slots
+* **Gboard:** fix: stop the settings screen from being able to kill the keyboard
+* **Gboard:** fix: size every opcode, and stop reading registers out of descriptors
+* **Gboard:** fix: pin the Test icon, derive the array id, hoist the letters that hid
+* **Gboard:** fix: replay every written drawable, and notice when one is missing
+* **Gboard:** fix: catch the staged keys and wrong opcodes this checker was blind to
+* **Gboard:** fix: fail on a broken section sentinel instead of shipping the result
+* **Gboard:** fix: lint every emission site, not the half that inlines its payload
+* **Gboard:** docs: stop claiming guarantees the code does not provide
+* **Gboard:** chore: drop the store descriptor its assertion no longer uses
+* **Gboard:** chore: drop a pin that guards nothing, enforce one that guards something
+* **Gboard:** fix: assert the borrowed registers and derived types, not just the counts
+* **Gboard:** fix: register the settings section only once the feature has landed
+* **Gboard:** fix: fingerprints as factories, so no Match outlives its context
+* **Gboard:** fix: assert the shape of the methods the vibration patch blanks
+* **Gboard:** fix: name the vibration patch so the loader stops discarding it
+* **Gboard:** feat: settings sections land only when their patch is ticked
+* **Gboard:** docs: conditional settings rows — the selection registry plan
+* **Gboard:** revert: remove Bigger Toolbar (pre-release)
+* **Gboard:** docs: toolbar width decoupling — research and plan
+* **Gboard:** chore: Bigger Toolbar off by default — pre-release
+* **Gboard:** feat: vibration everywhere — slider on every device
+* **Gboard:** fix: patch Flexboard setting into gboard legacy setting
+* **Gboard:** fix: swipe review fallout — louder asserts, honest descriptions
+* **Gboard:** feat: Bigger Toolbar — a slider for the bar's capacity
+
 # [2.1.0-dev.1](https://github.com/JZ6/Flexboard/compare/v2.1.0-dev.0...v2.1.0-dev.1) (2026-09-02)
 
 * **Gboard:** fix: the vibration patch was turning vibration off
