@@ -111,7 +111,7 @@ rather than the current half-broken injection.
 ## The generalisation: NativeToolbarButton + emitNativeToolbarButtons
 
 After the test button proved out on device, the shape was promoted into a shared helper at
-`patches/shared/ToolbarRegistry.kt`:
+`patches/shared/ToolbarHotkeys.kt`:
 
 - **`NativeToolbarButton`** — a spec carrying id / icon / label (res-or-literal) / optional
   contentDescription / an actionCtor (`"Ldev/.../T;-><init>(... )V"`) plus `actionArgs`

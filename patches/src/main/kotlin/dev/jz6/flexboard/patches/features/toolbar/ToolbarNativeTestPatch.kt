@@ -16,7 +16,7 @@ import dev.jz6.flexboard.patches.shared.resolveAccessPointBuilder
  * separate off-by-default patch means a user can isolate that layer without dragging in the
  * user-facing buttons at the same time.
  *
- * The full mechanism is documented on `NativeToolbarButton` in `shared/ToolbarRegistry.kt`.
+ * The full mechanism is documented on `NativeToolbarButton` in `shared/ToolbarButtons.kt`.
  * This patch is a 15-line call into it.
  */
 @Suppress("unused")

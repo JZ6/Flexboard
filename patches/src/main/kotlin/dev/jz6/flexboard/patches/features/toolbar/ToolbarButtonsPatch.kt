@@ -85,7 +85,7 @@ private const val TEXT_ACTION_CTOR = "Ldev/jz6/flexboard/extension/textaction/Te
  * draws none of them.
  *
  * The toolbar ids themselves are dormant members of the allowed-set string array — see
- * `shared/ToolbarRegistry.kt` for why that id choice is the whole game.
+ * `shared/ToolbarCanvas.kt` for why that id choice is the whole game.
  *
  * **Editor info** is the natural fit for select-all — both are about the active editor.
  * `undo_cooperative` has zero dex references of its own (the non-cooperative `undo` AP is real

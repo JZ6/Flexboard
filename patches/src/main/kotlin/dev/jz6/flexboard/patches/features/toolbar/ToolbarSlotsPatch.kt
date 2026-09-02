@@ -38,7 +38,7 @@ internal val toolbarSlotsPatch = resourcePatch(
     finalize { widenAllowedIdSet() }
 }
 
-/** The slot count lives in shared/ToolbarRegistry.kt — the registry emits per-slot blocks and owns it. */
+/** The slot count lives in shared/ToolbarHotkeys.kt, which emits the per-slot blocks and owns it. */
 
 private const val SLOT_STRINGS = "values/flexboard_toolbar_slots.xml"
 
