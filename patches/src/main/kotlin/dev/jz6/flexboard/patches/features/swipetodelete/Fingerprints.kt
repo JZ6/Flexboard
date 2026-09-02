@@ -70,7 +70,6 @@ internal const val PREFERENCE_STORE = "Lqhy;"
  */
 internal const val PREFERENCE_STORE_GET =
     "$PREFERENCE_STORE->I(Landroid/content/Context;)$PREFERENCE_STORE"
-internal const val PREFERENCE_GET_BOOLEAN = "$PREFERENCE_STORE->k(Ljava/lang/String;Z)Z"
 
 /** `Integer.parseInt`, which the string-valued getter calls and the typed int getter does not. */
 private const val INTEGER_PARSE_INT = "Ljava/lang/Integer;->parseInt"
@@ -112,7 +111,6 @@ internal fun BytecodePatchContext.checkPreferenceStorePins() {
 }
 
 /**
- * The shared engine's entry point. Holds the single comparison that decides whether a scrub may
  * ### Why these are functions and not `object`s
  *
  * `Fingerprint` memoises its `Match` in `_matchOrNull`, and `matchOrNull(context)` returns that
@@ -132,6 +130,7 @@ internal fun BytecodePatchContext.checkPreferenceStorePins() {
  *
  * ---
  *
+ * The shared engine's entry point. Holds the single comparison that decides whether a scrub may
  * begin, for every subclass — delete, spacebar move, and inline suggestion alike.
  */
 fun scrubHandleMotionEventFingerprint() = Fingerprint(
