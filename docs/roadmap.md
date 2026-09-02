@@ -44,11 +44,10 @@ the only way in.
 
 ## Pending (investigated, needs implementation)
 
-**Bigger Toolbar and Hotkeys return natively.** The user deleted these in the cleanup sweep;
-each needs a fresh rewrite on the native registration helper. Bigger Toolbar overrides
-`definedCountOnBar` — was unchanged structurally by the merge refactor, but the UI section is
-gone. Hotkeys need enough dormant allowed-set ids to make it useful; past scope, see "widening
-0x7f0300dc" below.
+**Bigger Toolbar returns natively.** Hotkeys have since shipped — six slots on `flexboard_*` ids
+admitted by `toolbarIdAdmissionPatch`. Bigger Toolbar has not. Both previous attempts tried to own
+the count and both broke the user's ability to remove buttons; the plan that follows from that is
+`docs/toolbar-capacity.md`, and it raises the capacity only.
 
 **Widen the allowed-set array when hotkeys return.** Done — `toolbarIdAdmissionPatch` splices the
 twelve `flexboard_hotkey_N` ids into the allowed-set array via `res/values` (strings + items),
@@ -237,16 +236,17 @@ The list above is kept as written; this notes which of it has landed, rather tha
 - **can we make the backspace swipe work as before without being limited to max 1 word delete** — a
   swipe starting on the backspace key keeps Gboard's distance per word and is not capped.
 - **increased tool bar size fit more buttons** — *Bigger Toolbar*, raise-only slider for the
-  bar's capacity (the max Gboard allows before pushing to overflow). Deferred to a later release;
-  the mechanism and seam were researched in `docs/toolbar-capacity.md`, removed along with the
-  patch in e075526 and recoverable from git history —
-  one stock-capacity tail patch plus staging Gboard's own count prefs. Also covers **max tool
-  icon slider isnt working**.
+    bar's capacity (the max Gboard allows before pushing to overflow). Stock is five, which is
+    fewer than the nine ids Flexboard already admits. The plan is `docs/toolbar-capacity.md`: two
+    immediates, raising the flag default and the `[3, 8]` clamp it is measured against, and
+    **no count override and no preference writes** — the count stays the user's. Also covers
+    **max tool icon slider isnt working**.
 
 - **tool bar amount used to be different between inner and outer screen of a fold** — covered
-  natively by the capacity plan: Gboard already branches the count preference by device class
-  (`foldable_access_points_count_on_bar` vs `access_points_count_on_bar`), and the first cut of
-  (deferred) *Bigger Toolbar* writes both, so inner/outer tracks one slider each.
+    natively, and for free: Gboard already branches the count preference by device class
+    (`foldable_access_points_count_on_bar` vs `access_points_count_on_bar`) inside `Lmku;->b(I)I`,
+    and the capacity plan raises the ceiling both are measured against without writing either. Each
+    screen keeps its own count, set through Gboard's own UI.
 
 - **add select all copy paste hotkeys** — *Text Editing Buttons* puts one-tap **Select all**,
   **Copy** and **Paste** on the toolbar. Cut is not built; it is the same shape again, one entry in
