@@ -20,27 +20,35 @@ import dev.jz6.flexboard.patches.shared.opcodeName
  * Intent Gboard probes for), Gboard keeps its own slider and the value flows to the vibrator.
  *
  * The split is driven by server-side Phenotype flags rolled per-device, not by a code defect, and
- * it runs through two gates:
+ * one method decides it: **`Lphn;->b(Context)I`**. The settings fragment and the key-release
+ * dispatch both call it, its return picks which rows survive, and forcing it to **1** ("Gboard
+ * owns vibration") is the whole patch.
  *
- *  1. **`Lphn;->b(Context)I`** — the settings fragment and the key-release dispatch both call
- *     this. Its return decides which rows survive on the settings screen and whether the effect
- *     reaches the vibrator. Forcing it to **1** ("Gboard owns vibration") keeps the slider.
+ * ## There was a second edit here, and it was the bug
  *
- *  2. **`Lpho;->n()Z`** — a suppression gate in the key-release path. Even with the slider shown,
- *     a mode-1 Pixel on SDK ≥ 33 with `d:Z` set skips `f(I)V` (the `Vibrator.vibrate` call).
- *     Forcing it to **false** clears the gate.
+ * `Lpho;->n()Z` was read as a suppression gate — "returns true to skip the vibrator" — and forced
+ * to **false** to clear it. That is backwards in both halves. The method is
+ * `isVibrationEnabled`, which its own `dump()` prints under exactly that label, and every caller
+ * treats it that way: `d(View, I)V` and `e(View, I)V` both `if-eqz` straight past the vibration
+ * when it is false, and `h()Z` returns it verbatim as availability. Forcing false did not clear a
+ * gate, it turned the vibrator off — the slider appeared and moved and did nothing, on the device
+ * this patch was written for.
  *
- * Both anchors are bare R8 letters, and the build pin does not protect them — `Patcher` never
- * reads `compatiblePackages`. So each overwrite is gated on the *shape* of the method it is about
- * to destroy: if R8 recycles `Lphn;`/`Lpho;` onto unrelated classes, the shape check fails the
- * patch instead of silently blanking someone else's method. See `docs/vibration.md`.
+ * It never needed patching. `n()` is `d && (SDK >= 33 || g || l())`, and `d` is the user's
+ * "vibrate on keypress" toggle, read from `Lqhy;->am(String, Z, Z)Z`. On a modern Pixel with the
+ * toggle on, the SDK arm already returns true. Overriding it would also override the toggle.
+ *
+ * The anchor is a bare R8 letter and the build pin does not protect it — `Patcher` never reads
+ * `compatiblePackages` — so the overwrite is gated on the *shape* of the method it is about to
+ * destroy: if R8 recycles `Lphn;` onto an unrelated class, the shape check fails the patch rather
+ * than silently blanking someone else's method. See `docs/vibration.md`.
  */
 @Suppress("unused")
 val vibrationSliderPatch = bytecodePatch(
     name = "Vibration slider everywhere",
     description = "Forces Gboard to show its own vibration strength slider on every device, " +
-        "rather than deferring to the system haptic settings page. The slider actually reaches " +
-        "the vibrator instead of being suppressed by a server-side rollout.",
+        "rather than deferring to the system haptic settings page, so the strength is adjustable " +
+        "instead of being fixed by whichever rollout the device landed in.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -51,14 +59,10 @@ val vibrationSliderPatch = bytecodePatch(
         val mode = vibrationModeFingerprint().method
         mode.assertModeSelectorShape()
         mode.overwriteWithConstantReturn(1, "$VIBRATION_MODE_CLASS->b(Context)I")
-
-        val suppression = vibrationSuppressionFingerprint().method
-        suppression.assertSuppressionGateShape()
-        suppression.overwriteWithConstantReturn(0, "$VIBRATION_PROVIDER_CLASS->n()Z")
     }
 }
 
-/** `Landroid/os/Build$VERSION;->SDK_INT:I`, read by both gates to branch on the platform. */
+/** `Landroid/os/Build$VERSION;->SDK_INT:I`, which the mode selector branches on. */
 private const val SDK_INT = "Landroid/os/Build\$VERSION;->SDK_INT:I"
 
 /**
@@ -80,30 +84,6 @@ private fun MutableMethod.assertModeSelectorShape() {
     check(returns >= 3) {
         "$VIBRATION_MODE_CLASS->b(Context)I has $returns return sites, expected at least 3 (one " +
             "per mode) — this is not the mode selector, so refusing to blank it"
-    }
-}
-
-/**
- * The suppression gate reads `SDK_INT` once and two of its own `boolean` fields (`d` and `g` on
- * this build). Both reads being owned by the defining class is the part that makes a recycled
- * letter fail here.
- */
-private fun MutableMethod.assertSuppressionGateShape() {
-    val body = implementation?.instructions?.toList()
-        ?: error("$VIBRATION_PROVIDER_CLASS->n()Z has no implementation")
-
-    val sdkReads = body.count { it.opcodeName().startsWith("SGET") && it.fieldDescriptor() == SDK_INT }
-    check(sdkReads == 1) {
-        "$VIBRATION_PROVIDER_CLASS->n()Z reads SDK_INT $sdkReads times, expected 1 — this is not " +
-            "the suppression gate, so refusing to blank it"
-    }
-
-    val ownFlags = body.count {
-        it.opcodeName() == "IGET_BOOLEAN" && it.fieldOwnerType() == VIBRATION_PROVIDER_CLASS
-    }
-    check(ownFlags == 2) {
-        "$VIBRATION_PROVIDER_CLASS->n()Z reads $ownFlags of its own boolean fields, expected 2 — " +
-            "this is not the suppression gate, so refusing to blank it"
     }
 }
 

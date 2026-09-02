@@ -261,9 +261,10 @@ EXPECTED = {
     'vibration_mode_class': 'Lphn;',
     'vibration_mode_method': 'b',
     'vibration_mode_registers': 7,
-    'vibration_provider_class': 'Lpho;',
-    'vibration_suppression_method': 'n',
-    'vibration_suppression_registers': 5,
+    # Lpho;->n()Z was pinned here while the patch overwrote it. It does not any more -- the
+    # method is isVibrationEnabled, not a suppression gate, and blanking it turned the vibrator
+    # off. Nothing reads these now, and a pin in front of no edit can only fail a build that
+    # would have been fine.
 }
 
 # --------------------------------------------------------------------------- dex helpers
@@ -1947,15 +1948,6 @@ def run(dl, apk=None):
         # silently overwrites the wrong instructions.
         check('vibration: mode method opens with sget-object',
               ins[0][1] == 'sget-object', ins[0][1])
-
-    supp_desc = f"{E['vibration_provider_class']}->{E['vibration_suppression_method']}()Z"
-    c, ins = body(dl, supp_desc)
-    if check('vibration: suppression method exists', ins is not None, supp_desc):
-        check('vibration: suppression method register count',
-              c['registers'] == E['vibration_suppression_registers'],
-              f'got {c["registers"]}')
-        check('vibration: suppression method opens with iget-boolean',
-              ins[0][1] == 'iget-boolean', ins[0][1])
 
     failed = check.finish()
     print('resolved handler Context field: ', handler_ctx)
