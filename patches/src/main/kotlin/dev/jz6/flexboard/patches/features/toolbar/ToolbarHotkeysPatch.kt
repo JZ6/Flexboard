@@ -26,6 +26,11 @@ val toolbarHotkeysPatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
+    // Redundant on paper -- toolbarSlotsPatch below already pulls basePatch -- and kept anyway,
+    // for two reasons. It is declared first, and the patcher recurses in declaration order, which
+    // is what puts settingsScreenPatch's clear of the section registry ahead of the registration
+    // at the end of this patch's execute. And a reader should not have to trace a transitive edge
+    // to see that this patch needs the foundation.
     dependsOn(basePatch)
     // The ids must be in the allowed set or the register call logs "Invalid access point" and
     // the buttons never reach the shown order.
