@@ -54,8 +54,8 @@ Both keyboards stay installed, so you can switch back whenever you like.
 | Suggested Settings | Turns on flick keys for symbols, touch & hold keys for numbers, suggestion strip, grammar check and smart replies, and turns off block offensive words and word suggestions. Written once as defaults, so each can still be changed in Gboard's own settings. |  |
 | [Swipe Left to Delete](#swipe-left-to-delete) | Swipe left anywhere on the keyboard to delete the previous word, and swipe right to restore it. Uses Gboard's own word-scrub engine, so it behaves exactly like swiping on the backspace key already does — only it can start anywhere. |  |
 | [Swipe Right to Undo](#swipe-right-to-undo) | Swipe right after deleting to put the words back — the swipe starts on the Delete key, or anywhere when Swipe to Delete is also applied. Uses Gboard's own undo, which already records what a delete swipe removed. |  |
-| [Toolbar Buttons](#toolbar-buttons) | Add Select all, Copy and Paste buttons to the toolbar above the keyboard, so each is one tap instead of opening Gboard's text editing panel first. Registered natively, so drag-to-reorder through the toolbar customize page persists. |  |
-| Toolbar Hotkeys | Adds six configurable hotkey slots to Gboard's toolbar — each commits a text of your choice on tap. A slot appears when its text is set; when cleared it hides at the next toolbar rebuild (rotate, switch IME, or restart — there's no mid-session un-register). Text and icon edits apply on the next keyboard open. |  |
+| [Text Action Buttons](#text-action-buttons) | Add Select all, Copy and Paste buttons to the toolbar above the keyboard, so each is one tap instead of opening Gboard's text editing panel first. Registered natively, so drag-to-reorder through the toolbar customize page persists. |  |
+| [Toolbar Hotkeys](#toolbar-hotkeys) | Adds six configurable hotkey slots to Gboard's toolbar — each commits a text of your choice on tap. A slot appears when its text is set; when cleared it hides at the next toolbar rebuild (rotate, switch IME, or restart — there's no mid-session un-register). Text and icon edits apply on the next keyboard open. |  |
 | Vibration slider everywhere | Forces Gboard to show its own vibration strength slider on every device, rather than deferring to the system haptic settings page, so the strength is adjustable instead of being fixed by whichever rollout the device landed in. |  |
 
 </details>
@@ -104,7 +104,7 @@ distance per word, and deleting starts immediately instead of after Gboard's 200
 Both were sliders once; [`docs/design.md`](docs/design.md) has why they are not now.
 
 The screen also carries six **Hotkeys** fields belonging to
-[Toolbar Buttons](#toolbar-buttons).
+[Text Action Buttons](#text-action-buttons).
 
 Every value is read out of Gboard's own preference store, so there is no separate settings app and
 nothing to keep in sync.
@@ -173,12 +173,10 @@ It is always on when the patch is applied. Swiping right after a delete did noth
 Gboard, so nothing is being taken away by giving it a meaning — and Gboard fills the same undo slot
 when you swipe on the backspace key, so it works there too.
 
-## Toolbar buttons
+## Text action buttons
 
-Adds **Select all**, **Copy** and **Paste** buttons to the toolbar above the keyboard, and six
-**hotkeys** that type a string you choose. One tap each, on whatever you are typing into.
-
-### Select all, copy and paste
+Adds **Select all**, **Copy** and **Paste** buttons to the toolbar above the keyboard. One tap
+each, on whatever you are typing into.
 
 Gboard can already do all three, behind its **Text editing** toolbar button — open that panel, then
 tap the one you want. These are the same actions without the panel.
@@ -192,10 +190,10 @@ and draws none of them, because its text editing panel spells the actions out in
 using icons; that is why Select all first shipped borrowing an unrelated icon. Flexboard still adds
 no images of its own.
 
-### Hotkeys
+## Toolbar hotkeys
 
-Six more buttons, each typing a string you set under **Hotkeys** in Flexboard's settings — an email
-address, a signature, "brb", whatever you type often enough to resent typing.
+Six more toolbar buttons, each typing a string you set under **Hotkeys** in Flexboard's settings —
+an email address, a signature, "brb", whatever you type often enough to resent typing.
 
 **A slot you have not filled in makes no button.** Fresh out of the box there are no hotkeys at all;
 fill one in and its icon appears on the toolbar, clear the field and the button goes away again.

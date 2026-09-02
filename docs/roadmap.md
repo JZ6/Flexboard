@@ -125,7 +125,7 @@ After the test button proved out on device, the shape was promoted into a shared
 Any future toolbar feature consumes it as `emitNativeToolbarButtons(builder, listOf(...))` and
 never thinks about hook sites, `Builders`, or the allowed-set — picking from the dormant ids
 below. `ToolbarNativeTestPatch` was a 30-line call into the helper, and was deleted once
-Toolbar Buttons and Toolbar Hotkeys had both proven the mechanism in production.
+Text Action Buttons and Toolbar Hotkeys had both proven the mechanism in production.
 
 A checker convention flows from this: the spec's `actionCtor` has to be a `const val` in the
 patch file, full member-descriptor form; `check_shared_constants.py` then treats each as if
