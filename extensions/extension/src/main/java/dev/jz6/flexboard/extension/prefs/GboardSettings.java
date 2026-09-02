@@ -80,12 +80,45 @@ public final class GboardSettings {
      * — a switch that will not stay where it is put is worse than one that visibly cannot move.
      */
     public static void forceScrubPreferences(Context context) {
-        Preferences.of(context)
-                .edit()
-                .putBoolean(context.getString(ENABLE_SCRUB_DELETE), true)
-                .putBoolean(context.getString(ENABLE_GESTURE_INPUT), false)
-                .apply();
+        String scrub = keyOrNull(context, ENABLE_SCRUB_DELETE);
+        String glide = keyOrNull(context, ENABLE_GESTURE_INPUT);
+        SharedPreferences.Editor editor = Preferences.of(context).edit();
+        boolean wrote = false;
+        if (scrub != null) {
+            editor.putBoolean(scrub, true);
+            wrote = true;
+        }
+        if (glide != null) {
+            editor.putBoolean(glide, false);
+            wrote = true;
+        }
+        if (wrote) {
+            editor.apply();
+        }
     }
+    /**
+     * {@code context.getString(id)} for one of the pinned Gboard ids, or null when it fails.
+     *
+     * <p>These nine ids are hardcoded numbers pinned against one build, and both callers run from
+     * patched bytecode at Gboard's Application start. A stale id makes {@code getString} throw
+     * {@link android.content.res.Resources.NotFoundException} inside {@code onCreate} -- which is
+     * not a settings screen failing, it is the whole app failing to start, on a keyboard, with no
+     * keyboard left to report it with. Skipping one preference is a far better outcome than a
+     * crash loop.
+     *
+     * <p>{@code tools/apk/preflight.py} checks all nine, and now runs from the pre-push hook, so
+     * this is the seatbelt rather than the gate. It does not help against an id that resolves to
+     * the <em>wrong</em> string -- nothing at runtime can detect that, which is what the preflight
+     * pins are for.
+     */
+    private static String keyOrNull(Context context, int id) {
+        try {
+            return context.getString(id);
+        } catch (Throwable missing) {
+            return null;
+        }
+    }
+
 
     /**
      * Writes Gboard's "suggested" defaults once, on the first run after installing.
@@ -117,38 +150,38 @@ public final class GboardSettings {
         SharedPreferences.Editor editor = preferences.edit();
         boolean wrote = false;
 
-        String key = context.getString(ENABLE_FLICK_SYMBOLS);
-        if (!preferences.contains(key)) {
+        String key = keyOrNull(context, ENABLE_FLICK_SYMBOLS);
+ if (key != null && !preferences.contains(key)) {
             editor.putBoolean(key, true);
             wrote = true;
         }
-        key = context.getString(ENABLE_SECONDARY_DIGITS);
-        if (!preferences.contains(key)) {
+        key = keyOrNull(context, ENABLE_SECONDARY_DIGITS);
+        if (key != null && !preferences.contains(key)) {
             editor.putBoolean(key, true);
             wrote = true;
         }
-        key = context.getString(BLOCK_OFFENSIVE_WORDS);
-        if (!preferences.contains(key)) {
+        key = keyOrNull(context, BLOCK_OFFENSIVE_WORDS);
+        if (key != null && !preferences.contains(key)) {
             editor.putBoolean(key, false);
             wrote = true;
         }
-        key = context.getString(SHOW_SUGGESTIONS);
-        if (!preferences.contains(key)) {
+        key = keyOrNull(context, SHOW_SUGGESTIONS);
+        if (key != null && !preferences.contains(key)) {
             editor.putBoolean(key, false);
             wrote = true;
         }
-        key = context.getString(SHOW_SUGGESTION_STRIP);
-        if (!preferences.contains(key)) {
+        key = keyOrNull(context, SHOW_SUGGESTION_STRIP);
+        if (key != null && !preferences.contains(key)) {
             editor.putBoolean(key, true);
             wrote = true;
         }
-        key = context.getString(ENABLE_GRAMMAR_CHECKER);
-        if (!preferences.contains(key)) {
+        key = keyOrNull(context, ENABLE_GRAMMAR_CHECKER);
+        if (key != null && !preferences.contains(key)) {
             editor.putBoolean(key, true);
             wrote = true;
         }
-        key = context.getString(ENABLE_SMART_REPLY);
-        if (!preferences.contains(key)) {
+        key = keyOrNull(context, ENABLE_SMART_REPLY);
+        if (key != null && !preferences.contains(key)) {
             editor.putBoolean(key, true);
             wrote = true;
         }
