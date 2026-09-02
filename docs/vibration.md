@@ -136,7 +136,7 @@ on a Pixel (SDK ≥ 33, `d:Z` true) still skips the vibrator.
 ### Preflight pins
 
 - `Lphn;->b(Landroid/content/Context;)I` exists, returns `I`, register count 7.
-- `Lpho;->n()Z` exists, returns `Z`, register count 4.
+- `Lpho;->n()Z` exists, returns `Z`, register count 5.
 - `Lqod;->b` still references all three vibration resource ids (the fragment setup).
 - `Lpho;->d` still calls `n()Z` and `f(I)V` in the release branch.
 

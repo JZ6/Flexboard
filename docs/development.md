@@ -29,6 +29,9 @@ is what every finding above was read from.
 |---|---|
 | `patches/` | Kotlin patches — the bytecode and resource changes applied to Gboard |
 | `extensions/extension/` | Java code compiled to a DEX and merged into the patched APK |
+| `stubs/` | Signatures of the Gboard and AndroidX types the extension compiles against |
+| `extension-check/` | Compiles the extension's sources with javac against `stubs/`, so the SDK is not needed to typecheck them |
+| `driver/` | Applies a built bundle to an APK locally, end to end, without Morphe Manager |
 | `patches/src/main/kotlin/util/PatchListGenerator.kt` | Builds `patches-list.json` from the built bundle |
 | `.github/workflows/release.yml`, `.github/scripts/check_version.sh`, `tools/bump` | The release pipeline — see [`releasing.md`](releasing.md) |
 | `.github/scripts/generate_patches_readme.py` | Injects the patches table into the README at release time |
@@ -206,9 +209,6 @@ everything CI would have told you, and CI builds the bundle anyway.
 They are three different axes, and no two of them substitute for each other. `0.0.1-dev.1`
 compiled and had correct bindings and still bricked the keyboard; `0.0.3-dev.1` compiled, had
 correct bindings, applied cleanly, and silently called the wrong method.
-
-The bundle lands at `patches/build/libs/patches-*.mpp`, and can be applied with
-[Morphe Desktop](https://github.com/MorpheApp/morphe-desktop) like any other patch bundle.
 
 Put the credentials in `~/.gradle/gradle.properties`, **never** in the repository's own
 `gradle.properties` — that file is tracked, because its `version` line is what triggers a release.

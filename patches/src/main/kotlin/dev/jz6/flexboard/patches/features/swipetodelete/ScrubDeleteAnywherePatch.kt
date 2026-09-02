@@ -88,8 +88,10 @@ val swipeToDeletePatch = bytecodePatch(
     // conflict shows up in the settings rather than as a setting that will not stay on.
     dependsOn(glideTypingRowPatch)
 
-    // Supplies the hold delay and swipe length, and the settings rows behind them. Its defaults are
-    // what make the widened gesture answer to a flick rather than Gboard's 200 ms press-and-drag.
+    // Supplies the word cap and the settings row behind it, and substitutes the hold delay so the
+    // widened gesture answers to a flick rather than Gboard's 200 ms press-and-drag. It no longer
+    // supplies a swipe length: that emitter is parked, and there is no row for either it or the
+    // delay.
     dependsOn(scrubTuningPatch)
 
     execute {
@@ -324,10 +326,15 @@ private fun MutableMethod.acceptWildcardStartKey() {
  *
  * ## Shape of the edit
  *
- * The stock computation is **kept and then overwritten**, exactly as
- * [chooseStartKeyFromPreference] keeps the stock keycode. Overwriting is a few wasted instructions
- * once per gesture and buys two things worth far more: "off" means byte-for-byte stock, and the
- * insert is a single forward branch rather than an excision with two merge points.
+ * The stock computation is **kept and then overwritten**. That used to be justified by a sibling,
+ * `chooseStartKeyFromPreference`, which kept the stock keycode and conditionally replaced it from a
+ * preference — the link has been dangling since that was replaced by [writeWildcardStartKey], which
+ * overwrites outright, and by the removal of the master switch that made "off means byte-for-byte
+ * stock" reachable at all.
+ *
+ * The reason that survives both is the one that was always the stronger half: the insert is a
+ * single forward branch, where an excision would need two merge points. A few wasted instructions
+ * once per gesture is a cheap price for not rewriting Gboard's control flow.
  *
  * ```
  *   …stock top/bottom outset runs…

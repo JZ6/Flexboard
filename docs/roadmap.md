@@ -232,7 +232,8 @@ The list above is kept as written; this notes which of it has landed, rather tha
   swipe starting on the backspace key keeps Gboard's distance per word and is not capped.
 - **increased tool bar size fit more buttons** — *Bigger Toolbar*, raise-only slider for the
   bar's capacity (the max Gboard allows before pushing to overflow). Deferred to a later release;
-  the mechanism and seam are researched in [`docs/toolbar-capacity.md`](toolbar-capacity.md) —
+  the mechanism and seam were researched in `docs/toolbar-capacity.md`, removed along with the
+  patch in e075526 and recoverable from git history —
   one stock-capacity tail patch plus staging Gboard's own count prefs. Also covers **max tool
   icon slider isnt working**.
 

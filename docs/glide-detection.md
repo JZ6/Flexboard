@@ -8,9 +8,9 @@
 > verified. Read them for the reasoning, and take current names from
 > [`gboard-bindings.md`](gboard-bindings.md) and offsets from the APK.
 
-Flexboard turns glide typing off while the swipe gesture is enabled, and puts it back when the
-gesture is switched off. This is the record of what that preference is on 17.7.7, how those facts
-were established, and — because two earlier attempts failed — which approaches do not work.
+Flexboard turns glide typing off for as long as Swipe to Delete is applied. It does not put it
+back. This is the record of what that preference is on 17.7.7, how those facts were established,
+and — because two earlier attempts failed — which approaches do not work.
 
 ## Why it matters
 
@@ -115,21 +115,28 @@ Zhuyin and Korean decode processors. It is not on the English glide path.
 
 ## What Flexboard does
 
-`GlideTypingRuntime` reaches `Lpnp;` by reflection and writes the setting. There is no bytecode
-patch for this feature at all.
+> This section described a `GlideTypingRuntime` class reaching `Lpnp;` by reflection, recording the
+> previous value and restoring it, and reporting failures under a Diagnostics screen. None of that
+> exists — there is no such class, no reflection on this path and no Diagnostics screen anywhere in
+> the tree. It documented a design that was never built, or was replaced before release.
 
-It verifies the pinned id once per process with `getString(id)` before writing anything, and
-declines on a mismatch — writing the *wrong* preference would silently disable an unrelated
-feature, so it fails open. It records the previous value in Flexboard's own preferences the first
-time it turns glide typing off, so switching the gesture off restores what the user had rather
-than a guess, and it only writes when the stored value actually differs.
+`forceScrubPreferencesPatch` inserts a call at Gboard's Application start, and
+`GboardSettings.forceScrubPreferences` does the write through Gboard's own preference store. It is
+a bytecode patch, not reflection.
 
-The write persists. Removing Flexboard while the gesture is enabled leaves glide typing off, and
-the user has to tick it back on themselves. That is the accepted cost of this approach.
+Both writes are unconditional. They used to be gated on a `flexboard_enabled` preference, so that
+turning Flexboard off stopped it re-forcing glide typing at every launch; that switch is gone, so
+the writes now happen on every start for as long as the patch is applied. There is no record of the
+previous value and no restore.
+
+The consequence is worth stating plainly, because it is user-visible: glide typing cannot be turned
+back on while Swipe to Delete is applied, and re-enabling it means re-patching without that patch.
+Removing Flexboard leaves glide typing off, and the user has to tick it back on themselves.
 
 ## When Gboard updates
 
-`COMPATIBILITY_GBOARD` pins the bundle to one build, so a new Gboard will not be patched until the
-bindings are revisited. If the id were ever stale on a build that still patched, the runtime
-verification declines and the settings screen reports it under Diagnostics, falling back to asking
-the user to turn glide typing off by hand.
+`COMPATIBILITY_GBOARD` records the build the bindings were derived against, but it does not gate
+anything: `Patcher` never reads `compatiblePackages`, so a user on another build is warned by the
+host at most. The resource ids this write depends on are checked by `tools/apk/preflight.py`
+instead, and that runs locally rather than in CI. There is no runtime verification and no
+Diagnostics screen to report to — a stale id would write some other preference.

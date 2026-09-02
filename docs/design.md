@@ -3,7 +3,7 @@
 Why Flexboard behaves the way it does. The [README](../README.md) says what it does; this is the
 reasoning behind the choices a user would otherwise have to guess at.
 
-## What the three swipe sliders default to, and why
+## What the swipe settings default to, and why
 
 **Swipe length, 60% — a middle.** This shipped at 36% up to `1.1.0-dev.1`, reasoning that Gboard's
 distance assumes a thumb travelling from the backspace key and back, which is the whole journey
@@ -24,8 +24,10 @@ makes it feel like a press-and-drag rather than a flick. Zero is not an improvem
 as continuity: it is what Flexboard did before the delay was adjustable at all, so existing installs
 keep the feel they had.
 
-All three are sliders precisely because that is a preference and not a fact. All three now differ
-from Gboard's own, and 100%, 10 and 200 ms put those back.
+**Only the word cap is still a slider.** Swipe length and hold delay were, and are not: the swipe
+length consumers are commented out in `ScrubTuningPatch`, and the hold-delay row was dropped while
+its smali read stayed, so it is fixed at 0 ms. The reasoning above is kept because it is why the
+fixed values are the values they are, not because all three are still adjustable.
 
 ## Why the starting values are written rather than defaulted
 
@@ -38,10 +40,15 @@ a later release and it moves every user who never touched the slider. Someone wh
 with a keyboard finds it different after an update they did not ask for, and nothing they did
 caused it.
 
-So the three starting values are instead written into the store on the first run after installing —
-`seedDefaultsPatch`, one instruction, calling the extension's `Defaults.seed`. Afterwards the value
-is an ordinary stored preference, indistinguishable from one the user set, and later releases can
-pick different starting numbers for new installs without disturbing anyone.
+So the starting value is instead written into the store on the first run after installing —
+`seedDefaultsPatch`, one instruction, calling the extension's `Defaults.seed`. Afterwards it is an
+ordinary stored preference, indistinguishable from one the user set, and later releases can pick a
+different starting number for new installs without disturbing anyone.
+
+In practice this now seeds **one** key, `flexboard_scrub_step_scale`, and nothing reads it: the
+swipe-length scaling it exists for is parked. The patch is kept so re-enabling that finds an
+established value rather than a fresh one, but it currently has no runtime effect at all, and the
+reasoning above describes the three-value era rather than what ships.
 
 **It is also much less work than doing it in bytecode**, which is not the reason but is worth
 recording, because the first attempt went the other way. The extension has always been able to
@@ -52,7 +59,7 @@ same-signature siblings on that class are a documented trap, for an identical re
 
 ### The same mistake was already in two other patches
 
-`forceScrubPreferencesPatch` and `flickSymbolsPatch` write **Gboard's** own settings at startup, and
+`forceScrubPreferencesPatch` and `suggestedSettingsPatch` write **Gboard's** own settings at startup, and
 both did it in bytecode through the store's id-keyed accessors. That looked unavoidable, because a
 Gboard preference is addressed by resource id rather than by name.
 
@@ -85,90 +92,6 @@ Swipe length is the worked example, and it has now moved three times. Going to 3
 in the first place; coming back to 100 made `STEP_SCALE_DEFAULT` and `STEP_SCALE_IDENTITY` hold the
 same number and look redundant; going to 60 has separated them again. That third move cost one
 constant precisely because the second one did not collapse them.
-
-## Why the toolbar count is a slider when hold delay nearly was not
-
-Every preference this project reads costs the same thing — an insertion, and registers proved dead
-against each Gboard build — so the bar a new config has to clear is high. See below for the three
-that failed to clear it. The toolbar count clears it on both counts a config can:
-
-**There is no value that is right everywhere.** How many icons fit depends on how wide the screen
-is, because the bar divides its width by the number of items
-(`AccessPointsBar->K(II)I` gives each `min((width + 2·padding)/(n + 1), width/n)`). Ten is
-comfortable on a tablet and cramped on a small phone. That is not true of the hold delay, where one
-number was right and got hardcoded.
-
-**Both insertions are cheap.** The one that does the work is entered with three dead locals and
-finds the preference store already sitting in a field on the receiver, so it needs no `Context` and
-no liveness argument at all. The second is the cheapest in the project on the older measure:
-`AccessPointsBar` keeps its real name through R8 because a layout addresses it as a string, the
-anchor is a *string literal* (`config_max_access_points` in the class's `<clinit>`, and R8 renames
-classes, methods and fields but never string contents), the `Context` is already a constructor
-parameter, and two scratch registers suffice against three for each of the switches that were
-removed.
-
-Neither obfuscated member is written down. `->m:I` is never named — the patch inserts *before*
-Gboard's own `iput` and leaves that instruction to do the write, so a letter that moves onto a
-different member cannot be silently patched instead, the failure mode that shipped in `0.0.2-dev.1`.
-The preference store is read back out of the very method being patched, as the one field it touches
-of that type.
-
-Three decisions worth naming:
-
-**The fallback is Gboard's own behaviour, not a constant.** Neither insertion substitutes a number
-when the slider is untouched. The capacity one reads the preference with whatever the flag path just
-computed as its default; the count one runs *before* Gboard has computed anything and simply falls
-through into the stock body. So an unset value is not a value chosen to resemble Gboard's — it is
-Gboard's own code running with nothing done to it. An out-of-range value falls back the same way
-rather than being clamped into range, because a corrupt or hand-edited preference should read as
-"unset" and not as a number nobody chose.
-
-**Flexboard uses its own key rather than Gboard's.** Gboard has `access_points_count_on_bar`, and
-riding it would have removed an insertion — but that key can only *lower* the count, Gboard's own
-"reduce your toolbar icons" flow (`Lmjr;->b`) writes to it and would silently overwrite the user's
-choice, and a value written there outlives the patch.
-
-**The slider outranks both of Gboard's own limits.** Overriding at the top of the count method skips
-`access_points_count_on_bar` and the reduced mode that forces three icons. Both exist to lower the
-count, and a user who has just moved this slider has said what they want more recently and more
-explicitly than either.
-
-### Two numbers, and the one that is not the count
-
-The first build of this patched the wrong one, so the distinction is worth stating plainly.
-
-The bar holds a **capacity**, `AccessPointsBar->m:I`, computed once in its constructor from a
-Phenotype flag clamped to `[3, 8]`. It reads like the count and is not: the bar renders whatever
-list it is handed — `m(List)` sets its child count from `list.size()` with no clamp anywhere — and
-the list is cut to length elsewhere, by a method Gboard's own logging calls `definedCountOnBar`. The
-capacity is only that method's *argument*, and it then goes through two gates that can each discard
-it: `min(access_points_count_on_bar, capacity)` whenever Gboard's preference is set, and a reduced
-mode returning a flat three.
-
-So raising the capacity raised nothing. It still gets raised, because eight other reads of `m:I` all
-ask *is the bar full?* — and one of them evicts the last child before inserting when the answer is
-yes. Both numbers move together; only one of them is the feature.
-
-### The methodology note
-
-`1.1.0-dev.1` was diagnosed from the expand chevron failing to appear alongside the count not
-moving: `T()` swaps the chevron in whenever the child count differs from the capacity, so a raised
-capacity should have produced one even with no extra icons to show. Its absence was read as proof
-that the write never landed.
-
-**The inference was void.** `T()` opens with an early return on a flag set only by the
-temporary-access-point flows, so in ordinary use it does nothing at all and could not have produced
-a chevron either way. The chevron seen in normal operation is an ordinary access point in the list,
-marked `expand_label_on_top_bar`. A second suspect recorded at the time — that the constructor might
-not re-run because Android caches keyboard views — had no evidence behind it either, and was carried
-forward for a day as though it did.
-
-What is uncomfortable is that the real cause needed no new disassembly. `gboard-bindings.md` already
-said, in the row above the one being patched, that the preference `Lmjv;->a` applies *can only lower
-the count*. The fact was written down, in the right file, and simply not carried through to the
-conclusion. The bypass patch's note in this file says a conclusion is only as settled as its weakest
-link; this is the other half of it — a conclusion can also be wrong because a link nobody thought to
-question was already documented as broken.
 
 ## Why the text editing buttons carry a Runnable rather than a keycode
 
