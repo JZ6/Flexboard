@@ -32,11 +32,14 @@ val toolbarHotkeysPatch = bytecodePatch(
     dependsOn(toolbarSlotsPatch)
 
     execute {
-        // Tell the settings patch to keep the Hotkeys section — we're selected.
-        selectedSettingsSections += SettingsSection.HOTKEYS
-
         val builder = resolveAccessPointBuilder()
         emitNativeHotkeys(builder)
         emitHotkeyRefresh(builder)
+
+        // Registered last, on purpose. A failing patch does not abort the run: the patcher records
+        // the exception and moves on, and `settingsScreenPatch` — which did not fail — still
+        // finalizes and reads this set. Registering before the emission above would ship the
+        // Hotkeys rows and their drawables for a build whose bytecode never got the feature.
+        selectedSettingsSections += SettingsSection.HOTKEYS
     }
 }
