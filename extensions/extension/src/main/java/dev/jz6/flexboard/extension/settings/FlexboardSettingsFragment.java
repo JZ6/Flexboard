@@ -90,7 +90,19 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         if (context == null) {
             return 0;
         }
-        new Handler(Looper.getMainLooper()).post(this::paintRowsFromStore);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            // The doc above promised this no-ops when the pass lands badly. It did not: this was
+            // the one path in the class with no catcher, and unlike a click handler it sits on no
+            // Gboard stack that could supply one. Gboard is a single process -- nothing in its
+            // manifest declares android:process -- so an escape here does not close a settings
+            // screen, it takes the keyboard down and leaves the device with no text input.
+            try {
+                paintRowsFromStore();
+            } catch (Throwable unpaintable) {
+                // Silent on purpose, and the outcome the doc already described: rows keep what
+                // the XML gave them, and syncRowIconsOnce repaints on the first tap.
+            }
+        });
         return context.getResources()
             .getIdentifier(SCREEN_NAME, "xml", context.getPackageName());
     }
@@ -172,7 +184,11 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
                 return null;
             }
             return LayoutInflater.from(ui).inflate(layoutId, null);
-        } catch (Exception e) {
+        // Throwable rather than Exception: this guards calls into stub letters and reflected
+        // members, and a moved Gboard symbol arrives as NoSuchMethodError or NoSuchFieldError --
+        // both Errors, neither an Exception. The narrower catch was shaped for the failure that
+        // cannot happen and left open the one that will.
+        } catch (Throwable e) {
             return null;
         }
     }
@@ -262,7 +278,11 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         try {
             showHotkeyDialog(ui, row, slot);
             return true;
-        } catch (Exception dialogUnavailable) {
+        // Throwable rather than Exception: this guards calls into stub letters and reflected
+        // members, and a moved Gboard symbol arrives as NoSuchMethodError or NoSuchFieldError --
+        // both Errors, neither an Exception. The narrower catch was shaped for the failure that
+        // cannot happen and left open the one that will.
+        } catch (Throwable dialogUnavailable) {
             return false;
         }
     }
@@ -374,7 +394,11 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         }
         try {
             showExportDialog(ui, context);
-        } catch (Exception dialogUnavailable) {
+        // Throwable rather than Exception: this guards calls into stub letters and reflected
+        // members, and a moved Gboard symbol arrives as NoSuchMethodError or NoSuchFieldError --
+        // both Errors, neither an Exception. The narrower catch was shaped for the failure that
+        // cannot happen and left open the one that will.
+        } catch (Throwable dialogUnavailable) {
             // the copy + summary already happened; the popup is best-effort
         }
     }
@@ -401,7 +425,11 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             try {
                 showImportDialog(ui, row);
                 return;
-            } catch (Exception dialogUnavailable) {
+            // Throwable rather than Exception: this guards calls into stub letters and reflected
+            // members, and a moved Gboard symbol arrives as NoSuchMethodError or NoSuchFieldError --
+            // both Errors, neither an Exception. The narrower catch was shaped for the failure that
+            // cannot happen and left open the one that will.
+            } catch (Throwable dialogUnavailable) {
                 // fall through to the clipboard path
             }
         }
