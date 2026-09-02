@@ -40,7 +40,7 @@ import dev.jz6.flexboard.patches.shared.basePatch
  */
 @Suppress("unused")
 val toolbarButtonsPatch = bytecodePatch(
-    name = "Toolbar Buttons",
+    name = "Text Action Buttons",
     description = "Add Select all, Copy and Paste buttons to the toolbar above the keyboard, " +
         "so each is one tap instead of opening Gboard's text editing panel first. Registered " +
         "natively, so drag-to-reorder through the toolbar customize page persists.",
