@@ -124,10 +124,23 @@ internal fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilde
     }
 
     // The static that opens the builder, and with it the builder's own type.
-    val factory = instructions.firstNotNullOfOrNull { instruction ->
-        val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
-        reference?.takeIf { it.parameterTypes.isEmpty() && it.returnType != "V" }
-    } ?: error("${seed.toDescriptor()} opens with no zero-argument builder factory")
+    //
+    // Anchored at index 0 rather than scanned for. "The first zero-argument non-void call anywhere
+    // in the method" would also match an accessor that a later build happens to call before the
+    // factory, and the failure from that is not a miss — it is a *wrong* builder type, whose
+    // symptom is a confusing "expected exactly one … found 0" from the walk below, pointing at the
+    // wrong class. The seed opens with the factory or the derivation does not hold.
+    val opening = instructions.first()
+    val factory = (opening as? ReferenceInstruction)?.reference as? MethodReference
+    check(
+        factory != null &&
+            opening.opcodeName() == "INVOKE_STATIC" &&
+            factory.parameterTypes.isEmpty() &&
+            factory.returnType != "V",
+    ) {
+        "${seed.toDescriptor()} opens with `${opening.opcodeName()}`, not the zero-argument " +
+            "static builder factory this derivation reads the builder type from"
+    }
 
     val builderType = factory.returnType
     val builderClass = classDefByOrNull(builderType)

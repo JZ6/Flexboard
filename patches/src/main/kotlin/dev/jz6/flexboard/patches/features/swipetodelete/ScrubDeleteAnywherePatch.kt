@@ -13,6 +13,7 @@ import dev.jz6.flexboard.patches.features.swipetodelete.scrubTuningPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.basePatch
+import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
@@ -421,6 +422,29 @@ private fun MutableMethod.trackAcrossFullKeyboard() {
             "there is no single register this patch can safely read the sentinel from"
     }
     val configRegister = configRegisters.single()
+
+    // Both registers are read at the insertion point but derived from instructions well before it
+    // — the view register some twenty instructions earlier. Ordering was asserted above; that is
+    // not the same as liveness. Nothing here proves the registers still hold what they held at the
+    // derivation, and R8 is free to reuse a register once its last stock read is gone. So assert
+    // it: if anything between the derivation and the insertion writes either register, the values
+    // this emission reads are not the ones it was reasoned about, and the emitted
+    // `getHeight`/`iget` would run against whatever replaced them.
+    val borrowed = mapOf(
+        viewRegister to "the $KEYBOARD_VIEW_GET_WIDTH receiver",
+        configRegister to "the $CONFIG_START_KEY_FIELD holder",
+    )
+    body.subList(widthIndex + 1, bottomIndex + 1).forEach { instruction ->
+        // Wide writes take two registers, so a `-wide` landing on v4 clobbers v5 as well.
+        instruction.destinationRegistersOrEmpty().forEach { written ->
+            val what = borrowed[written] ?: return@forEach
+            error(
+                "v$written — $what — is overwritten by `${instruction.opcodeName()}` between the " +
+                    "derivation at $widthIndex and the insertion at ${bottomIndex + 1} in " +
+                    "$SCRUB_MOTION_EVENT_HANDLER->g; it no longer holds the value this patch reads",
+            )
+        }
+    }
 
     // Captured before the insertion shifts indices; the label resolves by instruction identity.
     val stockResumes = body[bottomIndex + 1]

@@ -2,6 +2,7 @@ package dev.jz6.flexboard.patches.shared
 
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
+import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
@@ -98,6 +99,26 @@ internal fun Instruction.invokeRegisterCount(): Int =
     (this as? RegisterRangeInstruction)?.registerCount
         ?: (this as? FiveRegisterInstruction)?.registerCount
         ?: error("Not an invoke: `${opcode.name}`")
+
+/**
+ * The register this instruction *writes*, or null when it writes none.
+ *
+ * Reading `registerA` directly is not the same thing and gets liveness checks backwards: for
+ * `move`/`iget`/`const` it is the destination, but for `iput`, `if-eqz`, `return` and `throw` it is
+ * a source. dexlib2 already knows which is which — `Opcode.setsRegister()` is the flag the
+ * assembler itself uses — so ask it rather than enumerating mnemonics.
+ *
+ * Wide destinations occupy `registerA` and `registerA + 1`; callers checking whether a register was
+ * clobbered need [destinationRegistersOrEmpty] for those.
+ */
+internal fun Instruction.destinationRegisterOrNull(): Int? =
+    if (opcode.setsRegister()) (this as? OneRegisterInstruction)?.registerA else null
+
+/** Every register this instruction writes, counting the second word of a wide destination. */
+internal fun Instruction.destinationRegistersOrEmpty(): List<Int> {
+    val first = destinationRegisterOrNull() ?: return emptyList()
+    return if (opcode.setsWideRegister()) listOf(first, first + 1) else listOf(first)
+}
 
 /**
  * Index of the single instruction invoking [descriptor], failing loudly when there is not exactly
