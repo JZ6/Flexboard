@@ -111,22 +111,25 @@ internal fun BytecodePatchContext.checkPreferenceStorePins() {
 }
 
 /**
- * ### Why these are functions and not `object`s
+ * ### Why these are functions rather than `object`s — and why that is a preference, not a fix
  *
- * `Fingerprint` memoises its `Match` in `_matchOrNull`, and `matchOrNull(context)` returns that
- * cache without ever checking the cached `Match` came from the context being asked. The patcher's
- * cleanup does not save you: `clearFingerprints()` calls `clearMatch()` on every registered
- * fingerprint and *then* empties the registry, while a `Fingerprint` only registers itself from its
- * constructor. A Kotlin `object` runs that constructor once per classloader, so it is registered
- * for the first run and never again — run two resolves fresh and is then never cleared, and run
- * three onwards hands back a `Match` bound to a discarded `BytecodePatchContext`. The edits land in
- * the previous run's object graph and the output APK is quietly unpatched, with every
- * `assertRegisterCount` still passing because the numbers are identical.
+ * These were converted from `object`s to answer a hazard that turned out not to exist. The
+ * reasoning was: `Fingerprint` memoises its `Match` in `_matchOrNull`; `matchOrNull(context)`
+ * returns that cache without checking which context built it; and `clearFingerprints()` clears
+ * every registered fingerprint's match and *then* empties the registry, while a `Fingerprint`
+ * only registers itself from its constructor. Each of those is true, read off
+ * `morphe-patcher-1.8.0`. The conclusion drawn from them — that a `Kotlin` object, whose
+ * constructor runs once per classloader, would from the third run onward hand back a `Match`
+ * bound to a discarded context and silently emit an unpatched APK — is not.
  *
- * That needs the host to reuse the bundle's classloader across patching sessions, which the local
- * driver never does — one session per JVM — so it cannot reproduce here. A factory sidesteps the
- * question entirely: a fresh instance has nothing cached and re-registers itself for the run it
- * belongs to. Resolve once per `execute` and share the result, rather than calling twice.
+ * It requires the classloader to be shared across runs, and it is not: `PatchLoader.Jar`
+ * constructs a `new URLClassLoader` per call, so every session re-initialises the objects and
+ * every cache starts empty. Measured, not assumed — three sessions in one JVM against a bundle
+ * that still used `object`s produced byte-identical, correctly patched dex, run three included.
+ *
+ * So this shape is kept for a smaller reason: there is no cross-run state to reason about, which
+ * is one less thing to be wrong about. `object`s would work. Resolve once per `execute` and share
+ * the result rather than calling twice — that part is just avoided work.
  *
  * ---
  *

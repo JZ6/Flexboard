@@ -146,34 +146,6 @@ def lint_widths(problems, name, line_no, payload):
                 )
 
 
-FINGERPRINT_SINGLETON = re.compile(
-    r"^\s*(?:internal |private )?object\s+(\w+)\s*:\s*Fingerprint\(", re.M
-)
-
-
-def lint_fingerprint_singletons(texts):
-    """R6: a Fingerprint declared as an `object` caches a Match across patcher runs.
-
-    `matchOrNull` returns its memoised Match without checking which context built it, and the
-    patcher's `clearFingerprints()` empties the registry it iterates — while a Fingerprint only
-    registers itself from its constructor, which an `object` runs once per classloader. So the
-    cache is cleared after run one and never again: run three onwards resolves against a discarded
-    context and the edits silently go nowhere, with every register assertion still passing.
-
-    Declare fingerprints as factory functions instead, and resolve once per execute.
-    """
-    problems = []
-    for path, text in sorted(texts.items(), key=lambda kv: kv[0].name):
-        for match in FINGERPRINT_SINGLETON.finditer(text):
-            line_no = text[: match.start()].count("\n") + 1
-            problems.append(
-                f"  {path.name}:{line_no} declares {match.group(1)} as an `object` (R6) — a "
-                f"Fingerprint singleton keeps its Match across patcher runs; use "
-                f"`fun {match.group(1)[0].lower() + match.group(1)[1:]}() = Fingerprint(...)`"
-            )
-    return problems
-
-
 PLAIN_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 IDENTIFIER_ARG = re.compile(r",\s*([A-Za-z_]\w*)\s*$", re.S)
 
@@ -234,7 +206,6 @@ def main():
         consts.update(KOTLIN_CONST.findall(text))
 
     problems = []
-    problems += lint_fingerprint_singletons(texts)
     for path, text in sorted(texts.items(), key=lambda kv: kv[0].name):
         for line_no, variant, args, end in collect_calls(text):
             labeled = variant == "addInstructionsWithLabels"
