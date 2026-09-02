@@ -72,7 +72,7 @@ private const val NOTE_TITLE = "Managed by Flexboard"
 private const val NOTE_SUMMARY =
     "Swipe-anywhere-to-delete needs Glide delete on and glide typing off, so it sets both and " +
         "the two settings below are locked. To use glide typing again, re-patch Gboard without " +
-        "Flexboard's Swipe to Delete."
+        "Flexboard's Swipe Left to Delete."
 
 /** Glide typing, Glide trail, Glide delete, Glide cursor control. */
 private const val GESTURE_ROW_COUNT = 4

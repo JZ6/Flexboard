@@ -8,7 +8,7 @@
 > verified. Read them for the reasoning, and take current names from
 > [`gboard-bindings.md`](gboard-bindings.md) and offsets from the APK.
 
-Flexboard turns glide typing off for as long as Swipe to Delete is applied. It does not put it
+Flexboard turns glide typing off for as long as Swipe Left to Delete is applied. It does not put it
 back. This is the record of what that preference is on 17.7.7, how those facts were established,
 and — because two earlier attempts failed — which approaches do not work.
 
@@ -130,7 +130,7 @@ the writes now happen on every start for as long as the patch is applied. There 
 previous value and no restore.
 
 The consequence is worth stating plainly, because it is user-visible: glide typing cannot be turned
-back on while Swipe to Delete is applied, and re-enabling it means re-patching without that patch.
+back on while Swipe Left to Delete is applied, and re-enabling it means re-patching without that patch.
 Removing Flexboard leaves glide typing off, and the user has to tick it back on themselves.
 
 ## When Gboard updates

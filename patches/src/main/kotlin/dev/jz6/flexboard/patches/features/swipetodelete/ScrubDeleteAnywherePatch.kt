@@ -70,7 +70,7 @@ import dev.jz6.flexboard.patches.shared.usesField
  */
 @Suppress("unused")
 val swipeToDeletePatch = bytecodePatch(
-    name = "Swipe to Delete",
+    name = "Swipe Left to Delete",
     description = "Swipe left anywhere on the keyboard to delete the previous word, and swipe " +
         "right to restore it. Uses Gboard's own word-scrub engine, so it behaves exactly like " +
         "swiping on the backspace key already does — only it can start anywhere.",

@@ -202,7 +202,7 @@ carrying the dependency's key to exist in the same hierarchy and throws `Illegal
 taken out Gboard's whole gesture settings screen. A static attribute has no such requirement.
 
 A greyed row with no explanation is still worse than a tappable one, so a non-selectable note sits
-above them saying what is doing it and that re-patching without Swipe to Delete is the way back.
+above them saying what is doing it and that re-patching without Swipe Left to Delete is the way back.
 [`gboard-settings-ui.md`](gboard-settings-ui.md) covers how the rows are reached and disabled.
 
 ## Why the signature bypass stays, though it gates nothing

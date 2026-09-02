@@ -72,7 +72,7 @@ internal data class NativeToolbarButton(
     val contentDescriptionLiteral: String? = null,
     /**
      * The extension-side `Runnable` click action, as a full constructor descriptor —
-     * `"Ldev/jz6/flexboard/extension/toolbar/TestAction;-><init>()V"` or
+     * `"Ldev/jz6/flexboard/extension/toolbar/SomeAction;-><init>()V"` or
      * `"Ldev/jz6/flexboard/extension/textaction/TextAction;-><init>(I)V"`, not just the class
      * name. The helper extracts the class half for `new-instance`, and hands the full string to
      * `invoke-direct`.
