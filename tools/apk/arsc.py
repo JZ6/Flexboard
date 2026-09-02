@@ -92,7 +92,14 @@ class StringPool:
 
     def __getitem__(self, index: int) -> str:
         if index < 0 or index >= len(self._strings):
-            return f'<string #{index}>'
+            # Deliberately loud. Returning a '<string #N>' placeholder made an out-of-range index
+            # -- which means a wrong type_id or key_index, i.e. the table is not being read the
+            # way this code thinks -- come back as a plausible-looking name that callers then
+            # compared against and reported on. A pool index past the end is a parse error.
+            raise IndexError(
+                f'string pool index {index} out of range (pool holds {len(self._strings)}); '
+                f'the chunk being read is not the one this offset assumed'
+            )
         return self._strings[index]
 
     def __len__(self) -> int:

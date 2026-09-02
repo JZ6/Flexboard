@@ -6,10 +6,16 @@ TYPE_REFERENCE, TYPE_STRING, TYPE_INT_DEC, TYPE_INT_HEX, TYPE_INT_BOOLEAN = 0x01
 
 def _pool(b, off):
     t, hs, sz = struct.unpack_from('<HHI', b, off)
-    assert t == 0x0001, hex(t)
+    # Not an assert: `python -O` strips those, and this one is the only thing standing between a
+    # wrong offset and a confident misparse of whatever happens to be at it.
+    if t != 0x0001:
+        raise ValueError(f'expected a string pool chunk at {off}, found type {hex(t)}')
     cnt, styc, flags, strStart, styStart = struct.unpack_from('<IIIII', b, off + 8)
     utf8 = bool(flags & 0x100)
-    offs = struct.unpack_from(f'<{cnt}I', b, off + 28)
+    # The offset array starts after the header, whose length the header itself declares. 28 is
+    # what that works out to for every pool seen so far, and hardcoding it silently reads string
+    # offsets out of the wrong place the first time it is not.
+    offs = struct.unpack_from(f'<{cnt}I', b, off + hs)
     out, base = [], off + strStart
     for o in offs:
         p = base + o

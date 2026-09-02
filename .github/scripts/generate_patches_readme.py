@@ -74,7 +74,22 @@ def anchor(name):
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", name.lower())).strip("-")
 
 
-def patches_table(patches):
+def existing_anchors(readme_path):
+    """The `## ` headings the README actually has, as anchor slugs.
+
+    A patch only gets a link if there is a section to land on. Linking every patch name produced
+    four anchors pointing at headings that do not exist -- the table looked navigable and four
+    entries silently went nowhere. Patches without prose render as plain text instead, which is
+    honest and stops being true the moment someone writes the section.
+    """
+    try:
+        text = Path(readme_path).read_text()
+    except OSError:
+        return None  # unknown: fall back to linking everything, as before
+    return {anchor(h) for h in re.findall(r"^## (.+)$", text, re.M)}
+
+
+def patches_table(patches, anchors=None):
     """Render a sorted markdown table of patches with name, description, and options."""
     rows = [
         "| 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |",
@@ -90,7 +105,8 @@ def patches_table(patches):
         else:
             opts_cell = ""
         desc = (p.get("description") or "").replace("\n", "<br>")
-        rows.append(f"| [{p['name']}](#{a}) | {desc} | {opts_cell} |")
+        cell = f"[{p['name']}](#{a})" if anchors is None or a in anchors else p["name"]
+        rows.append(f"| {cell} | {desc} | {opts_cell} |")
     return "\n".join(rows)
 
 
@@ -144,6 +160,7 @@ def spoiler(label, count, targets, tbl, expanded=False):
 
 def build_content(expanded=False):
     """Build the full generated patches section."""
+    anchors = existing_anchors(readme_path)
     lines = [
         f"> **[v{ver}](https://github.com/{owner}/{repo}/releases/tag/v{ver})**"
         f"&nbsp;&nbsp;•&nbsp;&nbsp;`{branch}`&nbsp;&nbsp;•&nbsp;&nbsp;"
@@ -154,7 +171,7 @@ def build_content(expanded=False):
     for pkg, entry in by_pkg.items():
         patches = list(entry["patches"].values())
         label   = f"{entry['emoji']} {entry['name']}"
-        lines.append(spoiler(label, len(patches), entry["targets"], patches_table(patches), expanded))
+        lines.append(spoiler(label, len(patches), entry["targets"], patches_table(patches, anchors), expanded))
         lines.append("")
 
     # Universal patches (no specific app)
@@ -166,7 +183,7 @@ def build_content(expanded=False):
 <summary>🌐 Universal&nbsp;&nbsp;•&nbsp;&nbsp;{len(uni_patches)} {noun}</summary>
 <br>
 
-{patches_table(uni_patches)}
+{patches_table(uni_patches, anchors)}
 
 </details>""")
         lines.append("")
