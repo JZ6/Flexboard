@@ -96,18 +96,17 @@ the swipe-anywhere gesture; the backspace key keeps Gboard's own behaviour, see 
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Swipe length** | 60% | How far to swipe per deleted word, as a percent of Gboard's own distance. Lower deletes more words for the same swipe; 100% is Gboard's own distance. |
 | **Max words per swipe** | 1 | The most words one swipe can delete. At 1 a swipe deletes a single word however far it travels; 10 means no limit. Swiping back still restores. |
-| **Hold delay** | 0 ms | How long the swipe must be held before it starts deleting. Gboard's own delete swipe uses 200 ms, which is what makes it feel like a press-and-drag rather than a flick. |
 
-The screen also carries **Icons on the toolbar** and **Icons when unfolded**, which belong to the
-Bigger Toolbar patch and are described [further down](#bigger-toolbar), and six **Hotkeys** fields
-belonging to [Toolbar Buttons](#toolbar-buttons).
+Swipe length and hold delay are fixed rather than adjustable. The swipe travels Gboard's own
+distance per word, and deleting starts immediately instead of after Gboard's 200 ms press-and-hold.
+Both were sliders once; [`docs/design.md`](docs/design.md) has why they are not now.
+
+The screen also carries six **Hotkeys** fields belonging to
+[Toolbar Buttons](#toolbar-buttons).
 
 Every value is read out of Gboard's own preference store, so there is no separate settings app and
-nothing to keep in sync. All three now start somewhere other than Gboard's own behaviour; 100%, 10
-and 200 ms put them back, and why they do not start there is in
-[`docs/design.md`](docs/design.md).
+nothing to keep in sync.
 
 The starting values are written into the store the first time the patched app runs, rather than
 being numbers inside the patch. So they behave as defaults for a fresh install, and a later update
@@ -184,8 +183,7 @@ Gboard can already do all three, behind its **Text editing** toolbar button — 
 tap the one you want. These are the same actions without the panel.
 
 They take the first three slots on the toolbar, which pushes whatever used to be last into the
-overflow menu behind the chevron. Long-press the toolbar to reorder them like any other button, or
-raise the icon count with [Bigger Toolbar](#bigger-toolbar) so nothing has to move.
+overflow menu behind the chevron. Long-press the toolbar to reorder them like any other button.
 
 The labels are Gboard's own, so they are already translated wherever Gboard is. The icons are
 Material's — the select-all marquee, and the familiar copy and paste marks. Gboard ships all three
@@ -213,7 +211,7 @@ Long text is fine. The whole of it gets typed; only the first line, cut short, b
 
 **Nine buttons is more than the bar holds.** With the three text actions plus a few hotkeys,
 whatever used to sit at the end of your toolbar moves into the overflow menu behind the chevron.
-Raise the icon count with [Bigger Toolbar](#bigger-toolbar) and they all fit.
+Long-press the toolbar to reorder, and drop what you do not need.
 
 ## Flick keys for symbols
 
@@ -227,43 +225,6 @@ One quirk worth knowing. Gboard's own settings row for it depends on **Touch & h
 numbers**, so while that is off the flick row shows as on but greyed out — the feature works, you
 just cannot toggle it from there. Enabling "Touch & hold keys for numbers" un-greys it. Flexboard
 deliberately does not change that setting for you, since nothing at runtime needs it.
-
-## Bigger toolbar
-
-The row of icons above the keyboard — Gboard calls it the access points bar — holds five, and
-everything past that sits in the overflow menu behind the chevron. This makes that number a slider,
-from 3 to 12, under **Toolbar** in Flexboard's settings.
-
-Five is not a layout constant. Gboard works out how many icons the bar gets each time the list is
-rebuilt, starting from a ceiling it computes from a server-side flag and then lowering it — for its
-own count preference if you have one set, and to three if it has decided your screen is short on
-room. Flexboard replaces the answer rather than the starting point, so the slider is the last word
-on it.
-
-**It starts at 6, and at 12 on the inner screen of a fold.** Those are written into Gboard's
-preference store the first time the patched app runs, rather than being numbers baked into the
-patch — which means an update can ship different starting values for new installs without moving a
-toolbar you have already got used to. Move a slider and it is yours from then on.
-
-A value outside 3–12 is ignored rather than forced into range, and the bar falls back to whatever
-Gboard would have done.
-
-**Icons get narrower, not smaller in number.** The bar divides its width by the number of items, so
-at 10 they are about half the width they are at 5, and at 12 narrower still. Eight is as far as
-Google's own layout has been built against; past that you are the first person testing it. Nothing
-clips or crashes — the icons just get tight, and on a narrow phone 12 will be very tight indeed.
-
-Drag-to-reorder and long-press-to-customise keep working at every setting; this only changes where
-the line between the bar and the overflow menu falls.
-
-**On a foldable, the two screens keep their own counts.** Gboard already works this way — the inner
-screen is wider and fits more — so Flexboard's settings carry a second slider, **Icons when
-unfolded**, that applies only while the phone is open. It starts at 12 against the main slider's 6,
-and each owns its screen: changing one does not move the other. On anything that does not fold the
-second slider does nothing.
-
-This shipped once before, in `1.1.0-dev.1`, and did nothing — it moved the ceiling rather than the
-count. If you tried it then, it is a different patch now.
 
 ## Install as Gboard clone
 
