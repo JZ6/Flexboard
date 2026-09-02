@@ -184,7 +184,7 @@ public final class Hotkeys {
         } catch (NumberFormatException ignored) {
             // not decimal: treat as a drawable name
         }
-        return context.getResources().getIdentifier(token.trim(), "drawable", context.getPackageName());
+        return dev.jz6.flexboard.extension.ResourceIds.byName(context, "drawable", token.trim());
     }
 
     /**

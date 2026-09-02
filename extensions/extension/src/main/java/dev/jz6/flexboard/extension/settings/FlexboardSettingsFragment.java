@@ -103,8 +103,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
                 // the XML gave them, and syncRowIconsOnce repaints on the first tap.
             }
         });
-        return context.getResources()
-            .getIdentifier(SCREEN_NAME, "xml", context.getPackageName());
+        return dev.jz6.flexboard.extension.ResourceIds.byName(context, "xml", SCREEN_NAME);
     }
 
     /**

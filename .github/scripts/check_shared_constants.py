@@ -378,6 +378,37 @@ def _java_string_constant(name):
     return None
 
 
+
+def _check_stock_package_name(problems):
+    """The extension's fallback package name matches Constants.GBOARD_PACKAGE_NAME.
+
+    resources.arsc answers to the stock package regardless of what installAsGboardClonePatch
+    renamed the manifest to, so ResourceIds.byName falls back to it when the app's own name
+    misses. A drift here fails nothing loudly -- the fallback simply stops being one, and the
+    settings screen and icon pack go back to depending on the encoder reconciling the two names.
+
+    Not in PAIRS because these live inside `internal object Constants`, whose members are plain
+    `const val`, and the collector's pattern is `internal const val` -- widening that would change
+    what every other pair resolves against.
+    """
+    kt = re.search(
+        r'const val GBOARD_PACKAGE_NAME\s*=\s*"([^"]+)"',
+        (PATCHES / "dev/jz6/flexboard/patches/shared/Constants.kt").read_text(),
+    )
+    java = _java_string_constant("STOCK_PACKAGE_NAME")
+    if not kt or not java:
+        problems.append(
+            f"  stock package name check parsed nothing: patches {kt and kt.group(1)!r}, "
+            f"extension {java!r}"
+        )
+    elif kt.group(1) != java:
+        problems.append(
+            f"  Constants.GBOARD_PACKAGE_NAME is {kt.group(1)!r} but ResourceIds."
+            f"STOCK_PACKAGE_NAME is {java!r} — the resource-name fallback points at a package "
+            f"the table does not answer to, so it silently stops being a fallback"
+        )
+
+
 def _check_section_sentinels(problems):
     """The template's @SECTION_X@ vocabulary is exactly the SettingsSection enum.
 
@@ -682,6 +713,7 @@ def main():
 
     _check_extension_references(problems)
     _check_section_sentinels(problems)
+    _check_stock_package_name(problems)
     _check_settings_xml(problems, kotlin)
     _check_dotted_extension_classes(problems)
     _check_screen_contract(problems, kotlin)
