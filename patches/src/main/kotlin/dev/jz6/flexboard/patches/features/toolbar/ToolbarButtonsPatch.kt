@@ -49,6 +49,11 @@ val toolbarButtonsPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_GBOARD)
     dependsOn(basePatch)
 
+    // Admits this patch's three ids into Gboard's allowed-set array. Without it the register call
+    // logs "Invalid access point" and drops them — the same dependency, for the same reason, that
+    // Toolbar Hotkeys carries.
+    dependsOn(toolbarSlotsPatch)
+
     execute {
         val builder = resolveAccessPointBuilder()
         emitNativeToolbarButtons(builder, BUTTONS)
@@ -81,33 +86,35 @@ private const val TEXT_ACTION_CTOR = "Ldev/jz6/flexboard/extension/textaction/Te
  * `content_paste`) come from the icon audit in `tools/apk/glyphs.py`: Gboard bundles them and
  * draws none of them.
  *
- * The toolbar ids themselves are dormant members of the allowed-set string array — see
- * `shared/ToolbarCanvas.kt` for why that id choice is the whole game.
+ * The toolbar ids are Flexboard's own, admitted into Gboard's allowed-set array by
+ * [toolbarSlotsPatch] — the same mechanism the hotkey slots use. See `ToolbarCanvas.kt` for why
+ * the id has to be in that set at all.
  *
- * **Editor info** is the natural fit for select-all — both are about the active editor.
- * `undo_cooperative` has zero dex references of its own (the non-cooperative `undo` AP is real
- * and shipped, so this one was spec'd and shelved). `muse_toggle_playground_ap` reads as a
- * dev-only playground switch. None of them should land in a stock Gboard build's Customize
- * drawer, but if any of them ever does the right call is to pick another from the remaining
- * dormant list (`jetson_feedback`, `signboard_education`).
+ * These three used to squat on ids Gboard ships in the allowed set but never registers a handler
+ * for: `editor_info` for select-all, `undo_cooperative` for copy, `muse_toggle_playground_ap` for
+ * paste. That worked, and it was a bet on Google leaving all three dormant in a build nobody here
+ * controls. The failure mode was the bad kind — the day one of them becomes a real access point,
+ * our registration clobbers its entry in the controller's map rather than failing a patch
+ * assertion, and the symptom is somebody else's button quietly doing our thing. Minting our own
+ * costs three members of an array we were already widening for hotkeys.
  */
 private val BUTTONS = listOf(
     NativeToolbarButton(
-        id = "editor_info",
+        id = "flexboard_select_all",
         icon = "0x7f080218",
         labelRes = "0x7f140576",
         actionCtor = TEXT_ACTION_CTOR,
         actionArgs = listOf(TEXT_ACTION_SELECT_ALL),
     ),
     NativeToolbarButton(
-        id = "undo_cooperative",
+        id = "flexboard_copy",
         icon = "0x7f080214",
         labelRes = "0x7f140560",
         actionCtor = TEXT_ACTION_CTOR,
         actionArgs = listOf(TEXT_ACTION_COPY),
     ),
     NativeToolbarButton(
-        id = "muse_toggle_playground_ap",
+        id = "flexboard_paste",
         icon = "0x7f080217",
         labelRes = "0x7f140570",
         actionCtor = TEXT_ACTION_CTOR,

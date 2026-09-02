@@ -16,4 +16,16 @@
     <string name="flexboard_hotkey_4" translatable="false">flexboard_hotkey_4</string>
     <string name="flexboard_hotkey_5" translatable="false">flexboard_hotkey_5</string>
     <string name="flexboard_hotkey_6" translatable="false">flexboard_hotkey_6</string>
+
+    <!--
+      The text action buttons. These used to squat on three access-point ids that Gboard ships in
+      its allowed set but never registers a handler for -- editor_info, undo_cooperative and
+      muse_toggle_playground_ap. That worked, and depended on Google leaving all three dormant in
+      a build nobody here controls; the day one of them becomes real, our button clobbers its
+      entry in the controller's map rather than failing a patch assertion. Minting our own costs
+      three array members and removes the bet.
+    -->
+    <string name="flexboard_select_all" translatable="false">flexboard_select_all</string>
+    <string name="flexboard_copy" translatable="false">flexboard_copy</string>
+    <string name="flexboard_paste" translatable="false">flexboard_paste</string>
 </resources>

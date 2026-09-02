@@ -1,5 +1,12 @@
 # Toolbar access points beyond the dormant five
 
+> **Superseded in part.** This was written when Flexboard's buttons squatted on ids
+> Gboard ships dormant, and it argues for minting our own instead. That argument
+> won: the hotkey slots did it first and the text action buttons followed, so every
+> Flexboard button now uses a `flexboard_*` id admitted by `ToolbarSlotsPatch`. The
+> mechanism described below is what ships; the framing of the dormant ids as the
+> resource being budgeted is history.
+
 How Flexboard can put arbitrarily many buttons on Gboard's toolbar while keeping drag-reorder,
 persistence and the customize drawer 100% native — researched on Gboard 18.0.3 (dex + arsc, see
 preflight pins `toolbar_*` and `docs/gboard-bindings.md` for the anchor table).

@@ -407,6 +407,36 @@ def _check_stock_package_name(problems):
         )
 
 
+
+def _check_allowed_set_sentinel(problems):
+    """ToolbarSlotsPatch and preflight agree on which stock id locates the allowed-set array.
+
+    The array's own name is obfuscated per build, so both find it by looking for a known member.
+    They each spell that member out separately -- SENTINEL_ID in the patch, and
+    native_allowed_set_sentinel in preflight -- and if they drift, preflight goes on asserting an
+    id the patch no longer looks for, while the patch fails at run time against an array preflight
+    said was fine.
+    """
+    kt = re.search(
+        r'SENTINEL_ID\s*=\s*"([^"]+)"',
+        (PATCHES / "dev/jz6/flexboard/patches/features/toolbar/ToolbarSlotsPatch.kt").read_text(),
+    )
+    pf = re.search(
+        r"'native_allowed_set_sentinel':\s*'([^']+)'",
+        (ROOT / "tools/apk/preflight.py").read_text(),
+    )
+    if not kt or not pf:
+        problems.append(
+            f"  allowed-set sentinel check parsed nothing: patch {kt and kt.group(1)!r}, "
+            f"preflight {pf and pf.group(1)!r}"
+        )
+    elif kt.group(1) != pf.group(1):
+        problems.append(
+            f"  ToolbarSlotsPatch locates the allowed-set array by {kt.group(1)!r} but preflight "
+            f"pins {pf.group(1)!r} — one of them is checking an array the other cannot find"
+        )
+
+
 def _check_section_sentinels(problems):
     """The template's @SECTION_X@ vocabulary is exactly the SettingsSection enum.
 
@@ -712,6 +742,7 @@ def main():
     _check_extension_references(problems)
     _check_section_sentinels(problems)
     _check_stock_package_name(problems)
+    _check_allowed_set_sentinel(problems)
     _check_settings_xml(problems, kotlin)
     _check_dotted_extension_classes(problems)
     _check_screen_contract(problems, kotlin)

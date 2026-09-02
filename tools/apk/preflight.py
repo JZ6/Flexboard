@@ -220,12 +220,19 @@ EXPECTED = {
     # have to be in the array (else the read filter drops them) AND dormant in dex (else our
     # definition would clobber a real Gboard AP with the same id). One entry per registered
     # button, so a future bump that adds a real handler for one is caught here before it ships.
+    # The ids ToolbarButtonsPatch registers. These are Flexboard's own now, admitted into the
+    # allowed-set array by toolbarSlotsPatch, so unlike the dormant Gboard ids they replaced they
+    # are deliberately NOT in the stock array this file reads -- only the dormancy check below
+    # applies to them.
     'native_button_ids': [
-        # ToolbarButtonsPatch
-        'editor_info',
-        'undo_cooperative',
-        'muse_toggle_playground_ap',
+        'flexboard_select_all',
+        'flexboard_copy',
+        'flexboard_paste',
     ],
+    # The stock id toolbarSlotsPatch locates the allowed-set array by. Nothing registers against
+    # it; it just has to still be in the array, because the array's own name is obfuscated per
+    # build and its contents are the only stable way to find it.
+    'native_allowed_set_sentinel': 'editor_info',
     'buttons_oncreate_registers': 12,
     # The keycode Gboard wraps a Runnable in, and the dispatcher that runs it. Two other classes
     # test this keycode and decline it, so "something tests it" is not the check that matters.
@@ -1522,9 +1529,11 @@ def run(dl, apk=None):
                           tail_pc not in targets,
                           f'targets include the tail: {sorted(targets & {tail_pc})}')
 
-    # Each id the native path registers has to be dormant — nothing in Gboard's own dex should
-    # reference it. A future Gboard version adopting one of them as a real handler would collide
-    # silently at the registry — ours would clobber its entry in the controller's map.
+    # Each id the native path registers has to be unclaimed — nothing in Gboard's own dex should
+    # reference it. These are Flexboard-namespaced now, so this should hold trivially; it is kept
+    # because the consequence of a collision has not changed. A Gboard that ever shipped a real
+    # handler under one of these names would have ours clobber its entry in the controller's map,
+    # silently, and the check costs one dex walk.
     for dorm_id in E['native_button_ids']:
         id_refs = []
         for dex in dl:
@@ -1563,10 +1572,13 @@ def run(dl, apk=None):
             check('native: allowed-set array holds exactly the stock set',
                   len(members) == E['native_allowed_array_size'],
                   f'got {len(members)}, expected {E["native_allowed_array_size"]}')
-            for dorm_id in E['native_button_ids']:
-                check(f'native: {dorm_id!r} is in the toolbar allowed-set array',
-                      dorm_id in members,
-                      f'array has {len(members)} members; {dorm_id!r} not among them')
+            # Not the button ids: those are Flexboard's own and get spliced in by
+            # toolbarSlotsPatch, so their absence from the stock array is the expected state.
+            # What has to be here is the sentinel the splice locates the array by.
+            sentinel = E['native_allowed_set_sentinel']
+            check(f'native: the allowed-set sentinel {sentinel!r} is in the array',
+                  sentinel in members,
+                  f'array has {len(members)} members; {sentinel!r} not among them')
         except Exception as exc:
             check('native: the toolbar allowed-set array is readable', False,
                   f'could not read from {apk}: {exc}')

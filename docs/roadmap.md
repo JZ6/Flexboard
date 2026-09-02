@@ -138,8 +138,8 @@ members were firing the "silently stopped checking" guard.
 The split-method list splice that used to implement toolbar insertion is gone:
 
 - `TextActionsPatch.kt` (three buttons emitted into `Lmlh;->C(List)V`) **deleted** — superseded
-  by `ToolbarButtonsPatch.kt` which registers the same three buttons using dormant-allowed-set
-  ids (`editor_info`, `undo_cooperative`, `muse_toggle_playground_ap`) at `<init>` tail.
+  by `ToolbarButtonsPatch.kt`, which registers the same three buttons at the `<init>` tail using
+  its own admitted ids.
 - `CustomHotkeysPatch.kt` **deleted** — the 12-slot hotkeys feature hung off the same merge
   registry and will come back as native registration with its own ids (three dormant ids remain
   for this — plus `jetson_feedback` and `signboard_education` — and if twelve are needed we
@@ -149,15 +149,20 @@ The split-method list splice that used to implement toolbar insertion is gone:
   order string as-is. The merge class was doing work Customize already knows how to do.
 - `BasePatch` no longer emits the merge call.
 
-The remaining dormant allowed-set ids and their slots:
+The dormant allowed-set ids, none of which Flexboard uses any more:
 
-| id                          | used by                          |
-| --------------------------- | -------------------------------- |
-| `editor_info`               | Select all                       |
-| `undo_cooperative`          | Copy                             |
-| `muse_toggle_playground_ap` | Paste                            |
-| `jetson_feedback`           | free                             |
-| `signboard_education`       | free                             |
+| id                          | status                                        |
+| --------------------------- | --------------------------------------------- |
+| `editor_info`               | the sentinel `ToolbarSlotsPatch` finds the array by |
+| `undo_cooperative`          | free                                          |
+| `muse_toggle_playground_ap` | free                                          |
+| `jetson_feedback`           | free                                          |
+| `signboard_education`       | free                                          |
+
+The text action buttons squatted on the first three until they moved to their own admitted ids
+(`flexboard_select_all`, `flexboard_copy`, `flexboard_paste`), the same way the hotkey slots
+always did. `editor_info` is still load-bearing, but only as a landmark: the allowed-set array's
+name is obfuscated per build, so the splice locates it by looking for a member it knows.
 
 Old prefs on users' devices (`flexboard_select_all` etc. in `mlh.h`, and hotkey values in the
 user's shared-prefs) are orphaned by the swap; neither breaks anything — the old ids drop out

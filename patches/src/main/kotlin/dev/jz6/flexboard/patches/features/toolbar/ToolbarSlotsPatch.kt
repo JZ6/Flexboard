@@ -47,6 +47,13 @@ private const val SLOT_STRINGS = "values/flexboard_toolbar_slots.xml"
  */
 private const val SENTINEL_ID = "editor_info"
 
+/**
+ * How many ids [flexboard_toolbar_slots.xml] admits: [HOTKEY_SLOTS] hotkeys plus the three text
+ * action buttons. Pinned so that adding a string to that file without a patch to register it
+ * fails here rather than shipping a member of Gboard's allowed set that nothing ever draws.
+ */
+private const val ADMITTED_ID_COUNT = HOTKEY_SLOTS + 3
+
 context(context: ResourcePatchContext)
 private fun widenAllowedIdSet() {
     val fragment = {}.javaClass.classLoader
@@ -54,10 +61,19 @@ private fun widenAllowedIdSet() {
         ?.bufferedReader()?.use { it.readText() }
         ?: error("$SLOT_STRINGS not found in patch resources")
 
-    val slotIds = Regex("""name="(flexboard_hotkey_\d+)"""").findAll(fragment)
+    // Every id Flexboard admits, not just the hotkey slots: the text action buttons mint their
+    // own too, rather than squatting on ids Gboard ships dormant. Admission without registration
+    // is inert by Gboard's own design, so a build that selects only one of the two patches simply
+    // carries a few array members nothing draws.
+    val slotIds = Regex("""name="(flexboard_\w+)"""").findAll(fragment)
         .map { it.groupValues[1] }.toList()
-    require(slotIds.size == HOTKEY_SLOTS) {
-        "$SLOT_STRINGS carries ${slotIds.size} slot ids, expected $HOTKEY_SLOTS"
+    val hotkeyIds = slotIds.filter { it.startsWith(HOTKEY_ID_PREFIX) }
+    require(hotkeyIds.size == HOTKEY_SLOTS) {
+        "$SLOT_STRINGS carries ${hotkeyIds.size} hotkey ids, expected $HOTKEY_SLOTS"
+    }
+    require(slotIds.size == ADMITTED_ID_COUNT) {
+        "$SLOT_STRINGS carries ${slotIds.size} admitted ids, expected $ADMITTED_ID_COUNT — a new " +
+            "id needs a patch registering it, or it is an inert array member nobody meant to add"
     }
 
     // 1. Give every id a string resource. The value is deliberately the id itself — the runtime
