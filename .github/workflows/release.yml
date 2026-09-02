@@ -108,6 +108,18 @@ jobs:
           .github/scripts/check_dex_pins.py
           .github/scripts/check_emission_lint.py
 
+      # What is NOT checked here, so nobody has to rediscover it:
+      #
+      # tools/apk/preflight.py holds ~260 pins over the Gboard dex and resource table, and they
+      # are the whole defence against a Gboard bump moving something under the patches. It cannot
+      # run in CI: it needs the APK and its extracted dex, both gitignored, and redistributing
+      # Gboard is not an option. check_patch_resources.py is local-only for the same reason.
+      #
+      # So those lanes are a pre-push hook rather than a workflow step -- `git config
+      # core.hooksPath tools/hooks` installs it, and it warns loudly when the APK is absent
+      # instead of passing quietly. Treat a green CI run as "the Kotlin and the constants agree",
+      # not as "the pins still hold".
+
       # Runs on every push. When this is a release it also produces the artifact; when it is not,
       # it is the compile check. One code path either way.
       - name: Build

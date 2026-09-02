@@ -206,6 +206,13 @@ everything CI would have told you, and CI builds the bundle anyway.
 | `./gradlew :driver:run --args="gboard.apk <bundle>.mpp out.apk"` | the whole pipeline, executed for real — the only gate that *runs* the patches. Needs a built bundle (any released/CI one); with an SDK installed, `patches/build/libs/*.mpp` works too | the artifact is unsigned and lacks the merged extension dex — it proves the pipeline, it is not for installing |
 | Morphe + a device | everything else | nothing — but it is the slowest loop |
 
+**Only the first five run in CI.** `preflight.py` and `check_patch_resources.py` both need the
+Gboard APK, which is gitignored and cannot be redistributed, so the ~260 dex and resource pins —
+the whole defence against a Gboard bump — are a local gate. `git config core.hooksPath tools/hooks`
+installs a pre-push hook that runs them, and warns loudly rather than passing quietly when the APK
+is not present. A green CI run means the Kotlin and the constants agree; it does not mean the pins
+still hold.
+
 They are three different axes, and no two of them substitute for each other. `0.0.1-dev.1`
 compiled and had correct bindings and still bricked the keyboard; `0.0.3-dev.1` compiled, had
 correct bindings, applied cleanly, and silently called the wrong method.
