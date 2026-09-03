@@ -1,3 +1,7 @@
+# [2.1.2-dev.1](https://github.com/JZ6/Flexboard/compare/v2.1.1-dev.0...v2.1.2-dev.1) (2026-09-03)
+
+* **Gboard:** fix: a dash in a comment took every Flexboard button off the toolbar
+
 # [2.1.1-dev.0](https://github.com/JZ6/Flexboard/compare/v2.1.0...v2.1.1-dev.0) (2026-09-02)
 
 * **Gboard:** feat: Bigger Toolbar — raise the ceiling, leave the count alone
