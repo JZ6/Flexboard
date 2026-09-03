@@ -1,3 +1,11 @@
+# [2.1.1-dev.1](https://github.com/JZ6/Flexboard/compare/v2.1.0...v2.1.1-dev.1) (2026-09-03)
+
+* **Gboard:** refactor: fold a single-consumer helper out of shared/, keep a redundant edge
+* **Gboard:** refactor: split ToolbarRegistry along the seams it already had
+* **Gboard:** refactor: remove the parked swipe-length scaling and everything holding it up
+* **Gboard:** revert: drop the R6 lint rule, and correct what it was enforcing
+* **Gboard:** fix: resolve Flexboard's resources by name even on a renamed package
+
 # [2.1.0](https://github.com/JZ6/Flexboard/compare/v2.0.1...v2.1.0) (2026-09-02)
 
 * **Gboard:** fix: the vibration patch was turning vibration off
