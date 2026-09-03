@@ -59,6 +59,33 @@ to release from one.
 With pre-releases enabled the manager fetches **both** branches and keeps whichever `version` is
 higher, ties going to `dev`.
 
+Read out of the manager rather than inferred, in
+`app/src/main/java/app/morphe/manager/domain/bundles/RemotePatchBundle.kt`:
+
+| | |
+|---|---|
+| `BRANCH_STABLE = "main"`, `BRANCH_DEV = "dev"` | the two constants, no configuration path to either |
+| `resolveBranchUrl` | `switchBranchInUrl(url, if (usePrerelease) BRANCH_DEV else BRANCH_STABLE)` — a string swap of the branch segment |
+| `supportsPrerelease` | true **only** when the endpoint's branch is literally `main` or `dev`. A source pointed at any other branch loses the toggle entirely rather than failing loudly |
+| `getLatestInfo()` | pre-releases on: fetches both in parallel and takes `compareVersions(dev, stable) >= 0 ? dev : stable`. Off: **one** request, to the resolved branch |
+
+### A suffix on `main` is served to everyone
+
+The manager never inspects the version string to decide *whether* to offer a build — only to rank
+it. With pre-releases off, `getLatestInfo()` makes a single request to `main` and serves whatever
+`version` that JSON carries. `patches-bundle.json` has no `prerelease` field for it to consult;
+the branch is the only channel signal that exists.
+
+So `3.0.0-dev.0` on `main` reaches every user who never opted into pre-releases, and the GitHub
+release is labelled stable besides, because `release.yml` sets `prerelease` from the branch and
+not from the version. It corrects itself at the next stable — `3.0.0` outranks `3.0.0-dev.0` — but
+until then the stable channel is serving a dev build.
+
+Nothing upstream prevents this. `tools/promote` refuses a suffixed version, but that is a
+convenience wrapper; `check_version.sh`, which is what CI always runs, currently permits it, and
+the documented "edit the version line on github.com" path bypasses `promote` entirely. If that
+gap matters, close it in `check_version.sh`, not in `promote`.
+
 ## Choosing the version
 
 Pre-releases on `dev` are `MAJOR.MINOR.PATCH-dev.N` — `1.0.1-dev.1`, `1.0.1-dev.2`, and so on.
@@ -87,6 +114,12 @@ but it gets no `-pr1`: the next pre-release is `1.0.1-dev.1`, because `1.0.0-dev
 `patches-bundle.json`, and `CHANGELOG.md`. Not the tag, not the GitHub release, not
 `patches-list.json`, not the `prerelease` checkbox — those exist for people. The GitHub release is
 merely where the `.mpp` file happens to live; the JSON is what announces it.
+
+The bundle JSON carries five fields — `created_at`, `description`, `download_url`,
+`signature_download_url`, `version` — and **none of them is a channel flag**. That is the whole
+reason the branch has to be the channel: it is the only signal the manager has. Nor does it read
+git history, which is why rewriting this branch is safe here in a way the template's warnings
+imply it is not (see *Why not semantic-release*).
 
 `CHANGELOG.md` is optional but not inert. The manager derives its URL from the source endpoint by
 swapping the filename, parses it for in-app changelog entries, and uses it to *refine* the
