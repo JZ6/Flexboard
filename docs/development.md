@@ -217,6 +217,41 @@ They are three different axes, and no two of them substitute for each other. `0.
 compiled and had correct bindings and still bricked the keyboard; `0.0.3-dev.1` compiled, had
 correct bindings, applied cleanly, and silently called the wrong method.
 
+`2.1.1-dev.0` added a fourth to that list, and it is the one to read before trusting a green run.
+
+### A green gate that was not a gate
+
+Every Flexboard button vanished from the toolbar on a real phone — hotkeys and text actions at
+once — while `compileKotlin`, all three CI scripts and preflight's 263 pins passed. The cause was
+four characters: `fe64807` put a literal `--` inside an XML comment in
+`values/flexboard_toolbar_slots.xml`, which XML forbids, and that fragment is spliced into
+Gboard's `strings.xml`. The merged file was malformed, `widenAllowedIdSet` threw, Morphe caught
+the failing patch and continued, and the build shipped with no ids admitted. `Lmlh.w` then dropped
+every access point registered against an id that never reached the allowed set.
+
+Three things conspired, and each is worth carrying:
+
+1. **The five checks above cannot see this, and the table already said so.** Everything except
+   `check_patch_resources.py` reads the *stock* APK to confirm Gboard's bindings have not moved.
+   Not one of them looks at what the bundle produces. "263/263 passed" is a statement about
+   Gboard, not about the build.
+2. **A red lane guards nothing.** `check_patch_resources.py` is the one check that would have
+   caught it, and it had been failing for unrelated reasons since the settings template grew
+   section sentinels — it knew only `@FLEXBOARD_VERSION@`, hit `@SECTION_SWIPE_TO_DELETE@`, and
+   stopped before replaying a single values merge. It was red, so it was skipped, so it stayed
+   red. Fix a failing lane or delete it; leaving it red is the worst of the three options.
+3. **An assertion that names the wrong file costs more than no assertion.** The well-formedness
+   check fired correctly, but ran on the *merged* output, so it reported `strings.xml` — sending
+   the reader into 5000 lines of Gboard's resources instead of the ten lines of ours that broke
+   them. Parse your own inputs, by their own name, before merging them into somebody else's file.
+
+The fix removed the class rather than the instance: the fragment is parsed on read, and comments
+are stripped instead of copied, so maintainer prose can never reach Gboard's resources again.
+Both the patch and the replay lane do this, in step.
+
+**If you change anything under `patches/src/main/resources/`, run `check_patch_resources.py`.**
+It is the only gate that sees the output, and it is not in CI.
+
 Put the credentials in `~/.gradle/gradle.properties`, **never** in the repository's own
 `gradle.properties` — that file is tracked, because its `version` line is what triggers a release.
 CI supplies the same values from `GITHUB_ACTOR` / `GITHUB_TOKEN`, which `settings.gradle.kts`

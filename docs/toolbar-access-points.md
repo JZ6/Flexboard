@@ -13,6 +13,13 @@ preflight pins `toolbar_*` and `docs/gboard-bindings.md` for the anchor table).
 
 ## The admission mechanism, end to end
 
+> **If admission fails, every Flexboard button disappears at once and nothing says why.** The ids
+> are spliced in as text, so a malformed fragment throws inside the patch, Morphe catches it and
+> carries on, and the build ships with the allowed set untouched — `Lmlh.w` then drops every
+> registered access point silently. That shipped in `2.1.1-dev.0` over a `--` inside an XML
+> comment. Run `tools/apk/check_patch_resources.py` after touching anything under
+> `patches/src/main/resources/`; see *A green gate that was not a gate* in `docs/development.md`.
+
 Everything keys on one immutable name set, built **once per controller** from one resource:
 
 ```
