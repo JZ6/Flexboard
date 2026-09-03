@@ -62,6 +62,14 @@ private fun widenAllowedIdSet() {
         ?.bufferedReader()?.use { it.readText() }
         ?: error("$ADMITTED_IDS not found in patch resources")
 
+    // Parse our own fragment before anything downstream touches it. It went into Gboard's
+    // strings.xml unparsed once: a literal "--" inside one of its comments, which XML forbids.
+    // The only thing that noticed was the well-formedness check on the *merged* file, and that
+    // names strings.xml -- pointing the diagnosis at Gboard rather than at the four lines of ours
+    // that caused it. Morphe then caught the thrown patch and carried on, so the build shipped
+    // with nothing admitted and every Flexboard toolbar button dropped at render.
+    assertWellFormedXml(fragment, ADMITTED_IDS)
+
     // Every id Flexboard admits, not just the hotkey slots: the text action buttons mint their
     // own too, rather than squatting on ids Gboard ships dormant. Admission without registration
     // is inert by Gboard's own design, so a build that selects only one of the two patches simply
@@ -149,9 +157,15 @@ private fun assertWellFormedXml(xml: String, where: String) {
  * fragment is non-empty and wrapper-free errs at patch time instead.
  */
 private fun spliceValues(fragment: String, existingValues: String, marker: String): String {
+    // Comments are stripped rather than copied. Everything between the tags used to cross over
+    // verbatim, which put maintainer prose into Gboard's strings.xml -- noise at best, and a
+    // well-formedness hazard at worst, since an XML comment may not contain "--" and prose
+    // explaining a trade-off reaches for a dash sooner or later.
     val inner = fragment
         .substringAfter("<resources>", missingDelimiterValue = "")
         .substringBeforeLast("</resources>")
+        .replace(Regex("""<!--.*?-->""", RegexOption.DOT_MATCHES_ALL), "")
+        .lines().filter { it.isNotBlank() }.joinToString("\n")
         .trim()
     require(inner.isNotEmpty()) { "the values fragment has no entries to merge" }
     require(!inner.contains("<resources")) { "the fragment still carries its <resources> wrapper" }

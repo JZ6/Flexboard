@@ -6,7 +6,7 @@
 
   wired into res/values/strings.xml by ToolbarSlotsPatch, which then appends @string refs of
   these names into the allowed-set array. Nothing here renders unless a patch also registers a
-  matching access point -- admission without registration is inert by Gboard's own design
+  matching access point. Admission without registration is inert by Gboard's own design
   (docs/toolbar-access-points.md).
 -->
 <resources>
@@ -19,7 +19,7 @@
 
     <!--
       The text action buttons. These used to squat on three access-point ids that Gboard ships in
-      its allowed set but never registers a handler for -- editor_info, undo_cooperative and
+      its allowed set but never registers a handler for: editor_info, undo_cooperative and
       muse_toggle_playground_ap. That worked, and depended on Google leaving all three dormant in
       a build nobody here controls; the day one of them becomes real, our button clobbers its
       entry in the controller's map rather than failing a patch assertion. Minting our own costs
