@@ -1,0 +1,94 @@
+#!/bin/sh
+# Flexboard's gate. One command, every lane, honest about what did not run.
+#
+# This exists because "the gate" used to be a list reassembled from memory at each call site, and
+# on 2026-09-02 the list came up one lane short. check_patch_resources.py -- the only check that
+# looks at what the bundle *produces* rather than at the stock APK -- was left out, and a malformed
+# values fragment took every Flexboard button off the toolbar while "263/263 passed" scrolled by.
+# See "A green gate that was not a gate" in docs/development.md.
+#
+# So: the set of lanes lives here, in one place, and a lane that does not run says SKIP rather
+# than passing quietly.
+#
+#   tools/gate                  every lane
+#   tools/gate --no-resources   skip the slow arsclib rebuild, and say so in the summary
+#
+# Exit status is non-zero if any lane FAILED. A SKIP is not a failure -- CI legitimately cannot
+# run the two lanes that need the Gboard APK -- but it is never reported as a pass.
+
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+run_resources=1
+for arg in "$@"; do
+    case "$arg" in
+        --no-resources) run_resources=0 ;;
+        -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "gate: unknown option $arg" >&2; exit 2 ;;
+    esac
+done
+
+results=""
+failed=0
+skipped=0
+
+record() { results="${results}${1}\t${2}\n"; }
+
+lane() {
+    name=$1
+    shift
+    printf '\n=== %s ===\n' "$name"
+    if "$@"; then
+        record "$name" PASS
+    else
+        record "$name" FAIL
+        failed=$((failed + 1))
+    fi
+}
+
+skip() {
+    printf '\n=== %s ===\n  SKIPPED: %s\n' "$1" "$2"
+    record "$1" "SKIP"
+    skipped=$((skipped + 1))
+}
+
+have_apk() { [ -e gboard.apk ] && [ -d gboard-apk ]; }
+
+lane "compile"        ./gradlew :patches:compileKotlin :extension-check:compileJava -q
+lane "constants"      python3 .github/scripts/check_shared_constants.py
+lane "dex pins"       python3 .github/scripts/check_dex_pins.py
+lane "emission lint"  python3 .github/scripts/check_emission_lint.py
+
+if have_apk; then
+    lane "preflight" python3 tools/apk/preflight.py gboard-apk gboard.apk
+else
+    skip "preflight" "gboard.apk and/or gboard-apk/ absent — every dex and resource pin is unverified"
+fi
+
+if [ "$run_resources" -eq 0 ]; then
+    skip "resources" "--no-resources given — nothing checked what the bundle actually writes"
+elif have_apk; then
+    lane "resources" python3 tools/apk/check_patch_resources.py gboard.apk
+else
+    skip "resources" "gboard.apk absent — the resource replay and table rebuild cannot run"
+fi
+
+printf '\n===== gate =====\n'
+printf "$results" | while IFS="$(printf '\t')" read -r name status; do
+    printf '  %-16s %s\n' "$name" "$status"
+done
+
+if [ "$skipped" -gt 0 ]; then
+    printf '\n  %s lane(s) SKIPPED. A skipped lane is not a passed lane: the checks that need the\n' "$skipped"
+    printf '  Gboard APK are the whole defence against a bump, and the resource lane is the only\n'
+    printf '  one that sees the patched output at all.\n'
+fi
+
+if [ "$failed" -gt 0 ]; then
+    printf '\n  %s lane(s) FAILED.\n' "$failed"
+    exit 1
+fi
+
+printf '\n  all run lanes passed\n'

@@ -109,7 +109,20 @@ class Dex:
         return dict(registers=rs, ins=ins, outs=outs, insns_off=off+16, insns_size=isz)
 
     def walk(self, c):
-        """Yield (pc, opcode, mnemonic, operand_text) over one code_item."""
+        """Yield (pc, opcode, mnemonic, operand_text) over one code_item.
+
+        Every instruction is yielded. Ones this method does not decode come back with their real
+        mnemonic and ``operand_text=None`` rather than being dropped.
+
+        It used to drop them. That made the stream silently lossy: a method whose body was
+        ``const/16 v5, 8 / if-gt / if-lt / goto / move`` rendered as three unrelated constants and
+        no control flow, and a clamp was read off it as unreachable when it was two instructions
+        from being edited. Callers here all filter by mnemonic or operand text, so the extra rows
+        are inert to them -- but nothing downstream can now mistake absence for absence.
+
+        For anything that reasons about control flow, use ``dis.show()`` / ``dis.disasm()``, which
+        decode operands and branch targets properly. This is a scanner, not a disassembler.
+        """
         b = self.b; base = c['insns_off']; end = base + 2*c['insns_size']; p = base
         while p < end:
             unit = struct.unpack_from('<H', b, p)[0]
@@ -151,9 +164,25 @@ class Dex:
             elif op in (0x0a, 0x0b, 0x0c):
                 mn = ['move-result','move-result-wide','move-result-object'][op-0x0a]
                 txt = f"v{(unit>>8)&0xff}"
-            if mn:
-                yield (p - base)//2, op, mn, txt
+            if mn is None:
+                mn = _mnemonic(op)
+            yield (p - base)//2, op, mn, txt
             p += 2*n
+
+
+
+def _mnemonic(op):
+    """Real mnemonic for an opcode `walk` does not decode.
+
+    Lazily borrows dis.py's table -- dis imports dexlib, so a module-level import here would be
+    circular. Falls back to the hex opcode rather than inventing a name.
+    """
+    try:
+        import dis as _dis
+        entry = _dis.N.get(op)
+        return entry[0] if entry else f'op:{op:#04x}'
+    except Exception:
+        return f'op:{op:#04x}'
 
 
 def load(dirpath='/tmp/gb'):

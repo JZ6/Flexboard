@@ -1,14 +1,16 @@
 #!/bin/sh
 # Flexboard pre-push gate.
 #
-# CI runs three lanes: the constants checker, the dex-pin checker and the emission lint. It cannot
-# run tools/apk/preflight.py, because that needs the Gboard APK and its extracted dex, and neither
-# can live in the repository -- both are gitignored, and redistributing Gboard is not an option.
+# Delegates to tools/gate, which owns the list of lanes. It used to keep its own copy of that
+# list, and the copy drifted: the hook ran three CI scripts plus preflight and never ran
+# check_patch_resources.py, the one lane that looks at what the bundle produces rather than at the
+# stock APK. On 2026-09-02 a malformed values fragment shipped through that gap and took every
+# Flexboard button off the toolbar. Two lists meant one of them was wrong; now there is one.
 #
-# So the ~260 pins that are the whole defence against a Gboard bump are a local gate, and the
-# review that found this was right that "a human must remember to run it" is not a gate at all.
-# This runs it for you, and when the APK is not present it says so loudly rather than passing
-# quietly, because a skipped check that looks like a green one is the thing being avoided.
+# CI cannot run preflight or the resource lane -- both need the Gboard APK, which is gitignored
+# and cannot be redistributed -- so those pins are a local gate. tools/gate reports them as SKIP
+# rather than passing quietly when the APK is absent, because a skipped check that looks green is
+# the thing being avoided.
 #
 # Install:  git config core.hooksPath tools/hooks
 # Bypass:   git push --no-verify
@@ -18,19 +20,5 @@ set -eu
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
-echo "pre-push: constants, dex pins, emission lint"
-python3 .github/scripts/check_shared_constants.py
-python3 .github/scripts/check_dex_pins.py
-python3 .github/scripts/check_emission_lint.py
-
-if [ -e gboard.apk ] && [ -d gboard-apk ]; then
-    echo "pre-push: preflight"
-    python3 tools/apk/preflight.py gboard-apk gboard.apk
-else
-    echo
-    echo "pre-push: WARNING — preflight did NOT run."
-    echo "  gboard.apk and/or gboard-apk/ are missing, so every dex and resource pin is"
-    echo "  unverified. CI cannot cover these. Push only if you have not touched a"
-    echo "  fingerprint, an emission site, a resource id or a register count."
-    echo
-fi
+echo "pre-push: running tools/gate"
+exec tools/gate

@@ -249,8 +249,10 @@ The fix removed the class rather than the instance: the fragment is parsed on re
 are stripped instead of copied, so maintainer prose can never reach Gboard's resources again.
 Both the patch and the replay lane do this, in step.
 
-**If you change anything under `patches/src/main/resources/`, run `check_patch_resources.py`.**
-It is the only gate that sees the output, and it is not in CI.
+**Run [`../tools/gate`](../tools/gate).** It owns the list of lanes so no call site has to
+remember it, reports a lane that did not run as `SKIP` rather than folding it into a pass, and is
+what `tools/hooks/pre-push` executes. Install the hook once with
+`git config core.hooksPath tools/hooks`.
 
 Put the credentials in `~/.gradle/gradle.properties`, **never** in the repository's own
 `gradle.properties` — that file is tracked, because its `version` line is what triggers a release.
