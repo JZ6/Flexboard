@@ -1,3 +1,20 @@
+# [2.2.0](https://github.com/JZ6/Flexboard/compare/v2.1.0...v2.2.0) (2026-09-03)
+
+* **Gboard:** fix: a dash in a comment took every Flexboard button off the toolbar
+* **Gboard:** feat: Bigger Toolbar — raise the ceiling, leave the count alone
+* **Gboard:** docs: the capacity plan, and why owning the count was the mistake
+* **Gboard:** refactor: one copy of the controller-constructor prologue
+* **Gboard:** refactor: name the id-admission patch for what it admits
+* **Gboard:** feat: text action buttons mint their own ids instead of squatting
+* **Gboard:** feat: rename Toolbar Buttons to Text Action Buttons
+* **Gboard:** feat: retire Toolbar Native Test, rename Swipe to Delete
+* **Gboard:** refactor: move the toolbar engine into the toolbar feature
+* **Gboard:** refactor: fold a single-consumer helper out of shared/, keep a redundant edge
+* **Gboard:** refactor: split ToolbarRegistry along the seams it already had
+* **Gboard:** refactor: remove the parked swipe-length scaling and everything holding it up
+* **Gboard:** revert: drop the R6 lint rule, and correct what it was enforcing
+* **Gboard:** fix: resolve Flexboard's resources by name even on a renamed package
+
 # [2.1.2-dev.1](https://github.com/JZ6/Flexboard/compare/v2.1.1-dev.0...v2.1.2-dev.1) (2026-09-03)
 
 * **Gboard:** fix: a dash in a comment took every Flexboard button off the toolbar
