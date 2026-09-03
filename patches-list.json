@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "2.1.1-dev.1",
+  "version": "2.1.1-dev.2",
   "patches": [
     {
       "name": "Bypass Gboard Signature",
@@ -127,10 +127,13 @@
       "options": []
     },
     {
-      "name": "Swipe Right to Undo",
-      "description": "Swipe right after deleting to put the words back \u2014 the swipe starts on the Delete key, or anywhere when Swipe to Delete is also applied. Uses Gboard's own undo, which already records what a delete swipe removed.",
+      "name": "Swipe Left to Delete",
+      "description": "Swipe left anywhere on the keyboard to delete the previous word, and swipe right to restore it. Uses Gboard's own word-scrub engine, so it behaves exactly like swiping on the backspace key already does — only it can start anywhere.",
       "default": true,
       "dependencies": [
+        "BytecodePatch",
+        "BytecodePatch",
+        "ResourcePatch",
         "BytecodePatch"
       ],
       "compatiblePackages": [
@@ -158,13 +161,10 @@
       "options": []
     },
     {
-      "name": "Swipe Left to Delete",
-      "description": "Swipe left anywhere on the keyboard to delete the previous word, and swipe right to restore it. Uses Gboard's own word-scrub engine, so it behaves exactly like swiping on the backspace key already does \u2014 only it can start anywhere.",
+      "name": "Swipe Right to Undo",
+      "description": "Swipe right after deleting to put the words back — the swipe starts on the Delete key, or anywhere when Swipe Left to Delete is also applied. Uses Gboard's own undo, which already records what a delete swipe removed.",
       "default": true,
       "dependencies": [
-        "BytecodePatch",
-        "BytecodePatch",
-        "ResourcePatch",
         "BytecodePatch"
       ],
       "compatiblePackages": [
@@ -224,7 +224,7 @@
     },
     {
       "name": "Toolbar Hotkeys",
-      "description": "Adds six configurable hotkey slots to Gboard's toolbar \u2014 each commits a text of your choice on tap. A slot appears when its text is set; when cleared it hides at the next toolbar rebuild (rotate, switch IME, or restart \u2014 there's no mid-session un-register). Text and icon edits apply on the next keyboard open.",
+      "description": "Adds six configurable hotkey slots to Gboard's toolbar — each commits a text of your choice on tap. A slot appears when its text is set; when cleared it hides at the next toolbar rebuild (rotate, switch IME, or restart — there's no mid-session un-register). Text and icon edits apply on the next keyboard open.",
       "default": true,
       "dependencies": [
         "BytecodePatch",

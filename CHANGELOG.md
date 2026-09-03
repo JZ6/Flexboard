@@ -1,3 +1,9 @@
+# [2.1.1-dev.2](https://github.com/JZ6/Flexboard/compare/v2.1.1-dev.1...v2.1.1-dev.2) (2026-09-03)
+
+* **Gboard:** feat: rename Toolbar Buttons to Text Action Buttons
+* **Gboard:** feat: retire Toolbar Native Test, rename Swipe to Delete
+* **Gboard:** refactor: move the toolbar engine into the toolbar feature
+
 # [2.1.1-dev.1](https://github.com/JZ6/Flexboard/compare/v2.1.0...v2.1.1-dev.1) (2026-09-03)
 
 * **Gboard:** refactor: fold a single-consumer helper out of shared/, keep a redundant edge

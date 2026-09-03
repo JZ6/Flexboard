@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-09-03T03:48:31",
-  "description": "## 2.1.1-dev.1\n\n- refactor: fold a single-consumer helper out of shared/, keep a redundant edge\n- refactor: split ToolbarRegistry along the seams it already had\n- refactor: remove the parked swipe-length scaling and everything holding it up\n- revert: drop the R6 lint rule, and correct what it was enforcing\n- fix: resolve Flexboard's resources by name even on a renamed package",
-  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v2.1.1-dev.1/patches-2.1.1-dev.1.mpp",
+  "created_at": "2026-09-03T04:00:01",
+  "description": "## 2.1.1-dev.2\n\n- feat: rename Toolbar Buttons to Text Action Buttons\n- feat: retire Toolbar Native Test, rename Swipe to Delete\n- refactor: move the toolbar engine into the toolbar feature",
+  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v2.1.1-dev.2/patches-2.1.1-dev.2.mpp",
   "signature_download_url": "",
-  "version": "2.1.1-dev.1"
+  "version": "2.1.1-dev.2"
 }
