@@ -153,10 +153,18 @@ private const val ENTRY_KEY = "flexboard_settings"
 private const val ENTRY_TITLE = "Flexboard"
 
 /**
- * Deliberately vague about *which* settings. The screen's contents depend on which patches were
- * ticked, and naming the sliders meant rewriting this line each time a feature landed.
+ * Deliberately not a list of what is inside. The screen's contents depend on which patches were
+ * ticked -- swipe rows, hotkey rows, both, or neither plus the version -- so any line naming the
+ * sliders is wrong for most selections and has to be rewritten whenever a feature lands. The
+ * previous one, "Gesture settings", was accurate only when Swipe Left to Delete was the sole
+ * patch selected: hotkeys are not gestures, and a hotkeys-only build showed no gestures at all.
+ *
+ * Deliberately does not mention Morphe either. NOTICE 7c permits references only for descriptive
+ * compatibility and forbids anything suggesting authorship by the Morphe project, and this row is
+ * Flexboard's primary identifying mark inside Gboard. It is also the wrong audience: whoever is
+ * reading this is in Gboard's settings, not in a patch manager.
  */
-private const val ENTRY_SUMMARY = "Gesture settings"
+private const val ENTRY_SUMMARY = "Patches that make your Gboard better"
 
 /**
  * Filters the settings template to only the sections whose features were ticked, removing

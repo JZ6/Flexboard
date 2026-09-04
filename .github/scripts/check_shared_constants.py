@@ -408,6 +408,44 @@ def _check_stock_package_name(problems):
 
 
 
+def _check_settings_row_mirror(problems):
+    """SettingsScreenPatch and the resource replay agree on the row the patch writes.
+
+    check_patch_resources.py keeps SETTINGS_ROW_ATTRS as a mirror of addFlexboardEntry, and its
+    header calls that coupling deliberate. Nothing enforced it. The list is used to *construct*
+    the row during replay, not to assert against one, so a drifted value produces a row that is
+    still well-formed and the lane passes while rehearsing something the patch does not write.
+    Changing the summary in the patch and not here was caught only because someone happened to
+    grep for the old string.
+
+    It matters most for the values that are not cosmetic: a stale `icon` or `fragment` would have
+    the replay prove that a row nobody ships still encodes.
+
+    Checked here rather than there because this script runs in CI and that one cannot -- it needs
+    the Gboard APK.
+    """
+    kt = (PATCHES / "dev/jz6/flexboard/patches/shared/SettingsScreenPatch.kt").read_text()
+    py = (ROOT / "tools" / "apk" / "check_patch_resources.py").read_text()
+
+    mirror = re.search(r"SETTINGS_ROW_ATTRS = \[(.*?)\]", py, re.S)
+    if not mirror:
+        problems.append("  SETTINGS_ROW_ATTRS not found in check_patch_resources.py")
+        return
+    mirrored = dict(re.findall(r'\(\s*"([^"]+)"\s*,\s*"([^"]*)"\s*\)', mirror.group(1)))
+
+    for attr, const in (("title", "ENTRY_TITLE"), ("summary", "ENTRY_SUMMARY"), ("key", "ENTRY_KEY")):
+        m = re.search(rf'{const}\s*=\s*"([^"]*)"', kt)
+        if not m:
+            problems.append(f"  {const} not found in SettingsScreenPatch.kt")
+            continue
+        if mirrored.get(attr) != m.group(1):
+            problems.append(
+                f"  the settings row's {attr} is {m.group(1)!r} in SettingsScreenPatch.kt but "
+                f"{mirrored.get(attr)!r} in check_patch_resources.py's SETTINGS_ROW_ATTRS — the "
+                f"resource lane is rehearsing a row the patch does not write"
+            )
+
+
 def _check_allowed_set_sentinel(problems):
     """toolbarIdAdmissionPatch and preflight agree on which stock id locates the allowed-set array.
 
@@ -750,6 +788,7 @@ def main():
     _check_section_sentinels(problems)
     _check_stock_package_name(problems)
     _check_allowed_set_sentinel(problems)
+    _check_settings_row_mirror(problems)
     _check_settings_xml(problems, kotlin)
     _check_dotted_extension_classes(problems)
     _check_screen_contract(problems, kotlin)
