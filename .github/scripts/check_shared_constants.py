@@ -39,6 +39,9 @@ PAIRS = [
     # Hotkeys: the slot fan-out moving with the extension. (No count slider by design —
     # placeholders ship; clearing a slot's text hides it.)
     ("HOTKEY_SLOTS", "SLOT_COUNT"),
+    # The About section's Source row: the key the template writes and the key the click
+    # handler matches on. A drift here is a row that silently does nothing when tapped.
+    ("ABOUT_SOURCE_KEY", "ABOUT_SOURCE_KEY"),
 ]
 
 # The slider contract between ScrubTuningPatch.kt and flexboard_settings.xml: the Kotlin name of
@@ -446,6 +449,48 @@ def _check_settings_row_mirror(problems):
             )
 
 
+def _check_source_url(problems):
+    """The project URL is the same in all three places that state it.
+
+    build.gradle.kts's about { } block is what Morphe Manager shows; Constants.kt feeds the
+    settings screen's About row; FlexboardSettingsFragment opens it when that row is tapped. A
+    settings screen pointing somewhere the bundle metadata does not is worse than either being
+    wrong alone, and nothing else would notice -- the row would open a real page, just not this
+    project's.
+    """
+    gradle = (ROOT / "patches" / "build.gradle.kts").read_text()
+    kt = (PATCHES / "dev/jz6/flexboard/patches/shared/Constants.kt").read_text()
+    java = (EXTENSION_ROOT / "dev/jz6/flexboard/extension/settings/FlexboardSettingsFragment.java").read_text()
+
+    found = {}
+    for label, text, pattern in (
+        ("build.gradle.kts", gradle, r'source\s*=\s*"([^"]+)"'),
+        ("Constants.kt", kt, r'SOURCE_URL\s*=\s*"([^"]+)"'),
+        ("FlexboardSettingsFragment.java", java, r'SOURCE_URL\s*=\s*"([^"]+)"'),
+    ):
+        m = re.search(pattern, text)
+        if not m:
+            problems.append(f"  no source URL found in {label}")
+        else:
+            found[label] = m.group(1)
+
+    if len(set(found.values())) > 1:
+        problems.append(
+            "  the project URL disagrees across the files that state it: "
+            + ", ".join(f"{k} says {v!r}" for k, v in sorted(found.items()))
+        )
+
+    # The displayed form must be the real one with its scheme removed, or the row prints a link
+    # that does not match the page it opens.
+    full = found.get("Constants.kt")
+    m = re.search(r'SOURCE_URL_SHORT\s*=\s*"([^"]+)"', kt)
+    if full and m and m.group(1) != re.sub(r"^https?://", "", full):
+        problems.append(
+            f"  SOURCE_URL_SHORT is {m.group(1)!r} but SOURCE_URL is {full!r} — the About row "
+            f"would print one link and open another"
+        )
+
+
 def _check_allowed_set_sentinel(problems):
     """toolbarIdAdmissionPatch and preflight agree on which stock id locates the allowed-set array.
 
@@ -789,6 +834,7 @@ def main():
     _check_stock_package_name(problems)
     _check_allowed_set_sentinel(problems)
     _check_settings_row_mirror(problems)
+    _check_source_url(problems)
     _check_settings_xml(problems, kotlin)
     _check_dotted_extension_classes(problems)
     _check_screen_contract(problems, kotlin)

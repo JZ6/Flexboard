@@ -113,6 +113,13 @@ internal val settingsScreenPatch = resourcePatch(
         // can never disagree.
         writePatchResource("flexboard_settings.xml", "res/xml", mapOf(
             "FLEXBOARD_VERSION" to readVersion(),
+            // Which Gboard this bundle was built against. Worth showing: when a Play update moves
+            // Gboard on and a patch quietly stops applying, this row is the only thing on the
+            // device that explains why.
+            "GBOARD_TARGET" to (COMPATIBILITY_GBOARD.targets.firstOrNull()?.version
+                ?: error("COMPATIBILITY_GBOARD declares no target — the About row would claim to " +
+                    "be built for nothing")).substringBefore("-"),
+            "SOURCE_URL_SHORT" to Constants.SOURCE_URL_SHORT,
         ), ::filterSettingsSections)
 
         // Both top-level screens: Gboard picks between them at runtime (SettingsActivity.t()), and
@@ -150,6 +157,14 @@ private const val PREFERENCE_TAG =
     "com.google.android.libraries.inputmethod.settings.widget.HeaderPreference"
 
 private const val ENTRY_KEY = "flexboard_settings"
+
+/**
+ * The About section's Source row. Declared here even though the patch never reads it -- the row
+ * lives in the static template and the tap is handled in the extension -- because every key in
+ * flexboard_settings.xml has to be the value of a patch constant, and paired with the extension's
+ * own copy so the row and its handler cannot drift apart into a tap that does nothing.
+ */
+internal const val ABOUT_SOURCE_KEY = "flexboard_about_source"
 private const val ENTRY_TITLE = "Flexboard"
 
 /**

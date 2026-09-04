@@ -12,6 +12,10 @@ public abstract class Context {
 
     public abstract Context getApplicationContext();
 
+    /** Concrete, not abstract: InputMethodService below extends this and is not abstract. */
+    public void startActivity(Intent intent) {
+    }
+
     public abstract String getPackageName();
 
     public abstract SharedPreferences getSharedPreferences(String name, int mode);

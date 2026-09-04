@@ -302,6 +302,20 @@ def replay(scratch):
         # Same substitution :patches:processResources performs for the settings screen.
         if "@FLEXBOARD_VERSION@" in xml:
             xml = xml.replace("@FLEXBOARD_VERSION@", bundle_version())
+        # The rest of writePatchResource's substitution map for the settings screen. Read out of
+        # Constants.kt rather than repeated here: a second copy of a URL is a second thing to get
+        # wrong, and this lane exists to prove the shipped file, not a plausible one.
+        consts = (REPO / "patches" / "src" / "main" / "kotlin" / "dev" / "jz6" / "flexboard"
+                  / "patches" / "shared" / "Constants.kt").read_text()
+        for placeholder, pattern, transform in (
+            ("@SOURCE_URL_SHORT@", r'SOURCE_URL_SHORT\s*=\s*"([^"]+)"', lambda v: v),
+            ("@GBOARD_TARGET@", r'version\s*=\s*"([\d.]+[^"]*)"', lambda v: v.split("-")[0]),
+        ):
+            if placeholder in xml:
+                m = re.search(pattern, consts)
+                if not m:
+                    fail("replay", f"{placeholder} has no source in Constants.kt")
+                xml = xml.replace(placeholder, transform(m.group(1)))
         # Same section filtering filterSettingsSections performs at patch time. This lane only
         # knew about @FLEXBOARD_VERSION@, so the day the settings template grew section sentinels
         # every run failed on the first one and stopped before replaying anything after it --

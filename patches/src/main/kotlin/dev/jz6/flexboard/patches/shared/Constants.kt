@@ -7,6 +7,18 @@ import app.morphe.patcher.patch.Compatibility
 internal object Constants {
     const val GBOARD_PACKAGE_NAME = "com.google.android.inputmethod.latin"
 
+    /**
+     * The project's own URL, shown in the settings screen's About section and opened when the
+     * Source row is tapped. Declared here *and* in `patches/build.gradle.kts`'s `about { }` block,
+     * which is what Morphe Manager shows; check_shared_constants holds the two together, because
+     * a settings screen pointing somewhere the bundle metadata does not is worse than either
+     * alone.
+     */
+    const val SOURCE_URL = "https://github.com/JZ6/Flexboard"
+
+    /** The same link without its scheme. Shown, not followed -- a summary row is not a browser. */
+    const val SOURCE_URL_SHORT = "github.com/JZ6/Flexboard"
+
     /** Renaming to this is what lets a patched build sit alongside the official Gboard. */
     const val GBOARD_PATCHED_PACKAGE_NAME = "dev.jz6.com.google.android.inputmethod.latin"
 

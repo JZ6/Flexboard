@@ -116,7 +116,21 @@
             android:icon="@drawable/flexboard_settings_icon"
             android:persistent="false"
             android:selectable="false"
+            android:summary="Built for Gboard @GBOARD_TARGET@"
             android:title="Flexboard @FLEXBOARD_VERSION@" />
+
+        <!--
+          Tappable, unlike the row above it. Click dispatch reaches
+          FlexboardSettingsFragment.aA(Preference) by key, the same path Export and Import use, so
+          this is a mechanism already proven on a device rather than a nested <intent> nobody here
+          has run. The URL is the summary rather than hidden behind the title because a link you
+          cannot read is a link you cannot retype on another machine.
+        -->
+        <Preference
+            android:key="flexboard_about_source"
+            android:persistent="false"
+            android:summary="@SOURCE_URL_SHORT@"
+            android:title="Source" />
 
     </PreferenceCategory>
 

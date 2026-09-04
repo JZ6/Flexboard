@@ -6,7 +6,9 @@ patches {
     // project name restriction in NOTICE.
     about {
         name = "Flexboard"
-        description = "Swipe anywhere on the keyboard to delete the previous word."
+        description = "Swipe to delete and undo, configurable toolbar hotkeys, one-tap " +
+            "select all, copy and paste, a bigger toolbar to fit them on, and a few of " +
+            "Gboard's own settings unlocked."
         source = "https://github.com/JZ6/Flexboard"
         author = "JZ6"
         contact = "https://github.com/JZ6/Flexboard/issues"

@@ -2,6 +2,9 @@ package dev.jz6.flexboard.extension.settings;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.net.Uri;
+import android.content.Intent;
+import android.content.ActivityNotFoundException;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
 import android.os.Handler;
@@ -63,6 +66,13 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
 
     /** Must match the file {@code SettingsScreenPatch} writes to {@code res/xml/}. */
     private static final String SCREEN_NAME = "flexboard_settings";
+
+    /** Held against Constants.kt and build.gradle.kts by check_shared_constants. */
+    /** Paired with ABOUT_SOURCE_KEY in SettingsScreenPatch.kt. */
+    private static final String ABOUT_SOURCE_KEY = "flexboard_about_source";
+
+    private static final String SOURCE_URL = "https://github.com/JZ6/Flexboard";
+    private static final String SOURCE_URL_SHORT = "github.com/JZ6/Flexboard";
 
     public FlexboardSettingsFragment() {}
 
@@ -243,7 +253,36 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             importBlob(preference);
             return true;
         }
+        if (isRow(preference, ABOUT_SOURCE_KEY)) {
+            openSource(preference);
+            return true;
+        }
         return super.aA(preference);
+    }
+
+    /**
+     * Opens the project page for the About section's Source row.
+     *
+     * Uses {@link #dialogContext} for the same reason the dialogs do: it is the Activity the row
+     * was constructed with, so the browser opens as a normal task rather than needing
+     * {@code FLAG_ACTIVITY_NEW_TASK}. When that context is unavailable, or no browser resolves the
+     * intent -- a bare AOSP image or a heavily stripped ROM -- the row reports it in its own
+     * summary instead of throwing, which matches what a hotkey slot does when it cannot open its
+     * editor. Falling back to the URL in the summary is not much of a fallback, but the URL is
+     * already printed there, so the user can still read and type it.
+     */
+    private void openSource(androidx.preference.Preference row) {
+        Context context = dialogContext(row);
+        if (context == null) {
+            row.n("couldn't open a browser — reopen Settings from the keyboard");
+            return;
+        }
+        try {
+            context.startActivity(
+                new Intent(Intent.ACTION_VIEW, Uri.parse(SOURCE_URL)));
+        } catch (ActivityNotFoundException | SecurityException ignored) {
+            row.n("no browser to open " + SOURCE_URL_SHORT);
+        }
     }
 
     /**
