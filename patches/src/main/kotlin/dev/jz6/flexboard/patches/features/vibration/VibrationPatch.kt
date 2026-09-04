@@ -45,7 +45,7 @@ import dev.jz6.flexboard.patches.shared.opcodeName
  */
 @Suppress("unused")
 val vibrationSliderPatch = bytecodePatch(
-    name = "Vibration slider everywhere",
+    name = "Vibration Slider Everywhere",
     description = "Forces Gboard to show its own vibration strength slider on every device, " +
         "rather than deferring to the system haptic settings page, so the strength is adjustable " +
         "instead of being fixed by whichever rollout the device landed in.",

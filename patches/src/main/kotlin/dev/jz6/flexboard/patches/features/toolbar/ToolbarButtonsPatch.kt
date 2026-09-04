@@ -43,7 +43,9 @@ val toolbarButtonsPatch = bytecodePatch(
     name = "Text Action Buttons",
     description = "Add Select all, Copy and Paste buttons to the toolbar above the keyboard, " +
         "so each is one tap instead of opening Gboard's text editing panel first. Registered " +
-        "natively, so drag-to-reorder through the toolbar customize page persists.",
+        "natively, so drag-to-reorder through the toolbar customize page persists. These " +
+        "three compete for the five icons Gboard's toolbar holds; Bigger Toolbar raises " +
+        "that ceiling if you run the hotkeys as well.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)

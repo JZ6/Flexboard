@@ -18,7 +18,9 @@ val toolbarHotkeysPatch = bytecodePatch(
     description = "Adds six configurable hotkey slots to Gboard's toolbar — each commits a " +
         "text of your choice on tap. A slot appears when its text is set; when cleared it hides " +
         "at the next toolbar rebuild (rotate, switch IME, or restart — there's no mid-session " +
-        "un-register). Text and icon edits apply on the next keyboard open.",
+        "un-register). Text and icon edits apply on the next keyboard open. Gboard's " +
+        "toolbar holds five icons in total, shared with its own, so apply Bigger Toolbar " +
+        "too if you want all six on the bar at once.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 

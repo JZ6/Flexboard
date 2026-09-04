@@ -103,9 +103,11 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
 @Suppress("unused")
 val biggerToolbarPatch = bytecodePatch(
     name = "Bigger Toolbar",
-    description = "Raises the toolbar from five icons to $TOOLBAR_CAPACITY, so Flexboard's " +
-        "hotkeys and text action buttons can fit alongside Gboard's own. How many icons " +
-        "actually show stays yours, set by dragging them in Gboard's toolbar settings.",
+    description = "Raises how many icons Gboard's toolbar can hold — five on a stock build — " +
+        "to $TOOLBAR_CAPACITY, so Flexboard's hotkeys and text action buttons fit alongside " +
+        "Gboard's own. How many actually show stays yours, set by dragging them in Gboard's " +
+        "toolbar settings. Force-stop Gboard afterwards: a cached keyboard view can go on " +
+        "showing the old capacity.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
