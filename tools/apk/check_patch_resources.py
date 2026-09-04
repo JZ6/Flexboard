@@ -117,7 +117,7 @@ SETTINGS_ROW_TAG = "com.google.android.libraries.inputmethod.settings.widget.Hea
 SETTINGS_ROW_ATTRS = [
     ("key", "flexboard_settings"),
     ("title", "Flexboard"),
-    ("summary", "Patches that make your Gboard better"),
+    ("summary", "Teaching an old keyboard new tricks"),
     ("persistent", "false"),
     ("icon", "@drawable/flexboard_settings_icon"),
     ("fragment", "dev.jz6.flexboard.extension.settings.FlexboardSettingsFragment"),

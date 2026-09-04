@@ -153,6 +153,10 @@ private const val ENTRY_KEY = "flexboard_settings"
 private const val ENTRY_TITLE = "Flexboard"
 
 /**
+ * Leans on "you can't teach an old dog new tricks" because a settings row is read in passing and
+ * a phrase someone already knows lands faster than one they have to parse. Affectionate rather
+ * than snide: Gboard is good, it is just set in its ways.
+ *
  * Deliberately not a list of what is inside. The screen's contents depend on which patches were
  * ticked -- swipe rows, hotkey rows, both, or neither plus the version -- so any line naming the
  * sliders is wrong for most selections and has to be rewritten whenever a feature lands. The
@@ -164,7 +168,7 @@ private const val ENTRY_TITLE = "Flexboard"
  * Flexboard's primary identifying mark inside Gboard. It is also the wrong audience: whoever is
  * reading this is in Gboard's settings, not in a patch manager.
  */
-private const val ENTRY_SUMMARY = "Patches that make your Gboard better"
+private const val ENTRY_SUMMARY = "Teaching an old keyboard new tricks"
 
 /**
  * Filters the settings template to only the sections whose features were ticked, removing
