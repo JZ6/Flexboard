@@ -44,7 +44,8 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
  * `BiggerToolbarPatch` (reverted in e075526) raised the capacity and then restaged Gboard's count
  * preference on every bar construction, which was reported on device as buttons reappearing after
  * being removed. Raise the ceiling, leave the count alone, and both failures are structurally
- * impossible. See `docs/toolbar-capacity.md`.
+ * impossible -- and confirmed on a device: an icon taken off the bar stays off across a
+ * rebuild. See `docs/toolbar-capacity.md`.
  *
  * ## The derivation
  *

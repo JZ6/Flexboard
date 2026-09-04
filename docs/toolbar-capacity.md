@@ -156,8 +156,10 @@ Twelve. Nine Flexboard ids plus a few of Gboard's. The old maximum was also 12, 
 this rationale — `7c5dd48` says *"the range exists to be wide rather than uniformly comfortable"* —
 so the number matches by coincidence, not inheritance.
 
-**Confirmed on a device (Pixel 6, 2026-09-02): the capacity raise works, and twelve earns itself on
-a foldable.** That is the case the single ceiling is really for. Gboard already keeps a separate
+**Confirmed on a device (Pixel 6, 2026-09-02): the capacity raise works, removing an icon keeps it
+removed across a toolbar rebuild, and twelve earns itself on a foldable.** The removal case is the
+one that matters — it is precisely what `e075526` reverted Era B for, and until it was tried the
+claim that this design cannot repeat it rested on reading the gate rather than on watching it. That is the case the single ceiling is really for. Gboard already keeps a separate
 count per device class — `foldable_access_points_count_on_bar` against
 `access_points_count_on_bar`, chosen inside `Lmku;->b(I)I` — and both are measured against the one
 capacity. So a phone drags six onto the bar and an unfolded screen drags twelve, each remembered
