@@ -1,3 +1,17 @@
+# [2.2.1](https://github.com/JZ6/Flexboard/compare/v2.2.0...v2.2.1) (2026-09-04)
+
+* **Gboard:** feat: a scratch text box in Settings, so a change can be tried where it was made
+* **Gboard:** docs: the removal case is observed now, not argued
+* **Gboard:** docs: Bigger Toolbar confirmed on a device, and why twelve
+* **Gboard:** feat: an About section that says where this came from
+* **Gboard:** feat: patch descriptions that mention the ceiling they run into
+* **Gboard:** feat: the settings row says who wrote it
+* **Gboard:** feat: teaching an old keyboard new tricks
+* **Gboard:** feat: say what Flexboard is in Gboard's settings, not what it was
+* **Gboard:** docs: verify the channel model against morphe-manager, and name the gap
+* **Gboard:** build: make the gate one command, and stop the scanner lying
+* **Gboard:** docs: record the green gate that was not a gate
+
 # [2.2.1-dev.1](https://github.com/JZ6/Flexboard/compare/v2.2.1-dev.0...v2.2.1-dev.1) (2026-09-04)
 
 * **Gboard:** feat: a scratch text box in Settings, so a change can be tried where it was made
