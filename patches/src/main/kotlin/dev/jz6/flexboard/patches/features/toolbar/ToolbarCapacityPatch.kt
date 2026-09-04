@@ -120,7 +120,14 @@ val biggerToolbarPatch = bytecodePatch(
     }
 }
 
-/** How many icons the bar may hold once patched. Nine Flexboard ids, plus room for Gboard's own. */
+/**
+ * How many icons the bar may hold once patched. Nine Flexboard ids, plus room for Gboard's own.
+ *
+ * Twelve is chosen for the unfolded screen of a foldable, where there is width for it; confirmed
+ * on a device. Gboard keeps a separate count per device class and measures both against this one
+ * number, so a phone settles at six and an unfolded screen at twelve without either needing a
+ * setting -- the ceiling is raised once and each screen remembers its own count underneath it.
+ */
 internal const val TOOLBAR_CAPACITY = 12
 
 /**

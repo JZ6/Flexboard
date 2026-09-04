@@ -247,8 +247,9 @@ The list above is kept as written; this notes which of it has landed, rather tha
 - **tool bar amount used to be different between inner and outer screen of a fold** — covered
     natively, and for free: Gboard already branches the count preference by device class
     (`foldable_access_points_count_on_bar` vs `access_points_count_on_bar`) inside `Lmku;->b(I)I`,
-    and the capacity plan raises the ceiling both are measured against without writing either. Each
-    screen keeps its own count, set through Gboard's own UI.
+    and *Bigger Toolbar* raises the ceiling both are measured against without writing either. Each
+    screen keeps its own count, set through Gboard's own UI. **Done** — shipped and confirmed on a
+    device, where twelve is what makes the unfolded screen worth the ceiling.
 
 - **add select all copy paste hotkeys** — *Text Editing Buttons* puts one-tap **Select all**,
   **Copy** and **Paste** on the toolbar. Cut is not built; it is the same shape again, one entry in

@@ -150,11 +150,31 @@ write side to fight the user with.
   toolbar settings. That is discoverability, not a defect — and "fixing" it with a seed is exactly
   what produced the phantom 15 and the Era B regression.
 
-### Suggested ceiling
+### The ceiling, and why twelve
 
-Twelve. Nine Flexboard ids plus a few of Gboard's. Note that the old maximum of 12 was chosen
-without this rationale — `7c5dd48` says *"the range exists to be wide rather than uniformly
-comfortable"* — so the number is the same by coincidence, not by inheritance.
+Twelve. Nine Flexboard ids plus a few of Gboard's. The old maximum was also 12, but chosen without
+this rationale — `7c5dd48` says *"the range exists to be wide rather than uniformly comfortable"* —
+so the number matches by coincidence, not inheritance.
+
+**Confirmed on a device (Pixel 6, 2026-09-02): the capacity raise works, and twelve earns itself on
+a foldable.** That is the case the single ceiling is really for. Gboard already keeps a separate
+count per device class — `foldable_access_points_count_on_bar` against
+`access_points_count_on_bar`, chosen inside `Lmku;->b(I)I` — and both are measured against the one
+capacity. So a phone drags six onto the bar and an unfolded screen drags twelve, each remembered
+independently, from a single number raised once. Twelve is roomy where there is room and simply
+unreached where there is not.
+
+### No settings row, on purpose
+
+There is nothing for one to do. Ticking the patch is the on/off, and the count is already a control
+Gboard ships: dragging icons on and off the toolbar is what writes `pref`, and `min(pref, capacity)`
+honours it. A Flexboard slider would be a second control for the same number, and would force a
+user to learn a capacity-versus-count distinction that exists only in this file.
+
+One consequence worth knowing: with `pref` unset — someone who has never opened Gboard's toolbar
+screen — the gate falls through to the capacity, so the bar goes from five to twelve at once rather
+than merely permitting more. Gboard ships 43 access points, so there is no shortage of candidates
+to fill it. Dragging any icon off sets `pref` and hands control back.
 
 ### Pins
 
