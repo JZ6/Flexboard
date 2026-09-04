@@ -153,22 +153,21 @@ private const val ENTRY_KEY = "flexboard_settings"
 private const val ENTRY_TITLE = "Flexboard"
 
 /**
- * Leans on "you can't teach an old dog new tricks" because a settings row is read in passing and
- * a phrase someone already knows lands faster than one they have to parse. Affectionate rather
- * than snide: Gboard is good, it is just set in its ways.
+ * Attribution rather than description, which is what finally made this line stable.
  *
- * Deliberately not a list of what is inside. The screen's contents depend on which patches were
- * ticked -- swipe rows, hotkey rows, both, or neither plus the version -- so any line naming the
- * sliders is wrong for most selections and has to be rewritten whenever a feature lands. The
- * previous one, "Gesture settings", was accurate only when Swipe Left to Delete was the sole
- * patch selected: hotkeys are not gestures, and a hotkeys-only build showed no gestures at all.
+ * The screen's contents depend on which patches were ticked -- swipe rows, hotkey rows, both, or
+ * neither plus the version -- so every description tried here was wrong for some builds and had
+ * to be rewritten whenever a feature landed. "Gesture settings" was accurate only when Swipe Left
+ * to Delete was the sole patch selected. Who wrote it does not vary.
  *
- * Deliberately does not mention Morphe either. NOTICE 7c permits references only for descriptive
- * compatibility and forbids anything suggesting authorship by the Morphe project, and this row is
- * Flexboard's primary identifying mark inside Gboard. It is also the wrong audience: whoever is
- * reading this is in Gboard's settings, not in a patch manager.
+ * It also does the job NOTICE 7c asks of a derivative: naming the author leaves no confusion as to
+ * source or origin, and says nothing that could imply authorship by the Morphe project.
+ *
+ * Gboard sets its own summaries at runtime and uses them for state -- the language row lists your
+ * current languages. This one is deliberately not stateful: the state a stranger needs from a row
+ * that appeared in their keyboard settings unannounced is who put it there.
  */
-private const val ENTRY_SUMMARY = "Teaching an old keyboard new tricks"
+private const val ENTRY_SUMMARY = "By JZ6"
 
 /**
  * Filters the settings template to only the sections whose features were ticked, removing
