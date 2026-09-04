@@ -1,3 +1,7 @@
+# [2.2.1-dev.1](https://github.com/JZ6/Flexboard/compare/v2.2.1-dev.0...v2.2.1-dev.1) (2026-09-04)
+
+* **Gboard:** feat: a scratch text box in Settings, so a change can be tried where it was made
+
 # [2.2.1-dev.0](https://github.com/JZ6/Flexboard/compare/v2.2.0...v2.2.1-dev.0) (2026-09-04)
 
 * **Gboard:** docs: the removal case is observed now, not argued
