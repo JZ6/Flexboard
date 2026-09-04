@@ -42,6 +42,7 @@ PAIRS = [
     # The About section's Source row: the key the template writes and the key the click
     # handler matches on. A drift here is a row that silently does nothing when tapped.
     ("ABOUT_SOURCE_KEY", "ABOUT_SOURCE_KEY"),
+    ("TRY_KEYBOARD_KEY", "TRY_KEYBOARD_KEY"),
 ]
 
 # The slider contract between ScrubTuningPatch.kt and flexboard_settings.xml: the Kotlin name of

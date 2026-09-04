@@ -11,6 +11,15 @@ public class View {
         // stub
     }
 
+    /** Posted work runs after layout; focusing before that silently does nothing. */
+    public boolean post(Runnable action) {
+        return false;
+    }
+
+    public boolean requestFocus() {
+        return false;
+    }
+
     public void setPadding(int left, int top, int right, int bottom) {
         // stub
     }

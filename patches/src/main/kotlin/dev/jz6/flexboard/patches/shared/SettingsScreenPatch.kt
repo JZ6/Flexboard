@@ -165,6 +165,9 @@ private const val ENTRY_KEY = "flexboard_settings"
  * own copy so the row and its handler cannot drift apart into a tap that does nothing.
  */
 internal const val ABOUT_SOURCE_KEY = "flexboard_about_source"
+
+/** The scratch-pad row. Paired with the extension's copy, same as [ABOUT_SOURCE_KEY]. */
+internal const val TRY_KEYBOARD_KEY = "flexboard_try_keyboard"
 private const val ENTRY_TITLE = "Flexboard"
 
 /**

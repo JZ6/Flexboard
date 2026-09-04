@@ -14,4 +14,8 @@ public interface DialogInterface {
     interface OnDismissListener {
         void onDismiss(DialogInterface dialog);
     }
+
+    interface OnShowListener {
+        void onShow(DialogInterface dialog);
+    }
 }

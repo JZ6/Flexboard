@@ -21,6 +21,13 @@ public class AlertDialog {
         // stub
     }
 
+    public android.view.Window getWindow() {
+        return null;
+    }
+
+    public void setOnShowListener(DialogInterface.OnShowListener listener) {
+    }
+
     public void setOnDismissListener(DialogInterface.OnDismissListener listener) {
         // stub
     }
@@ -49,6 +56,10 @@ public class AlertDialog {
 
         public Builder setNeutralButton(CharSequence text, DialogInterface.OnClickListener listener) {
             return this;
+        }
+
+        public AlertDialog create() {
+            return null;
         }
 
         public AlertDialog show() {

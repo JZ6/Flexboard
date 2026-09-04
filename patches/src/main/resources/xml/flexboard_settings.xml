@@ -22,6 +22,18 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     android:title="Flexboard">
 
+    <!--
+      A scratch field, above the sections because it applies to all of them: every patch in this
+      bundle changes how the keyboard behaves, so trying one otherwise means leaving Settings,
+      finding a text box in some other app, and coming back. It sits outside the sections
+      because it is worth having even on a build where neither of them rendered.
+    -->
+    <Preference
+        android:key="flexboard_try_keyboard"
+        android:persistent="false"
+        android:summary="Opens a text box so you can try your changes without leaving Settings"
+        android:title="Try the keyboard" />
+
     <!-- @SECTION_SWIPE_TO_DELETE@ -->
     <PreferenceCategory android:title="Swipe to delete">
 

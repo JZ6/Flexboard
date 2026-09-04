@@ -2,6 +2,9 @@ package dev.jz6.flexboard.extension.settings;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.view.inputmethod.InputMethodManager;
+import android.view.WindowManager;
+import android.view.Window;
 import android.net.Uri;
 import android.content.Intent;
 import android.content.ActivityNotFoundException;
@@ -70,6 +73,9 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     /** Held against Constants.kt and build.gradle.kts by check_shared_constants. */
     /** Paired with ABOUT_SOURCE_KEY in SettingsScreenPatch.kt. */
     private static final String ABOUT_SOURCE_KEY = "flexboard_about_source";
+
+    /** Paired with TRY_KEYBOARD_KEY in SettingsScreenPatch.kt. */
+    private static final String TRY_KEYBOARD_KEY = "flexboard_try_keyboard";
 
     private static final String SOURCE_URL = "https://github.com/JZ6/Flexboard";
     private static final String SOURCE_URL_SHORT = "github.com/JZ6/Flexboard";
@@ -253,11 +259,69 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             importBlob(preference);
             return true;
         }
+        if (isRow(preference, TRY_KEYBOARD_KEY)) {
+            tryKeyboard(preference);
+            return true;
+        }
         if (isRow(preference, ABOUT_SOURCE_KEY)) {
             openSource(preference);
             return true;
         }
         return super.aA(preference);
+    }
+
+    /**
+     * A scratch text box, so a change can be tried without leaving Settings.
+     *
+     * Everything this bundle patches is a keyboard behaviour, and until now trying one meant
+     * leaving Settings, finding a text field in another app, and coming back — with the hotkey you
+     * just typed still fresh enough to have forgotten what you set it to.
+     *
+     * Raising the keyboard is done explicitly rather than left to focus defaults. The dialog's
+     * window asks for {@code SOFT_INPUT_STATE_ALWAYS_VISIBLE | SOFT_INPUT_ADJUST_RESIZE}, and the
+     * focus-and-show is {@code post}ed so it runs after layout — requesting focus on a view that
+     * has not been laid out is a silent no-op, and the row would then look broken on exactly the
+     * devices where the default did not already do the work.
+     *
+     * Multi-line on purpose: swipe-to-delete needs several words to be worth testing, and a single
+     * line makes the deletions hard to see.
+     */
+    private void tryKeyboard(androidx.preference.Preference row) {
+        Context ui = dialogContext(row);
+        if (ui == null) {
+            row.n("couldn't open the text box — reopen Settings from the keyboard");
+            return;
+        }
+        try {
+            EditText input = new EditText(ui);
+            input.setHint("Type here to try your settings");
+            input.setMinLines(3);
+
+            AlertDialog dialog = new AlertDialog.Builder(ui)
+                .setTitle("Try the keyboard")
+                .setView(input)
+                .setPositiveButton("Close", null)
+                .create();
+            dialog.setOnShowListener(ignored -> {
+                Window window = dialog.getWindow();
+                if (window != null) {
+                    window.setSoftInputMode(
+                        WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
+                            | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                }
+                input.post(() -> {
+                    input.requestFocus();
+                    Object service = ui.getSystemService(Context.INPUT_METHOD_SERVICE);
+                    if (service instanceof InputMethodManager) {
+                        ((InputMethodManager) service)
+                            .showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+                    }
+                });
+            });
+            dialog.show();
+        } catch (Throwable ignored) {
+            row.n("couldn't open the text box");
+        }
     }
 
     /**
