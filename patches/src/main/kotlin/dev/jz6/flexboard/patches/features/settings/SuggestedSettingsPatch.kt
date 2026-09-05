@@ -50,7 +50,8 @@ val suggestedSettingsPatch = bytecodePatch(
     description = "Turns on flick keys for symbols, touch & hold keys for numbers, suggestion " +
         "strip, grammar check and smart replies, and turns off block offensive words and word " +
         "suggestions. Written once as defaults, so each can still be changed in Gboard's own " +
-        "settings.",
+        "settings. Grammar check is the switch, not the feature: the row only exists on a " +
+        "resigned build if Hidden Features is applied too.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
