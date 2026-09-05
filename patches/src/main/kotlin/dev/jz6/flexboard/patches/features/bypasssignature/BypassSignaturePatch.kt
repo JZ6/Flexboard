@@ -1,12 +1,10 @@
 package dev.jz6.flexboard.patches.features.bypasssignature
 
-import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
-import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
@@ -72,14 +70,6 @@ val bypassGboardSignaturePatch = bytecodePatch(
         signatureCheckFingerprint().method.forceSignatureChecksToPass()
     }
 }
-
-fun signatureCheckFingerprint() = Fingerprint(
-    definingClass = "Lrpv;",
-    name = "a",
-    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
-    parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;"),
-    returnType = "Z",
-)
 
 private const val SIGNATURE_CHECK = "Lrpv;->a(Landroid/content/Context;Ljava/lang/String;)Z"
 private const val DIGEST_METHOD = "Lrpv;->c(Landroid/content/Context;Ljava/lang/String;)[B"
