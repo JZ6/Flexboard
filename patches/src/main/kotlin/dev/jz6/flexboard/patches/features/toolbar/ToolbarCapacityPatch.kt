@@ -20,9 +20,9 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
 /**
  * Raises how many icons Gboard's toolbar can hold, from five to [TOOLBAR_CAPACITY].
  *
- * Flexboard admits nine toolbar ids — six hotkeys and three text actions — and stock Gboard shows
- * five icons, shared with Gboard's own access points. A user cannot display even the six hotkeys
- * that shipped. The capacity is the binding constraint on two released features.
+ * Flexboard admits eleven toolbar ids — eight hotkeys and three text actions — and stock Gboard
+ * shows five icons, shared with Gboard's own access points. A user cannot display even the eight
+ * hotkeys that shipped. The capacity is the binding constraint on two released features.
  *
  * ## What this patch does not do
  *

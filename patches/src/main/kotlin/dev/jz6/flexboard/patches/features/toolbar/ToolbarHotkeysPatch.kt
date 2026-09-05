@@ -7,7 +7,7 @@ import dev.jz6.flexboard.patches.shared.selectedSettingsSections
 import dev.jz6.flexboard.patches.shared.SettingsSection
 
 /**
- * Six toolbar buttons whose label, icon and action all come from settings — the patch emits
+ * Eight toolbar buttons whose label, icon and action all come from settings — the patch emits
  * one conditional registration block per slot and the extension computes everything at
  * toolbar-build time. Registration, reorder and persistence are Gboard's own; the ids are
  * admitted natively by [toolbarIdAdmissionPatch] widening the allowed-set array.
@@ -15,12 +15,12 @@ import dev.jz6.flexboard.patches.shared.SettingsSection
 @Suppress("unused")
 val toolbarHotkeysPatch = bytecodePatch(
     name = "Toolbar Hotkeys",
-    description = "Adds six configurable hotkey slots to Gboard's toolbar — each commits a " +
+    description = "Adds eight configurable hotkey slots to Gboard's toolbar — each commits a " +
         "text of your choice on tap. A slot appears when its text is set; when cleared it hides " +
         "at the next toolbar rebuild (rotate, switch IME, or restart — there's no mid-session " +
         "un-register). Text and icon edits apply on the next keyboard open. The slots share " +
         "the toolbar with Gboard's own icons: Bigger Toolbar, which is applied unless you " +
-        "deselect it, makes room for twelve, but on a stock ceiling of five not all six fit.",
+        "deselect it, makes room for twelve, but on a stock ceiling of five not all eight fit.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 

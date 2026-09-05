@@ -1,9 +1,9 @@
 # Toolbar capacity — how it works, and why the last two attempts were wrong
 
-Flexboard admits **nine** toolbar ids on `dev` — six hotkeys (`flexboard_hotkey_1..6`) and three
+Flexboard admits **eleven** toolbar ids on `dev` — eight hotkeys (`flexboard_hotkey_1..8`) and three
 text actions (`flexboard_select_all`, `flexboard_copy`, `flexboard_paste`). Gboard's bar holds
 **five icons**, and those five are shared with Gboard's own access points. A user cannot display
-even the six hotkeys we ship.
+even the eight hotkeys we ship.
 
 The capacity is therefore not a cosmetic nice-to-have. It is the binding constraint on two
 features that are already released.

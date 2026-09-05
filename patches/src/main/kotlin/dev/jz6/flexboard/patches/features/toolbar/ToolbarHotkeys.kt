@@ -14,7 +14,7 @@ import dev.jz6.flexboard.patches.shared.toDescriptor
 import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
 /**
- * The six configurable hotkey slots: their constructor registration, and the start-input refresh
+ * The eight configurable hotkey slots: their constructor registration, and the start-input refresh
  * that re-registers them when the keyboard is raised for a new editor.
  *
  * Both emissions build the same per-slot block from [HotkeySite], which is why they are one file
@@ -22,7 +22,7 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
  * the other. Reads the controller from [ToolbarCanvas.kt].
  */
 /** The hotkey slots Flexboard registers: everything emitted loops this range once. */
-internal const val HOTKEY_SLOTS = 6
+internal const val HOTKEY_SLOTS = 8
 
 /** Every flexboard toolbar id carries this prefix — how the constants checker tells the
  * generated per-slot keys from a typo. If it changes, the admitted strings move too. */
@@ -132,9 +132,10 @@ private fun hotkeyBlock(
     site: HotkeySite,
     registerCall: String,
 ): String {
-    // const/4 only encodes -8..7. At [HOTKEY_SLOTS] = 6 the widening branch is unreachable today;
-    // it stays because the slot count is a constant someone may raise, and a silently truncated
-    // slot ordinal would be far harder to spot than an extra branch here.
+    // const/4 only encodes -8..7, so slot 8 emits const/16. This branch was written when
+    // [HOTKEY_SLOTS] was 6 and nothing reached it, kept on the argument that the count was a
+    // constant someone may raise. Raising it to 8 made the branch live, and it is the only
+    // reason the highest slot's ordinal is not silently truncated to -8.
     val constOp = if (slot in 1..7) "const/4" else "const/16"
     // Plain unbraced names in the template: `${site.x}` inside an invoke's `{ ... }` would put a
     // `}` mid-register-list, and the constants checker's emitted-call parser would silently stop

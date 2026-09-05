@@ -103,8 +103,8 @@ Swipe length and hold delay are fixed rather than adjustable. The swipe travels 
 distance per word, and deleting starts immediately instead of after Gboard's 200 ms press-and-hold.
 Both were sliders once; [`docs/design.md`](docs/design.md) has why they are not now.
 
-The screen also carries six **Hotkeys** fields belonging to
-[Text Action Buttons](#text-action-buttons).
+The screen also carries eight **Hotkeys** fields belonging to
+[Toolbar Hotkeys](#toolbar-hotkeys).
 
 Every value is read out of Gboard's own preference store, so there is no separate settings app and
 nothing to keep in sync.
@@ -192,7 +192,7 @@ no images of its own.
 
 ## Toolbar hotkeys
 
-Six more toolbar buttons, each typing a string you set under **Hotkeys** in Flexboard's settings —
+Eight more toolbar buttons, each typing a string you set under **Hotkeys** in Flexboard's settings —
 an email address, a signature, "brb", whatever you type often enough to resent typing.
 
 **A slot you have not filled in makes no button.** Fresh out of the box there are no hotkeys at all;
@@ -215,8 +215,8 @@ drop what you do not need.
 
 ## Bigger toolbar
 
-Gboard's toolbar holds five icons. Flexboard adds nine of its own — six hotkeys and three text
-actions — and those nine compete with the emoji, clipboard and settings buttons already there. So
+Gboard's toolbar holds five icons. Flexboard adds eleven of its own — eight hotkeys and three text
+actions — and those eleven compete with the emoji, clipboard and settings buttons already there. So
 the bar is the limit on everything above, and this patch raises it to twelve.
 
 **It does not decide how many you see.** Choosing what sits on the bar is Gboard's own job, done by

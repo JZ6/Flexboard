@@ -37,7 +37,7 @@ public final class Hotkeys {
     private static final String PREF_ICON_SUFFIX = "_icon";
 
     /** Must match HOTKEY_SLOTS in the patch's ToolbarSlotsPatch and the XML's count maximum. */
-    private static final int SLOT_COUNT = 6;
+    private static final int SLOT_COUNT = 8;
 
     /** The slot count, for screens that iterate every row. */
     public static int slotCount() {

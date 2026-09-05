@@ -46,7 +46,7 @@ the only way in.
 
 ## Pending (investigated, needs implementation)
 
-**Bigger Toolbar returns natively.** Hotkeys have since shipped — six slots on `flexboard_*` ids
+**Bigger Toolbar returns natively.** Hotkeys have since shipped — eight slots on `flexboard_*` ids
 admitted by `toolbarIdAdmissionPatch`. Bigger Toolbar has not. Both previous attempts tried to own
 the count and both broke the user's ability to remove buttons; the plan that follows from that is
 `docs/toolbar-capacity.md`, and it raises the capacity only.
@@ -239,7 +239,7 @@ The list above is kept as written; this notes which of it has landed, rather tha
   swipe starting on the backspace key keeps Gboard's distance per word and is not capped.
 - **increased tool bar size fit more buttons** — *Bigger Toolbar*, raise-only slider for the
     bar's capacity (the max Gboard allows before pushing to overflow). Stock is five, which is
-    fewer than the nine ids Flexboard already admits. The plan is `docs/toolbar-capacity.md`: two
+    fewer than the eleven ids Flexboard already admits. The plan is `docs/toolbar-capacity.md`: two
     immediates, raising the flag default and the `[3, 8]` clamp it is measured against, and
     **no count override and no preference writes** — the count stays the user's. Also covers
     **max tool icon slider isnt working**.
@@ -256,7 +256,7 @@ The list above is kept as written; this notes which of it has landed, rather tha
   a list. The icons turned out to be free: Gboard bundles Material's set and draws none of them, and
   `tools/apk/glyphs.py` finds them by geometry now that every drawable name is stripped.
 
-- **Hot keys as new tool bar objects** — six slots under **Hotkeys** in Flexboard's settings, each
+- **Hot keys as new tool bar objects** — eight slots under **Hotkeys** in Flexboard's settings, each
   typing whatever string you put in it. A slot you have not filled in builds no button at all, so
   they cost nothing until used and clearing a field removes the button again. The label on each is
   your own text: the access point carries a label *resource id* and a label *String*, and returns

@@ -95,6 +95,14 @@
             android:icon="@drawable/flexboard_icon_work"
             android:key="flexboard_hotkey_6_text"
             android:title="Hotkey 6" />
+        <androidx.preference.Preference
+            android:icon="@drawable/flexboard_icon_favorite"
+            android:key="flexboard_hotkey_7_text"
+            android:title="Hotkey 7" />
+        <androidx.preference.Preference
+            android:icon="@drawable/flexboard_icon_kid_star"
+            android:key="flexboard_hotkey_8_text"
+            android:title="Hotkey 8" />
 
         <!--
           Real picker/buttons with popups, not text fields full of serialization. The host

@@ -113,7 +113,7 @@ while both were set to the same text, and not harmless once hotkeys arrived — 
 
 ## Why a hotkey wears the user's own text as its name
 
-Six hotkey slots need six names, and there is no Gboard string that means "whatever you typed into
+Eight hotkey slots need eight names, and there is no Gboard string that means "whatever you typed into
 slot four". Nor is there a numbered icon: matching all 2,170 published Material Icons against the
 APK found 29 bundled shapes and no digits, so the icons are arbitrary markers.
 
