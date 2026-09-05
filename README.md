@@ -208,7 +208,7 @@ is the moment you actually need to know which is which.
 
 Long text is fine. The whole of it gets typed; only the first line, cut short, becomes the name.
 
-**Nine buttons is more than the bar holds** — unless *Bigger toolbar* is applied, which is what it
+**Eleven buttons is more than the bar holds** — unless *Bigger toolbar* is applied, which is what it
 is for. Without it, the three text actions plus a few hotkeys push whatever used to sit at the end
 of your toolbar into the overflow menu behind the chevron. Long-press the toolbar to reorder, and
 drop what you do not need.

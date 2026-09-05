@@ -25,7 +25,7 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  * patch itself would have staged.
  *
  * <p>Each slot's default icon is a fixed member of the bundled Flexboard pack, so an untouched
- * install already shows six distinguishable buttons. The settings screen's single row per
+ * install already shows eight distinguishable buttons. The settings screen's single row per
  * slot opens a composite editor (text field + grid over the same pack, chosen by name), so a
  * preference written by the dialog, by an import, or by neither resolves through one path.
  */

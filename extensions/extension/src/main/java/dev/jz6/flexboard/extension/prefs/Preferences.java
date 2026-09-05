@@ -56,7 +56,7 @@ public final class Preferences {
      * #deviceProtected} builds a fresh {@code ContextImpl} on every call rather than returning a
      * cached one, and Gboard's own application context is not device-protected, so that branch
      * runs every time. The toolbar emission reads four values per shown slot -- text, icon, label
-     * and content description -- so a six-slot bar allocated twenty-four of them, and the hotkey
+     * and content description -- so an eight-slot bar allocated thirty-two of them, and the hotkey
      * refresh is spliced into the start-input path, meaning that repeats every time the keyboard
      * is raised for a new editor rather than once per process.
      *

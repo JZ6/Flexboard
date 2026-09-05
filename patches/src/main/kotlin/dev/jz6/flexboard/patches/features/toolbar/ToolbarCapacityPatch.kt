@@ -121,7 +121,7 @@ val biggerToolbarPatch = bytecodePatch(
 }
 
 /**
- * How many icons the bar may hold once patched. Nine Flexboard ids, plus room for Gboard's own.
+ * How many icons the bar may hold once patched. Eleven Flexboard ids, plus room for Gboard's own.
  *
  * Twelve is chosen for the unfolded screen of a foldable, where there is width for it; confirmed
  * on a device. Gboard keeps a separate count per device class and measures both against this one

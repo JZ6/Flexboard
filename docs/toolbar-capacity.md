@@ -152,7 +152,7 @@ write side to fight the user with.
 
 ### The ceiling, and why twelve
 
-Twelve. Nine Flexboard ids plus a few of Gboard's. The old maximum was also 12, but chosen without
+Twelve. Eleven Flexboard ids plus a few of Gboard's. The old maximum was also 12, but chosen without
 this rationale — `7c5dd48` says *"the range exists to be wide rather than uniformly comfortable"* —
 so the number matches by coincidence, not inheritance.
 
