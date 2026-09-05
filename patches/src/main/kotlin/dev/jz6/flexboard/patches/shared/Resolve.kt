@@ -150,3 +150,17 @@ internal fun BytecodePatchContext.soleMethodNotCalling(
     }
     return matches.single().toDescriptor()
 }
+
+/**
+ * Every method in the APK for which [predicate] holds, in one pass over all classes.
+ *
+ * Lived in the toolbar package while the builder resolution was its only caller, by the rule that
+ * a single-consumer helper in a shared package advertises reuse that does not exist. The flag
+ * flipper is the second consumer, so it is promoted here — which is the two-line change that rule
+ * always said it would be.
+ */
+internal fun BytecodePatchContext.methodsMatching(predicate: (Method) -> Boolean): List<Method> {
+    val found = mutableListOf<Method>()
+    classDefForEach { classDef -> classDef.methods.filterTo(found, predicate) }
+    return found
+}

@@ -122,6 +122,17 @@ EXPECTED = {
     # Toolbar capacity. Both immediates the Bigger Toolbar patch rewrites, pinned at their stock
     # values: if either has moved, the patch would either raise nothing or discard a capacity
     # Gboard now ships of its own.
+    # Hidden Features: the five flags whose compiled-in default the patch flips. Pinned by name
+    # and by shape, because forceFlagsOn refuses a flag whose default is shared with others in the
+    # same <clinit> -- so a Gboard build that hoists one of these would fail at patch time with no
+    # warning here otherwise.
+    'hidden_feature_flags': [
+        'enable_on_device_proofread',
+        'enable_emoji_kitchen_browse',
+        'enable_custom_sticker_tab',
+        'offline_translate',
+        'enable_settings_search',
+    ],
     'toolbar_capacity_flag': 'config_max_access_points',
     'toolbar_stock_flag_default': -1,
     'toolbar_stock_ceiling': 8,
@@ -1940,6 +1951,50 @@ def run(dl, apk=None):
             n2, a2 = ins[i + 2][1], ins[i + 2][2]
             check('grammar: stored through the flag factory',
                   n2 == 'invoke-static' and target in a2, f'{n2} {a2}')
+
+    # ---- hidden features
+    #
+    # Each flag is a const-string + const/4 + factory triple in some class's <clinit>. The patch
+    # flips the zero, and the only thing making that safe is that the constant belongs to this
+    # flag alone: the boolean register is reused down the method (six flags in one <clinit> share
+    # v1), so a default loaded before the flag's own name is read by all of them and flipping it
+    # would turn on features nobody asked for. These pins assert the triple, per flag.
+    flag_factory = f"{B['flag_store']}->a(Ljava/lang/String;Z)Lnxp;"
+    for flag in E['hidden_feature_flags']:
+        sites = []
+        for d_ in dl:
+            for _t, _af, cd_ in d_.classes():
+                for desc_, _af2, co_ in d_.class_methods(cd_):
+                    if not desc_.endswith('-><clinit>()V'):
+                        continue
+                    c_ = d_.code(co_)
+                    if not c_:
+                        continue
+                    try:
+                        ins_ = ddis.disasm(d_, c_)
+                    except Exception:
+                        continue
+                    for i_, (_pc, mn_, a_) in enumerate(ins_):
+                        if not mn_.startswith('const-string'):
+                            continue
+                        m_ = re.match(r"\s*v(\d+),\s*'(.*)'\s*$", a_ or '')
+                        if m_ and m_.group(2) == flag:
+                            sites.append((ins_, i_))
+        if check(f'flags: one declaration of {flag}', len(sites) == 1, str(len(sites))):
+            ins_, i_ = sites[0]
+            inv = next((j for j in range(i_ + 1, min(i_ + 6, len(ins_)))
+                        if flag_factory in (ins_[j][2] or '')), None)
+            if check(f'flags: {flag} feeds the boolean flag factory', inv is not None):
+                breg = [int(x) for x in re.findall(r'v(\d+)', ins_[inv][2].split('},')[0])][1]
+                own = [j for j in range(i_ + 1, inv)
+                       if ins_[j][1].startswith('const')
+                       and re.match(rf"\s*v{breg},", ins_[j][2] or '')]
+                if check(f'flags: {flag} loads its own default', bool(own),
+                         'default is hoisted and shared with other flags'):
+                    lit = re.search(r'#(-?\w+)', ins_[own[-1]][2] or '')
+                    check(f'flags: {flag} still ships off',
+                          lit is not None and int(lit.group(1), 0) == 0,
+                          (ins_[own[-1]][2] or '').strip())
 
     # ---- toolbar capacity
     #

@@ -6,6 +6,7 @@ import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import dev.jz6.flexboard.patches.shared.methodsMatching
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
 import dev.jz6.flexboard.patches.shared.opcodeName
@@ -92,13 +93,6 @@ private fun Method.literals(): List<Long> =
 private fun Method.isAccessPointSeed(): Boolean {
     val literals = literals()
     return SEED_ICON in literals && SEED_LABEL in literals && SEED_CONTENT_DESCRIPTION in literals
-}
-
-/** Every method in the APK for which [predicate] holds, in one pass over all classes. */
-internal fun BytecodePatchContext.methodsMatching(predicate: (Method) -> Boolean): List<Method> {
-    val found = mutableListOf<Method>()
-    classDefForEach { classDef -> classDef.methods.filterTo(found, predicate) }
-    return found
 }
 
 /**

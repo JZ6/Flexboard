@@ -8,6 +8,7 @@ import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
+import dev.jz6.flexboard.patches.shared.methodsMatching
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 import dev.jz6.flexboard.patches.shared.calledDescriptors
