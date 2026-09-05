@@ -35,7 +35,7 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  * | `enable_emoji_kitchen_browse` | the Emoji Kitchen browse surface |
  * | `enable_custom_sticker_tab` | the custom sticker tab |
  * | `offline_translate` | translation without a network round trip |
- * | `enable_close_proactive_suggestions_access_point` | a dismiss control on the chips Gboard offers unprompted |
+ * | `enable_close_proactive_suggestions_access_point` | a close control on the chips Gboard offers unprompted |
  * | `enable_settings_search` | search within Gboard's own settings |
  *
  * Deliberately excluded, having been looked at: anything ending `_promo` (`handwriting`,
@@ -62,7 +62,8 @@ val hiddenFeaturesPatch = bytecodePatch(
     name = "Hidden Features",
     description = "Turns on seven finished Gboard features that a patched build cannot receive: " +
         "grammar check, on-device proofreading, Emoji Kitchen browse, the custom sticker tab, " +
-        "offline translation, and search in Gboard's settings. Their flags are delivered per app " +
+        "offline translation, dismissable chips, and search in Gboard's settings. Their flags are " +
+        "delivered per app " +
         "signature, so resigning the APK means they never arrive and stay off.",
     default = true,
 ) {

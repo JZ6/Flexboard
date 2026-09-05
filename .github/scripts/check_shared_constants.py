@@ -381,6 +381,42 @@ def _java_string_constant(name):
 
 
 
+def _check_hidden_features_count(problems):
+    """The Hidden Features description counts the same number of flags the patch forces on.
+
+    The description spells the count as a word and then enumerates the features in prose, so both
+    drift silently when a flag is added: the patch keeps working, the picker just lies about what
+    it does. This has already happened twice -- once going five to six, once when a reworded
+    string.replace matched nothing and dropped an item while leaving the numeral at seven.
+
+    Only the numeral is checked. Counting the prose items would mean parsing an English list with
+    an Oxford comma, and a check that is wrong about what it reads is worse than no check.
+    """
+    words = {
+        'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6,
+        'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    }
+    source = (PATCHES / "dev/jz6/flexboard/patches/features/hiddenfeatures/HiddenFeaturesPatch.kt").read_text()
+    said = re.search(r'Turns on (\w+) finished', source)
+    call = re.search(r'forceFlagsOn\((.*?)\n\s*\)', source, re.S)
+    if not said or not call:
+        problems.append(
+            f"  hidden features count check parsed nothing: numeral {said and said.group(1)!r}, "
+            f"forceFlagsOn call {'found' if call else 'not found'}"
+        )
+        return
+    flags = re.findall(r'^\s*"([a-z0-9_]+)",', call.group(1), re.M)
+    claimed = words.get(said.group(1))
+    if claimed is None:
+        problems.append(f"  Hidden Features says {said.group(1)!r} features, which is not a number word")
+    elif claimed != len(flags):
+        problems.append(
+            f"  Hidden Features describes itself as turning on {said.group(1)} ({claimed}) features "
+            f"but forceFlagsOn names {len(flags)} — the picker text is telling users something "
+            f"the patch does not do"
+        )
+
+
 def _check_stock_package_name(problems):
     """The extension's fallback package name matches Constants.GBOARD_PACKAGE_NAME.
 
@@ -833,6 +869,7 @@ def main():
     _check_extension_references(problems)
     _check_section_sentinels(problems)
     _check_stock_package_name(problems)
+    _check_hidden_features_count(problems)
     _check_allowed_set_sentinel(problems)
     _check_settings_row_mirror(problems)
     _check_source_url(problems)

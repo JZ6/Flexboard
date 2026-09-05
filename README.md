@@ -251,7 +251,7 @@ Most deserve to stay off; they are experiments and half-built code. Seven do not
 | **Emoji Kitchen browse** | the browse surface for sticker mashups |
 | **Custom sticker tab** | your own stickers, as a tab |
 | **Offline translate** | translation without a round trip to a server |
-| **Clearable suggestion chips** | a dismiss control on the chips Gboard offers unprompted |
+| **Dismissable chips** | a close control on the chips Gboard offers unprompted |
 | **Settings search** | search inside Gboard's own settings |
 
 Each is something Google ships to ordinary Gboard users today, so the code behind the flag is
