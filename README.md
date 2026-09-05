@@ -235,6 +235,30 @@ rather than scrolling — so twelve is the room available, not a recommendation.
 already trimmed your toolbar before applying this, you will still see your old number until you
 drag more icons onto the bar, because that number is your setting and the patch leaves it alone.
 
+## Hidden features
+
+Gboard ships a lot of finished features switched off behind Google's own feature flags, waiting on
+a server-side rollout. Those flags are delivered per app **signature** — and a patched build is
+resigned, so the delivery never arrives and every flag stays at whatever it was compiled with. On
+this build that is 666 of them.
+
+Most deserve to stay off; they are experiments and half-built code. Six do not:
+
+| | |
+|---|---|
+| **Grammar check** | the settings row, and the checking behind it |
+| **Proofread** | on-device proofreading |
+| **Emoji Kitchen browse** | the browse surface for sticker mashups |
+| **Custom sticker tab** | your own stickers, as a tab |
+| **Offline translate** | translation without a round trip to a server |
+| **Settings search** | search inside Gboard's own settings |
+
+Each is something Google ships to ordinary Gboard users today, so the code behind the flag is
+finished — this is restoring what resigning took away, not switching on an experiment.
+
+Some are locale- or account-dependent and may do nothing on your device, which is Google's doing
+rather than the patch's. If a feature does not appear, it was not enabled for you upstream either.
+
 ## Flick keys for symbols
 
 Gboard can already enter a key's hinted symbol when you pull down on it — **Flick keys to enter

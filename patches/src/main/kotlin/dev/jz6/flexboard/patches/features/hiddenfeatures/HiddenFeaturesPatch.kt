@@ -6,16 +6,19 @@ import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.forceFlagsOn
 
 /**
- * Turns on five finished Gboard features whose flags a patched build can never receive.
+ * Turns on six finished Gboard features whose flags a patched build can never receive.
  *
  * Phenotype registers flags per package **and signing identity**. A Morphe build is resigned, so
  * GMS never attributes the flags to Gboard, the sync never lands, and every flag keeps the default
  * compiled into the APK. On 18.0.3 that is 666 booleans shipping `false`. Where Google enables one
  * server-side, a patched build simply loses the feature — no error, no setting, nothing to notice
- * beyond a row that used to be there. `Grammar Check Row` fixes exactly one instance of this; these
- * are five more.
+ * beyond a row that used to be there.
  *
- * ## Why these five and not the other 661
+ * This began as `Grammar Check Row`, which fixed a single instance: the grammar checker's settings
+ * row vanished on patched builds and nobody could say why. The mechanism turned out to be general,
+ * so that patch is folded in here rather than left as one of two things doing the same job.
+ *
+ * ## Why these six and not the other 660
  *
  * Because a flag shipping `false` is not evidence that anything was lost. Most of those 666 are off
  * for everyone: experiments, staged rollouts, dead code. Forcing one of those on is not restoring a
@@ -27,7 +30,8 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  *
  * | flag | feature |
  * |---|---|
- * | `enable_on_device_proofread` | on-device proofreading, the sibling of the grammar checker |
+ * | `enable_grammar_checker` | the grammar check settings row, and the checking behind it |
+ * | `enable_on_device_proofread` | on-device proofreading, the grammar checker's sibling |
  * | `enable_emoji_kitchen_browse` | the Emoji Kitchen browse surface |
  * | `enable_custom_sticker_tab` | the custom sticker tab |
  * | `offline_translate` | translation without a network round trip |
@@ -55,9 +59,9 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
 @Suppress("unused")
 val hiddenFeaturesPatch = bytecodePatch(
     name = "Hidden Features",
-    description = "Turns on five finished Gboard features that a patched build cannot receive: " +
-        "on-device proofreading, Emoji Kitchen browse, the custom sticker tab, offline " +
-        "translation, and search in Gboard's settings. Their flags are delivered per app " +
+    description = "Turns on six finished Gboard features that a patched build cannot receive: " +
+        "grammar check, on-device proofreading, Emoji Kitchen browse, the custom sticker tab, " +
+        "offline translation, and search in Gboard's settings. Their flags are delivered per app " +
         "signature, so resigning the APK means they never arrive and stay off.",
     default = true,
 ) {
@@ -67,6 +71,7 @@ val hiddenFeaturesPatch = bytecodePatch(
 
     execute {
         forceFlagsOn(
+            "enable_grammar_checker",
             "enable_on_device_proofread",
             "enable_emoji_kitchen_browse",
             "enable_custom_sticker_tab",

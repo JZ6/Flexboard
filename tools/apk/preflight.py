@@ -87,9 +87,10 @@ BINDINGS = {
     # return when the caller's digest cannot be computed -- an input, never an output. It is
     # tracked only because reading it is part of what identifies the check.
     'test_environment': 'Lrox;',
-    # The Phenotype flag holder whose <clinit> the grammar patch flips, and the flag factory it
-    # stores through. The class names move every build; the strings inside are what R8 cannot.
-    'grammar_flags': 'Ljpf;',
+    # The factory every boolean Phenotype flag is built through. Hidden Features finds each
+    # flag's holder class by carrying the flag's name string rather than naming the class, so the
+    # holders need no bindings -- Ljpf; had one and no longer does. Names move every build; the
+    # strings inside are what R8 cannot move.
     'flag_store': 'Lnxs;',
     # Letters that used to sit inline in the check bodies below, where the module docstring's
     # "edit BINDINGS and the register counts; everything else is structural and should carry
@@ -127,6 +128,7 @@ EXPECTED = {
     # same <clinit> -- so a Gboard build that hoists one of these would fail at patch time with no
     # warning here otherwise.
     'hidden_feature_flags': [
+        'enable_grammar_checker',
         'enable_on_device_proofread',
         'enable_emoji_kitchen_browse',
         'enable_custom_sticker_tab',
@@ -161,7 +163,6 @@ EXPECTED = {
     ],
     'sigcheck_registers': 8,
     'sigcheck_returns': [6, 4, 3],
-    'grammar_clinit_registers': 4,
     'undo_scratch': [2, 3],
     'clamp_scratch': [5, 7, 9],
     'distance_scratch': [7, 8, 9],
@@ -1930,27 +1931,10 @@ def run(dl, apk=None):
         c2, _ = body(dl, f'{sig_cls}->c({CONTEXT}Ljava/lang/String;)[B')
         check('bypass: digest method exists', c2 is not None)
 
-    # The grammar row flip: Ljpf's <clinit> initialises one Phenotype flag per
-    # const-string/const/4/factory triple, and the patch finds its site by the flag's name
-    # string and flips the zero that follows. The fingerprint asserts the class; these pins
-    # assert the two instructions the flip depends on.
-    grammar_cls = B['grammar_flags']
-    c, ins = body(dl, f'{grammar_cls}-><clinit>()V')
-    if check('grammar: flag-holder clinit exists', ins is not None):
-        check('grammar: clinit register count', c['registers'] == E['grammar_clinit_registers'],
-              f'got {c["registers"]}')
-        sites = [i for i, (_, n, a) in enumerate(ins)
-                 if n == 'const-string' and "'enable_grammar_checker'" in a]
-        if check('grammar: exactly one enable_grammar_checker flag', len(sites) == 1,
-                 str(len(sites))):
-            i = sites[0]
-            n1, a1 = ins[i + 1][1], ins[i + 1][2]
-            check('grammar: default is const/4 zero', n1 == 'const/4' and a1.rstrip().endswith('#0'),
-                  f'{n1} {a1}')
-            target = f"{B['flag_store']}->a(Ljava/lang/String;Z)Lnxp;"
-            n2, a2 = ins[i + 2][1], ins[i + 2][2]
-            check('grammar: stored through the flag factory',
-                  n2 == 'invoke-static' and target in a2, f'{n2} {a2}')
+    # The grammar flag had a bespoke section here, pinning Ljpf; by name and asserting its
+    # triple by hand. It is one entry in hidden_feature_flags now, checked by the same four rules
+    # as the rest -- including "loads its own default", which the hand-written version never
+    # checked and which is the assertion that makes the flip safe at all.
 
     # ---- hidden features
     #
