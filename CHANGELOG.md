@@ -1,3 +1,14 @@
+# [2.3.0-dev.0](https://github.com/JZ6/Flexboard/compare/v2.2.1...v2.3.0-dev.0) (2026-09-05)
+
+* **Gboard:** refactor: separate the two biggest patches from their emitters
+* **Gboard:** refactor: give every feature's fingerprints one place to live
+* **Gboard:** refactor: name ToolbarIdAdmissionPatch.kt for what it declares
+* **Gboard:** docs: stop three patch descriptions describing a build nobody gets
+* **Gboard:** fix: restore the seventh feature to the Hidden Features description
+* **Gboard:** feat: let a hoisted flag default be overridden per call site
+* **Gboard:** refactor: fold Grammar Check Row into Hidden Features
+* **Gboard:** feat: Hidden Features — five flags a resigned build can never receive
+
 # [2.2.1](https://github.com/JZ6/Flexboard/compare/v2.2.0...v2.2.1) (2026-09-04)
 
 * **Gboard:** feat: a scratch text box in Settings, so a change can be tried where it was made

@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "2.2.1",
+  "version": "2.3.0-dev.0",
   "patches": [
     {
       "name": "Bigger Toolbar",
@@ -65,8 +65,8 @@
       "options": []
     },
     {
-      "name": "Grammar Check Row",
-      "description": "Force the grammar check settings row to appear. The Phenotype flag that governs it never syncs on a patched build, so its compiled-in default (off) sticks.",
+      "name": "Hidden Features",
+      "description": "Turns on seven finished Gboard features that a patched build cannot receive: grammar check, on-device proofreading, Emoji Kitchen browse, the custom sticker tab, offline translation, dismissable chips, and search in Gboard's settings. Their flags are delivered per app signature, so resigning the APK means they never arrive and stay off.",
       "default": true,
       "dependencies": [
         "BytecodePatch"
@@ -128,7 +128,7 @@
     },
     {
       "name": "Suggested Settings",
-      "description": "Turns on flick keys for symbols, touch & hold keys for numbers, suggestion strip, grammar check and smart replies, and turns off block offensive words and word suggestions. Written once as defaults, so each can still be changed in Gboard's own settings.",
+      "description": "Turns on flick keys for symbols, touch & hold keys for numbers, suggestion strip, grammar check and smart replies, and turns off block offensive words and word suggestions. Written once as defaults, so each can still be changed in Gboard's own settings. Grammar check is the switch, not the feature: the row only exists on a resigned build if Hidden Features is applied too.",
       "default": true,
       "dependencies": [
         "BytecodePatch"
@@ -224,7 +224,7 @@
     },
     {
       "name": "Text Action Buttons",
-      "description": "Add Select all, Copy and Paste buttons to the toolbar above the keyboard, so each is one tap instead of opening Gboard's text editing panel first. Registered natively, so drag-to-reorder through the toolbar customize page persists. These three compete for the five icons Gboard's toolbar holds; Bigger Toolbar raises that ceiling if you run the hotkeys as well.",
+      "description": "Add Select all, Copy and Paste buttons to the toolbar above the keyboard, so each is one tap instead of opening Gboard's text editing panel first. Registered natively, so drag-to-reorder through the toolbar customize page persists. These three share the toolbar with Gboard's own icons and with Toolbar Hotkeys. Bigger Toolbar, which is applied unless you deselect it, raises the ceiling from five to twelve; without it, five is all the bar can hold.",
       "default": true,
       "dependencies": [
         "BytecodePatch",
@@ -256,7 +256,7 @@
     },
     {
       "name": "Toolbar Hotkeys",
-      "description": "Adds six configurable hotkey slots to Gboard's toolbar — each commits a text of your choice on tap. A slot appears when its text is set; when cleared it hides at the next toolbar rebuild (rotate, switch IME, or restart — there's no mid-session un-register). Text and icon edits apply on the next keyboard open. Gboard's toolbar holds five icons in total, shared with its own, so apply Bigger Toolbar too if you want all six on the bar at once.",
+      "description": "Adds six configurable hotkey slots to Gboard's toolbar — each commits a text of your choice on tap. A slot appears when its text is set; when cleared it hides at the next toolbar rebuild (rotate, switch IME, or restart — there's no mid-session un-register). Text and icon edits apply on the next keyboard open. The slots share the toolbar with Gboard's own icons: Bigger Toolbar, which is applied unless you deselect it, makes room for twelve, but on a stock ceiling of five not all six fit.",
       "default": true,
       "dependencies": [
         "BytecodePatch",
