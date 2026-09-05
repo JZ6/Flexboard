@@ -1,5 +1,6 @@
 package dev.jz6.flexboard.patches.shared
 
+import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.BytecodePatchContext
@@ -53,7 +54,25 @@ private const val FACTORY_WINDOW = 5
  * removed fails the patch rather than being quietly skipped, because "we enabled four of five"
  * is indistinguishable from success on a device.
  */
-internal fun BytecodePatchContext.forceFlagsOn(vararg names: String) {
+/**
+ * Forces the named boolean Phenotype flags on by rewriting their compiled-in defaults.
+ *
+ * By default a flag must load its own constant between its name and the factory call. Flags listed
+ * in [isolating] are the exception: Gboard hoists one zero and feeds it to several flags in the
+ * same `<clinit>`, so there is no constant belonging to the flag alone. Those get a dedicated
+ * constant inserted for their call and the shared register put back immediately afterwards, which
+ * leaves every sibling on the original zero.
+ *
+ * [isolating] is opt-in rather than a silent fallback. The strict rule exists because flipping a
+ * shared constant turns on flags nobody asked for, and a fallback would hide exactly that.
+ */
+internal fun BytecodePatchContext.forceFlagsOn(
+    vararg names: String,
+    isolating: Set<String> = emptySet(),
+) {
+    require(isolating.all { it in names }) {
+        "isolating names a flag that is not being forced on: ${(isolating - names.toSet()).sorted()}"
+    }
     val wanted = names.toSet()
 
     // One pass over every class: the flags are spread across unrelated <clinit>s, and resolving
@@ -78,7 +97,7 @@ internal fun BytecodePatchContext.forceFlagsOn(vararg names: String) {
             .sortedByDescending { it.index }
         for ((nameIndex, instruction) in sites) {
             val name = instruction.stringOrNull()!!
-            mutable.flipFlagDefault(name, nameIndex, body)
+            mutable.flipFlagDefault(name, nameIndex, body, name in isolating)
             flipped += name
         }
     }
@@ -95,6 +114,7 @@ private fun MutableMethod.flipFlagDefault(
     name: String,
     nameIndex: Int,
     body: List<Instruction>,
+    isolating: Boolean,
 ) {
     val callIndex = (nameIndex + 1 until minOf(nameIndex + 1 + FACTORY_WINDOW, body.size))
         .firstOrNull { body[it].callsMethod(BOOLEAN_FLAG_FACTORY) }
@@ -114,12 +134,23 @@ private fun MutableMethod.flipFlagDefault(
         val instruction = body[index]
         instruction.opcodeName().startsWith("CONST") &&
             (instruction as? OneRegisterInstruction)?.registerA == booleanRegister
-    } ?: error(
-        "\"$name\" in ${toDescriptor()} takes its default from a register loaded before the " +
-            "flag's own name — the constant is shared with other flags in this <clinit>, and " +
-            "flipping it would enable them too. This flag needs its own emission, not this one."
-    )
+    }
+    if (defaultIndex == null) {
+        check(isolating) {
+            "\"$name\" in ${toDescriptor()} takes its default from a register loaded before the " +
+                "flag's own name — the constant is shared with other flags in this <clinit>, and " +
+                "flipping it would enable them too. Pass it in forceFlagsOn(isolating = ...) to " +
+                "give it a constant of its own instead."
+        }
+        isolateAndFlip(name, nameIndex, callIndex, booleanRegister, body)
+        return
+    }
 
+    check(!isolating) {
+        "\"$name\" in ${toDescriptor()} loads its own default now, so it no longer needs the " +
+            "isolating emission — drop it from forceFlagsOn(isolating = ...) rather than leave a " +
+            "claim about Gboard's bytecode that stopped being true."
+    }
     val literal = when (val instruction = body[defaultIndex]) {
         is WideLiteralInstruction -> instruction.wideLiteral
         is NarrowLiteralInstruction -> instruction.narrowLiteral.toLong()
@@ -131,4 +162,45 @@ private fun MutableMethod.flipFlagDefault(
     }
 
     replaceInstruction(defaultIndex, "const/4 v$booleanRegister, 0x1")
+}
+
+/**
+ * The emission for a flag whose default is hoisted and shared. Rather than rewrite the shared
+ * constant — which would flip every flag reading that register — this writes a one instruction
+ * override immediately before the flag's own call and restores the register straight after, so the
+ * change is scoped to a single call and the siblings never see it.
+ */
+private fun MutableMethod.isolateAndFlip(
+    name: String,
+    nameIndex: Int,
+    callIndex: Int,
+    booleanRegister: Int,
+    body: List<Instruction>,
+) {
+    // The shared constant still has to be a zero: if Gboard already ships this flag on, the patch
+    // would be claiming credit for nothing, exactly as in the dedicated case.
+    val sharedIndex = (0 until nameIndex).lastOrNull { index ->
+        val instruction = body[index]
+        instruction.opcodeName().startsWith("CONST") &&
+            (instruction as? OneRegisterInstruction)?.registerA == booleanRegister
+    } ?: error(
+        "\"$name\" in ${toDescriptor()} reads v$booleanRegister as its default but nothing in " +
+            "this <clinit> ever writes that register — the call no longer has the shape this " +
+            "patch understands"
+    )
+    val literal = when (val instruction = body[sharedIndex]) {
+        is WideLiteralInstruction -> instruction.wideLiteral
+        is NarrowLiteralInstruction -> instruction.narrowLiteral.toLong()
+        else -> error("\"$name\"'s shared default in ${toDescriptor()} is not a literal")
+    }
+    check(literal == 0L) {
+        "\"$name\" already defaults to $literal in ${toDescriptor()}, not 0 — Gboard ships it on, " +
+            "so this patch would be claiming credit for nothing and hiding a real change"
+    }
+    // A move-result must stay welded to its invoke, so the restore goes after it, not before.
+    val movesResult = body.getOrNull(callIndex + 1)?.opcodeName()?.startsWith("MOVE_RESULT") == true
+    val restoreIndex = callIndex + if (movesResult) 2 else 1
+    // Higher index first: inserting the override at callIndex would otherwise shift the restore.
+    addInstruction(restoreIndex, "const/4 v$booleanRegister, 0x0")
+    addInstruction(callIndex, "const/4 v$booleanRegister, 0x1")
 }

@@ -135,6 +135,13 @@ EXPECTED = {
         'offline_translate',
         'enable_settings_search',
     ],
+    # Flags whose default is hoisted: Gboard loads one zero and feeds it to several flags in the
+    # same <clinit>, so no constant belongs to this flag alone. Hidden Features handles these with
+    # the isolating emission -- a constant scoped to the flag's own call -- and these pins assert
+    # the shape that makes that necessary and safe. Each entry is (flag, register sharer).
+    'hidden_feature_flags_shared': [
+        ('enable_close_proactive_suggestions_access_point', 'enable_auto_fill_pk_fallback_ui'),
+    ],
     'toolbar_capacity_flag': 'config_max_access_points',
     'toolbar_stock_flag_default': -1,
     'toolbar_stock_ceiling': 8,
@@ -1979,6 +1986,66 @@ def run(dl, apk=None):
                     check(f'flags: {flag} still ships off',
                           lit is not None and int(lit.group(1), 0) == 0,
                           (ins_[own[-1]][2] or '').strip())
+
+    # The hoisted-default flags. The assertions are deliberately the mirror of the block above:
+    # there must be NO constant of the flag's own between its name and its call, because that
+    # absence is the whole reason the isolating emission exists. If Gboard ever gives one of these
+    # a dedicated constant the patch says so and fails -- a stale claim about the bytecode is worth
+    # a build break, since the simple emission would then be the correct one.
+    for flag, sharer in E['hidden_feature_flags_shared']:
+        sites = []
+        for d_ in dl:
+            for _t, _af, cd_ in d_.classes():
+                for desc_, _af2, co_ in d_.class_methods(cd_):
+                    if not desc_.endswith('-><clinit>()V'):
+                        continue
+                    c_ = d_.code(co_)
+                    if not c_:
+                        continue
+                    try:
+                        ins_ = ddis.disasm(d_, c_)
+                    except Exception:
+                        continue
+                    for i_, (_pc, mn_, a_) in enumerate(ins_):
+                        if not mn_.startswith('const-string'):
+                            continue
+                        m_ = re.match(r"\s*v(\d+),\s*'(.*)'\s*$", a_ or '')
+                        if m_ and m_.group(2) == flag:
+                            sites.append((desc_, ins_, i_))
+        if check(f'flags: one declaration of {flag}', len(sites) == 1, str(len(sites))):
+            desc_, ins_, i_ = sites[0]
+            inv = next((j for j in range(i_ + 1, min(i_ + 6, len(ins_)))
+                        if flag_factory in (ins_[j][2] or '')), None)
+            if check(f'flags: {flag} feeds the boolean flag factory', inv is not None):
+                breg = [int(x) for x in re.findall(r'v(\d+)', ins_[inv][2].split('},')[0])][1]
+                own = [j for j in range(i_ + 1, inv)
+                       if ins_[j][1].startswith('const')
+                       and re.match(rf"\s*v{breg},", ins_[j][2] or '')]
+                check(f'flags: {flag} default is still hoisted', not own,
+                      'it has its own constant now -- drop it from isolating')
+                # The register the flag reads must be written somewhere earlier, and hold zero.
+                pre = [j for j in range(0, i_)
+                       if ins_[j][1].startswith('const')
+                       and re.match(rf"\s*v{breg},", ins_[j][2] or '')]
+                if check(f'flags: {flag} default is written before the flag name', bool(pre)):
+                    lit = re.search(r'#(-?\w+)', ins_[pre[-1]][2] or '')
+                    check(f'flags: {flag} still ships off',
+                          lit is not None and int(lit.group(1), 0) == 0,
+                          (ins_[pre[-1]][2] or '').strip())
+                # Name the sibling explicitly. This is what the patch would have broken had it
+                # rewritten the shared constant, so it is worth pinning by name rather than count.
+                others = [ins_[j][2].split("'")[1] for j in range(0, len(ins_))
+                          if ins_[j][1].startswith('const-string')
+                          and j != i_ and "'" in (ins_[j][2] or '')]
+                check(f'flags: {flag} shares its default with {sharer}', others == [sharer],
+                      f'{desc_} now also declares {others}')
+                # The override is one instruction before the call and the restore one after, so
+                # both rely on the method running straight through. A branch landing on the call
+                # would jump the override and the flag would quietly stay off; a branch landing on
+                # the restore would leak the 1 into whatever reads the register next.
+                jumps = [m for _pc, m, _a in ins_
+                         if m.startswith(('if-', 'goto', 'packed-switch', 'sparse-switch'))]
+                check(f'flags: {flag} sits in straight-line code', not jumps, str(sorted(set(jumps))))
 
     # ---- toolbar capacity
     #

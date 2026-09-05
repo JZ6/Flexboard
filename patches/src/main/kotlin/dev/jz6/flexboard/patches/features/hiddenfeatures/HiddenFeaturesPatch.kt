@@ -6,7 +6,7 @@ import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.forceFlagsOn
 
 /**
- * Turns on six finished Gboard features whose flags a patched build can never receive.
+ * Turns on seven finished Gboard features whose flags a patched build can never receive.
  *
  * Phenotype registers flags per package **and signing identity**. A Morphe build is resigned, so
  * GMS never attributes the flags to Gboard, the sync never lands, and every flag keeps the default
@@ -18,7 +18,7 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  * row vanished on patched builds and nobody could say why. The mechanism turned out to be general,
  * so that patch is folded in here rather than left as one of two things doing the same job.
  *
- * ## Why these six and not the other 660
+ * ## Why these seven and not the other 659
  *
  * Because a flag shipping `false` is not evidence that anything was lost. Most of those 666 are off
  * for everyone: experiments, staged rollouts, dead code. Forcing one of those on is not restoring a
@@ -35,6 +35,7 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  * | `enable_emoji_kitchen_browse` | the Emoji Kitchen browse surface |
  * | `enable_custom_sticker_tab` | the custom sticker tab |
  * | `offline_translate` | translation without a network round trip |
+ * | `enable_close_proactive_suggestions_access_point` | a dismiss control on the chips Gboard offers unprompted |
  * | `enable_settings_search` | search within Gboard's own settings |
  *
  * Deliberately excluded, having been looked at: anything ending `_promo` (`handwriting`,
@@ -59,7 +60,7 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
 @Suppress("unused")
 val hiddenFeaturesPatch = bytecodePatch(
     name = "Hidden Features",
-    description = "Turns on six finished Gboard features that a patched build cannot receive: " +
+    description = "Turns on seven finished Gboard features that a patched build cannot receive: " +
         "grammar check, on-device proofreading, Emoji Kitchen browse, the custom sticker tab, " +
         "offline translation, and search in Gboard's settings. Their flags are delivered per app " +
         "signature, so resigning the APK means they never arrive and stay off.",
@@ -76,7 +77,12 @@ val hiddenFeaturesPatch = bytecodePatch(
             "enable_emoji_kitchen_browse",
             "enable_custom_sticker_tab",
             "offline_translate",
+            "enable_close_proactive_suggestions_access_point",
             "enable_settings_search",
+            // Gboard hoists one zero in Lqjx; and feeds it to this flag and
+            // enable_auto_fill_pk_fallback_ui both. Rewriting it would turn on an unrelated
+            // autofill surface, so this one gets a constant scoped to its own call.
+            isolating = setOf("enable_close_proactive_suggestions_access_point"),
         )
     }
 }
