@@ -1,3 +1,7 @@
+# [2.3.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.3...v2.3.0-dev.4) (2026-09-06)
+
+* **Gboard:** feat: default-on the two flags that were watched working
+
 # [2.3.0-dev.3](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.2...v2.3.0-dev.3) (2026-09-06)
 
 * **Gboard:** fix: drop on-device proofread, the flag that would not let Gboard start
