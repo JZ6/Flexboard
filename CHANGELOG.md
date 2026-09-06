@@ -1,3 +1,7 @@
+# [2.3.0-dev.2](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.1...v2.3.0-dev.2) (2026-09-06)
+
+* **Gboard:** fix: split Hidden Features into one patch per flag, all opt-in
+
 # [2.3.0-dev.1](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.0...v2.3.0-dev.1) (2026-09-06)
 
 * **Gboard:** 2.3.0-dev.1
