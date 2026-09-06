@@ -44,6 +44,9 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  * behind [hiddenFeaturesUnconfirmedPatch] so retesting costs a tick rather than a release, and
  * they are off by default so nobody is told they work.
  *
+ * The full write-up, including the inventory and a classifier that did not work, is
+ * `docs/phenotype-flags.md`.
+ *
  * ## The rule those five taught
  *
  * The original test was that a flag "gates something Google ships publicly today, so the code

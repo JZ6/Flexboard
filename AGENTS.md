@@ -67,5 +67,11 @@ resource lane after touching anything under `patches/src/main/resources/`.
 **Morphe never gates on `compatibleWith`** — it is advisory metadata. A patch with `name == null`
 is hidden from the patch list; that, not `internal`, is what makes a patch internal.
 
+**A forced Phenotype flag opens a gate, it does not supply what is behind it.** Two of seven
+hand-picked flags did anything; one stopped Gboard starting because it fronts a downloaded model and
+a version allowlist that a resigned build never receives. Flags ship opt-in until watched working on
+a device, and an unproven set ships one patch per flag so a bisect costs installs rather than
+releases. See `docs/phenotype-flags.md`.
+
 **Morphe keys patch selection by name.** Renaming a user-facing patch resets anyone who had
 deselected it back to the default.

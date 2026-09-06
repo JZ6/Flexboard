@@ -3,19 +3,11 @@
 
 # Roadmap entries written by the user verbatim.
 
-rename flexboard description
-
 some settings disabled like grammer check and ai writing tools, rambler mode etc
 
 flick up to undo autocorrect 
 
-gesture down on a to select all?
-
-increased tool bar size fit more buttons
-
 clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
-
-add more to the about section
 
 
 ## Done from the queue
