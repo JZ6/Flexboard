@@ -1,3 +1,7 @@
+# [2.3.0-dev.3](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.2...v2.3.0-dev.3) (2026-09-06)
+
+* **Gboard:** fix: drop on-device proofread, the flag that would not let Gboard start
+
 # [2.3.0-dev.2](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.1...v2.3.0-dev.2) (2026-09-06)
 
 * **Gboard:** fix: split Hidden Features into one patch per flag, all opt-in
