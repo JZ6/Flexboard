@@ -6,7 +6,7 @@ import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.forceFlagsOn
 
 /**
- * Turns on seven finished Gboard features whose flags a patched build can never receive.
+ * Seven finished Gboard features whose flags a patched build can never receive, one patch each.
  *
  * Phenotype registers flags per package **and signing identity**. A Morphe build is resigned, so
  * GMS never attributes the flags to Gboard, the sync never lands, and every flag keeps the default
@@ -53,19 +53,38 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  * "a zero near the name" can be a constant several other flags also read. Flipping a shared one
  * turns them all on, silently.
  *
- * What makes it safe here is that each of these five re-initialises the register immediately
- * before its own call, which [forceFlagsOn] verifies rather than assumes: the constant must be
- * written *between* the flag's name and the factory call. A hoisted default is rejected outright.
+ * What makes it safe here is that each of these re-initialises the register immediately before
+ * its own call, which [forceFlagsOn] verifies rather than assumes: the constant must be written
+ * *between* the flag's name and the factory call. A hoisted default is rejected outright.
+ *
+ * ## Why one patch per flag
+ *
+ * v2.3.0-dev.0 shipped these as a single default-on patch and Gboard would not start. Unticking it
+ * restored the keyboard, which localises the fault to this file but not to a flag -- and the list is
+ * compiled in, so narrowing it by rebuilding costs a release per bisection step.
+ *
+ * Split, the flags become checkboxes and the search runs on-device against one build. That is the
+ * whole reason for the shape. The verified-safe emission is unchanged; only the grouping moved.
+ *
+ * All seven are opt-in. Six have never run on hardware, and the seventh reaches its flag through
+ * machinery that is also new, so none of them has earned a default. Whichever flag turns out to be
+ * at fault, the rest should stay opt-in until each has actually been seen working.
+ */
+
+/**
+ * `enable_grammar_checker` -- grammar mistakes underlined as you type, and the settings row that switches them on.
+ *
+ * Gboard would not start with all seven forced on at once (v2.3.0-dev.0). Which flag is
+ * responsible is not yet known, so every one of them is opt-in.
  */
 @Suppress("unused")
-val hiddenFeaturesPatch = bytecodePatch(
-    name = "Hidden Features",
-    description = "Turns on seven finished Gboard features that a patched build cannot receive: " +
-        "grammar check, on-device proofreading, Emoji Kitchen browse, the custom sticker tab, " +
-        "offline translation, dismissable chips, and search in Gboard's settings. Their flags are " +
-        "delivered per app " +
-        "signature, so resigning the APK means they never arrive and stay off.",
-    default = true,
+val hiddenGrammarCheckerPatch = bytecodePatch(
+    name = "Hidden: grammar check",
+    description = "Turns on one finished Gboard feature that a resigned build can never " +
+        "receive: grammar mistakes underlined as you type, and the settings row that switches them on. Phenotype delivers flags per app " +
+        "signature, so a patched APK never receives them and the feature stays off. " +
+        "Opt-in: one of these seven stops Gboard starting and it is not yet known which.",
+    default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
@@ -74,16 +93,170 @@ val hiddenFeaturesPatch = bytecodePatch(
     execute {
         forceFlagsOn(
             "enable_grammar_checker",
+        )
+    }
+}
+
+/**
+ * `enable_on_device_proofread` -- on-device proofreading, the grammar checker's sibling.
+ *
+ * Gboard would not start with all seven forced on at once (v2.3.0-dev.0). Which flag is
+ * responsible is not yet known, so every one of them is opt-in.
+ */
+@Suppress("unused")
+val hiddenProofreadPatch = bytecodePatch(
+    name = "Hidden: proofread",
+    description = "Turns on one finished Gboard feature that a resigned build can never " +
+        "receive: on-device proofreading, the grammar checker's sibling. Phenotype delivers flags per app " +
+        "signature, so a patched APK never receives them and the feature stays off. " +
+        "Opt-in: one of these seven stops Gboard starting and it is not yet known which.",
+    default = false,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
+
+    execute {
+        forceFlagsOn(
             "enable_on_device_proofread",
+        )
+    }
+}
+
+/**
+ * `enable_emoji_kitchen_browse` -- browsing Emoji Kitchen rather than only being offered its suggestions.
+ *
+ * Gboard would not start with all seven forced on at once (v2.3.0-dev.0). Which flag is
+ * responsible is not yet known, so every one of them is opt-in.
+ */
+@Suppress("unused")
+val hiddenEmojiKitchenBrowsePatch = bytecodePatch(
+    name = "Hidden: Emoji Kitchen browse",
+    description = "Turns on one finished Gboard feature that a resigned build can never " +
+        "receive: browsing Emoji Kitchen rather than only being offered its suggestions. Phenotype delivers flags per app " +
+        "signature, so a patched APK never receives them and the feature stays off. " +
+        "Opt-in: one of these seven stops Gboard starting and it is not yet known which.",
+    default = false,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
+
+    execute {
+        forceFlagsOn(
             "enable_emoji_kitchen_browse",
+        )
+    }
+}
+
+/**
+ * `enable_custom_sticker_tab` -- a tab for stickers you added yourself.
+ *
+ * Gboard would not start with all seven forced on at once (v2.3.0-dev.0). Which flag is
+ * responsible is not yet known, so every one of them is opt-in.
+ */
+@Suppress("unused")
+val hiddenCustomStickerTabPatch = bytecodePatch(
+    name = "Hidden: custom sticker tab",
+    description = "Turns on one finished Gboard feature that a resigned build can never " +
+        "receive: a tab for stickers you added yourself. Phenotype delivers flags per app " +
+        "signature, so a patched APK never receives them and the feature stays off. " +
+        "Opt-in: one of these seven stops Gboard starting and it is not yet known which.",
+    default = false,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
+
+    execute {
+        forceFlagsOn(
             "enable_custom_sticker_tab",
+        )
+    }
+}
+
+/**
+ * `offline_translate` -- translation without a network round trip.
+ *
+ * Gboard would not start with all seven forced on at once (v2.3.0-dev.0). Which flag is
+ * responsible is not yet known, so every one of them is opt-in.
+ */
+@Suppress("unused")
+val hiddenOfflineTranslatePatch = bytecodePatch(
+    name = "Hidden: offline translate",
+    description = "Turns on one finished Gboard feature that a resigned build can never " +
+        "receive: translation without a network round trip. Phenotype delivers flags per app " +
+        "signature, so a patched APK never receives them and the feature stays off. " +
+        "Opt-in: one of these seven stops Gboard starting and it is not yet known which.",
+    default = false,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
+
+    execute {
+        forceFlagsOn(
             "offline_translate",
+        )
+    }
+}
+
+/**
+ * `enable_close_proactive_suggestions_access_point` -- a close control on the chips Gboard offers unprompted.
+ *
+ * The one flag of the seven with no constant of its own, so it takes the
+ * isolating emission rather than a straight flip.
+ *
+ * Gboard would not start with all seven forced on at once (v2.3.0-dev.0). Which flag is
+ * responsible is not yet known, so every one of them is opt-in.
+ */
+@Suppress("unused")
+val hiddenDismissableChipsPatch = bytecodePatch(
+    name = "Hidden: dismissable chips",
+    description = "Turns on one finished Gboard feature that a resigned build can never " +
+        "receive: a close control on the chips Gboard offers unprompted. Phenotype delivers flags per app " +
+        "signature, so a patched APK never receives them and the feature stays off. " +
+        "Opt-in: one of these seven stops Gboard starting and it is not yet known which.",
+    default = false,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
+
+    execute {
+        forceFlagsOn(
             "enable_close_proactive_suggestions_access_point",
-            "enable_settings_search",
             // Gboard hoists one zero in Lqjx; and feeds it to this flag and
-            // enable_auto_fill_pk_fallback_ui both. Rewriting it would turn on an unrelated
-            // autofill surface, so this one gets a constant scoped to its own call.
+            // enable_auto_fill_pk_fallback_ui both. Rewriting it would turn on an
+            // unrelated autofill surface, so this one gets a constant scoped to its
+            // own call.
             isolating = setOf("enable_close_proactive_suggestions_access_point"),
+        )
+    }
+}
+
+/**
+ * `enable_settings_search` -- search within Gboard's own settings.
+ *
+ * Gboard would not start with all seven forced on at once (v2.3.0-dev.0). Which flag is
+ * responsible is not yet known, so every one of them is opt-in.
+ */
+@Suppress("unused")
+val hiddenSettingsSearchPatch = bytecodePatch(
+    name = "Hidden: settings search",
+    description = "Turns on one finished Gboard feature that a resigned build can never " +
+        "receive: search within Gboard's own settings. Phenotype delivers flags per app " +
+        "signature, so a patched APK never receives them and the feature stays off. " +
+        "Opt-in: one of these seven stops Gboard starting and it is not yet known which.",
+    default = false,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(basePatch)
+
+    execute {
+        forceFlagsOn(
+            "enable_settings_search",
         )
     }
 }

@@ -397,24 +397,38 @@ def _check_hidden_features_count(problems):
         'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
     }
     source = (PATCHES / "dev/jz6/flexboard/patches/features/hiddenfeatures/HiddenFeaturesPatch.kt").read_text()
-    said = re.search(r'Turns on (\w+) finished', source)
-    call = re.search(r'forceFlagsOn\((.*?)\n\s*\)', source, re.S)
-    if not said or not call:
+    saids = re.findall(r'Turns on (\w+) finished', source)
+    calls = re.findall(r'forceFlagsOn\((.*?)\n\s*\)', source, re.S)
+    if not saids or not calls:
         problems.append(
-            f"  hidden features count check parsed nothing: numeral {said and said.group(1)!r}, "
-            f"forceFlagsOn call {'found' if call else 'not found'}"
+            f"  hidden features count check parsed nothing: {len(saids)} numerals, "
+            f"{len(calls)} forceFlagsOn calls"
         )
         return
-    flags = re.findall(r'^\s*"([a-z0-9_]+)",', call.group(1), re.M)
-    claimed = words.get(said.group(1))
-    if claimed is None:
-        problems.append(f"  Hidden Features says {said.group(1)!r} features, which is not a number word")
-    elif claimed != len(flags):
+    if len(saids) != len(calls):
         problems.append(
-            f"  Hidden Features describes itself as turning on {said.group(1)} ({claimed}) features "
-            f"but forceFlagsOn names {len(flags)} — the picker text is telling users something "
-            f"the patch does not do"
+            f"  Hidden Features has {len(saids)} descriptions but {len(calls)} forceFlagsOn calls — "
+            f"one patch is describing another patch's flags"
         )
+        return
+    seen = {}
+    for said, call in zip(saids, calls):
+        flags = re.findall(r'^\s*"([a-z0-9_]+)",', call, re.M)
+        claimed = words.get(said)
+        if claimed is None:
+            problems.append(f"  Hidden Features says {said!r} features, which is not a number word")
+        elif claimed != len(flags):
+            problems.append(
+                f"  a Hidden Features patch describes itself as turning on {said} ({claimed}) "
+                f"features but forceFlagsOn names {len(flags)} — the picker text is telling users "
+                f"something the patch does not do"
+            )
+        # Two patches flipping one flag is not a doubled feature, it is a build failure: the second
+        # finds the constant already at 1 and forceFlagsOn refuses it as a flag Gboard ships on.
+        for flag in flags:
+            if flag in seen:
+                problems.append(f"  {flag} is forced on by two Hidden Features patches")
+            seen[flag] = True
 
 
 def _check_stock_package_name(problems):
