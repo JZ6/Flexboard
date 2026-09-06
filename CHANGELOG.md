@@ -1,3 +1,9 @@
+# [2.3.0-dev.1](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.0...v2.3.0-dev.1) (2026-09-06)
+
+* **Gboard:** 2.3.0-dev.1
+* **Gboard:** docs: finish counting the ids the slot raise changed
+* **Gboard:** feat: raise the hotkey slots from six to eight
+
 # [2.3.0-dev.0](https://github.com/JZ6/Flexboard/compare/v2.2.1...v2.3.0-dev.0) (2026-09-05)
 
 * **Gboard:** refactor: separate the two biggest patches from their emitters

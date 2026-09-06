@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-09-05T06:41:37",
-  "description": "## 2.3.0-dev.0\n\n- refactor: separate the two biggest patches from their emitters\n- refactor: give every feature's fingerprints one place to live\n- refactor: name ToolbarIdAdmissionPatch.kt for what it declares\n- docs: stop three patch descriptions describing a build nobody gets\n- fix: restore the seventh feature to the Hidden Features description\n- feat: let a hoisted flag default be overridden per call site\n- refactor: fold Grammar Check Row into Hidden Features\n- feat: Hidden Features — five flags a resigned build can never receive",
-  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v2.3.0-dev.0/patches-2.3.0-dev.0.mpp",
+  "created_at": "2026-09-06T03:36:48",
+  "description": "## 2.3.0-dev.1\n\n- 2.3.0-dev.1\n- docs: finish counting the ids the slot raise changed\n- feat: raise the hotkey slots from six to eight",
+  "download_url": "https://github.com/JZ6/Flexboard/releases/download/v2.3.0-dev.1/patches-2.3.0-dev.1.mpp",
   "signature_download_url": "",
-  "version": "2.3.0-dev.0"
+  "version": "2.3.0-dev.1"
 }
