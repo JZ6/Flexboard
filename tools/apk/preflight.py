@@ -123,13 +123,12 @@ EXPECTED = {
     # Toolbar capacity. Both immediates the Bigger Toolbar patch rewrites, pinned at their stock
     # values: if either has moved, the patch would either raise nothing or discard a capacity
     # Gboard now ships of its own.
-    # Hidden Features: the five flags whose compiled-in default the patch flips. Pinned by name
+    # Hidden Features: the flags whose compiled-in default a patch flips. Pinned by name
     # and by shape, because forceFlagsOn refuses a flag whose default is shared with others in the
     # same <clinit> -- so a Gboard build that hoists one of these would fail at patch time with no
     # warning here otherwise.
     'hidden_feature_flags': [
         'enable_grammar_checker',
-        'enable_on_device_proofread',
         'enable_emoji_kitchen_browse',
         'enable_custom_sticker_tab',
         'offline_translate',
