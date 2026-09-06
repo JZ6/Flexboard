@@ -6,7 +6,7 @@ import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.forceFlagsOn
 
 /**
- * Six finished Gboard features whose flags a patched build can never receive, one patch each.
+ * Two finished Gboard features whose flags a patched build can never receive, forced on.
  *
  * Phenotype registers flags per package **and signing identity**. A Morphe build is resigned, so
  * GMS never attributes the flags to Gboard, the sync never lands, and every flag keeps the default
@@ -18,47 +18,60 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  * row vanished on patched builds and nobody could say why. The mechanism turned out to be general,
  * so that patch is folded in here rather than left as one of two things doing the same job.
  *
- * ## Why these seven and not the other 659
- *
- * Because a flag shipping `false` is not evidence that anything was lost. Most of those 666 are off
- * for everyone: experiments, staged rollouts, dead code. Forcing one of those on is not restoring a
- * feature, it is enabling an unfinished one, and the failure mode is a half-built path nobody can
- * trace back to a patch.
- *
- * These were chosen because each gates something Google ships publicly today, so the code behind
- * the flag is finished. That criterion turned out to be necessary but not sufficient -- see the
- * proofread entry under exclusions, which satisfied it and still would not start:
- *
  * | flag | feature |
  * |---|---|
  * | `enable_grammar_checker` | the grammar check settings row, and the checking behind it |
- * | `enable_emoji_kitchen_browse` | the Emoji Kitchen browse surface |
- * | `enable_custom_sticker_tab` | the custom sticker tab |
- * | `offline_translate` | translation without a network round trip |
  * | `enable_close_proactive_suggestions_access_point` | a close control on the chips Gboard offers unprompted |
- * | `enable_settings_search` | search within Gboard's own settings |
  *
- * `enable_on_device_proofread` was in this list until v2.3.0-dev.2, where it was confirmed on a
- * device to stop Gboard starting at all. It met the "Google ships it publicly" test and still
- * failed, because the test was the wrong one. Proofread is not a UI gate: it is the front door to
- * the Writing Tools / SAPI stack, which resolves an on-device LLM through AICore
- * (`ON_DEVICE_LLM_INFERENCE_PROOFREAD`), downloads a model (`Proofreader.downloadFeature`) and
- * version-gates itself with `sapi_proofreader_version` against `sapi_proofreader_allowed_versions`
- * -- one boolean in front of roughly 170 `writing_tools_*` parameters. Every one of those companions
- * is server-delivered, so on a resigned build they sit at their compiled defaults while the parent
- * says go, and the inference engine is asked for with no allowed version and no model.
+ * ## Two, out of the seven that were tried
  *
- * So the rule is narrower than "Google ships it": the flag must also be *self-contained*. A boolean
- * that only reveals finished local code is safe to force. A boolean that is the entry point to
- * server-configured machinery is not, however public the feature, because forcing it on skips the
- * configuration rather than supplying it.
+ * v2.3.0-dev.2 shipped seven candidate flags as seven separate opt-in patches, so each could be
+ * ticked alone against a device. Only these two did anything. The other five are recorded here
+ * because the next person to read a flag list will otherwise try them again:
  *
- * Deliberately excluded, having been looked at: anything ending `_promo` (`handwriting`,
- * `language`, `split_layout`) and `enable_signboard`, which add nag prompts rather than features;
- * every child flag whose parent stays off, such as `enable_grammar_checker_on_webview` and
- * `enable_embedded_photo_picker_leak_fix`, since a fix flag for a disabled feature does nothing;
- * and `super_insert`, which is genuinely unreleased and whose providers read browsing history and
- * contacts.
+ * | flag | outcome on a device |
+ * |---|---|
+ * | `enable_on_device_proofread` | **Gboard would not start at all** — removed |
+ * | `enable_emoji_kitchen_browse` | no effect seen — kept, opt-in |
+ * | `enable_custom_sticker_tab` | no effect seen — kept, opt-in |
+ * | `offline_translate` | no effect seen — kept, opt-in |
+ * | `enable_settings_search` | no effect seen — kept, opt-in |
+ *
+ * Only proofread is settled: it crashes, which is unambiguous. "No effect seen" is a weaker claim
+ * than "no effect", because each of those four shows up somewhere that has to be gone looking for
+ * — the emoji picker, the sticker picker's tab strip, the translate bar with the network off, a
+ * search affordance inside Gboard's settings. Absence of a sighting is not absence. They stay
+ * behind [hiddenFeaturesUnconfirmedPatch] so retesting costs a tick rather than a release, and
+ * they are off by default so nobody is told they work.
+ *
+ * ## The rule those five taught
+ *
+ * The original test was that a flag "gates something Google ships publicly today, so the code
+ * behind the flag is finished". All seven passed it, so it was not a test. The property that
+ * decides the outcome is whether the flag is **self-contained**:
+ *
+ *  - `enable_on_device_proofread` fronts the Writing Tools / SAPI stack — an AICore LLM
+ *    (`ON_DEVICE_LLM_INFERENCE_PROOFREAD`), a downloaded model (`Proofreader.downloadFeature`) and
+ *    a version gate gate (`sapi_proofreader_version` against `sapi_proofreader_allowed_versions`),
+ *    with roughly 170 `writing_tools_*` parameters behind the one boolean.
+ *  - `enable_emoji_kitchen_browse` needs Mobile Data Download groups
+ *    (`emoji_kitchen_mdd_data_file_group`, `emoji_kitchen_scam_index_data_file_group`).
+ *  - `enable_custom_sticker_tab` is filtered by `custom_sticker_tab_locales`, an allowlist that
+ *    arrives empty, so no locale ever qualifies.
+ *  - `offline_translate` needs downloaded language packs.
+ *  - `enable_settings_search` has no companion parameters in the dex at all, which is its own kind
+ *    of answer: there is nothing here for it to switch on.
+ *
+ * Every one of those companions is server-delivered too, so forcing the parent on does not supply
+ * the configuration — it skips it. A boolean that reveals finished *local* code is safe to force.
+ * A boolean that is the entry point to server-*configured* machinery is not, however public the
+ * feature is. The two that are default-on are the two that gate code already sitting in the APK,
+ * and the two that have been watched working.
+ *
+ * Excluded before testing, and still excluded: anything ending `_promo` (`handwriting`, `language`,
+ * `split_layout`) and `enable_signboard`, which add nag prompts rather than features; every child
+ * flag whose parent stays off, such as `enable_grammar_checker_on_webview`; and `super_insert`,
+ * which is genuinely unreleased and whose providers read browsing history and contacts.
  *
  * ## The trap under the emission
  *
@@ -68,39 +81,18 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  * "a zero near the name" can be a constant several other flags also read. Flipping a shared one
  * turns them all on, silently.
  *
- * What makes it safe here is that each of these re-initialises the register immediately before
- * its own call, which [forceFlagsOn] verifies rather than assumes: the constant must be written
- * *between* the flag's name and the factory call. A hoisted default is rejected outright.
- *
- * ## Why one patch per flag
- *
- * v2.3.0-dev.0 shipped these as a single default-on patch and Gboard would not start. Unticking it
- * restored the keyboard, which localises the fault to this file but not to a flag -- and the list is
- * compiled in, so narrowing it by rebuilding costs a release per bisection step.
- *
- * Split, the flags become checkboxes and the search runs on-device against one build. That is the
- * whole reason for the shape. The verified-safe emission is unchanged; only the grouping moved.
- *
- * All seven are opt-in. Six have never run on hardware, and the seventh reaches its flag through
- * machinery that is also new, so none of them has earned a default. Whichever flag turns out to be
- * at fault, the rest should stay opt-in until each has actually been seen working.
- */
-
-/**
- * `enable_grammar_checker` -- grammar mistakes underlined as you type, and the settings row that switches them on.
- *
- * Opt-in. Forcing all seven at once would not start Gboard (v2.3.0-dev.0); the cause was
- * `enable_on_device_proofread`, now dropped. The rest are still unconfirmed individually.
+ * [forceFlagsOn] verifies rather than assumes: the constant must be written *between* the flag's
+ * name and the factory call. A hoisted default is rejected outright unless the flag is named in
+ * `isolating`, which gives it a constant scoped to its own call instead.
  */
 @Suppress("unused")
-val hiddenGrammarCheckerPatch = bytecodePatch(
-    name = "Hidden: grammar check",
-    description = "Turns on one finished Gboard feature that a resigned build can never " +
-        "receive: grammar mistakes underlined as you type, and the settings row that switches them on. Phenotype delivers flags per app " +
-        "signature, so a patched APK never receives them and the feature stays off. " +
-        "Opt-in until seen working on a device: these are flags Google never sends this build, " +
-        "so nothing but a device can confirm the feature behind one is really there.",
-    default = false,
+val hiddenFeaturesPatch = bytecodePatch(
+    name = "Hidden Features",
+    description = "Turns on two finished Gboard features that a resigned build can never receive: " +
+        "grammar check, and a close control on the chips Gboard offers unprompted. Their flags " +
+        "are delivered per app signature, so resigning the APK means they never arrive and stay " +
+        "off. Both are confirmed working on a device; five other flags were tried and dropped.",
+    default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
@@ -109,24 +101,47 @@ val hiddenGrammarCheckerPatch = bytecodePatch(
     execute {
         forceFlagsOn(
             "enable_grammar_checker",
+            // Gboard hoists one zero in Lqjx; and feeds it to this flag and
+            // enable_auto_fill_pk_fallback_ui both. Rewriting it would turn on an unrelated
+            // autofill surface, so this one gets a constant scoped to its own call.
+            "enable_close_proactive_suggestions_access_point",
+            isolating = setOf("enable_close_proactive_suggestions_access_point"),
         )
     }
 }
 
+
 /**
- * `enable_emoji_kitchen_browse` -- browsing Emoji Kitchen rather than only being offered its suggestions.
+ * The four flags that were tried, did nothing visible, and are not proven harmless-and-useless
+ * enough to delete.
  *
- * Opt-in. Forcing all seven at once would not start Gboard (v2.3.0-dev.0); the cause was
- * `enable_on_device_proofread`, now dropped. The rest are still unconfirmed individually.
+ * None of them crashes — that was checked one at a time on a device, which is the only reason they
+ * can be offered at all. What is *not* established is that they do nothing: each surfaces somewhere
+ * a tester has to navigate to, so the evidence is "looked, did not see it", which is a weaker
+ * statement than it sounds.
+ *
+ * Where to look, if you are the one retesting:
+ *
+ * | flag | where it would show |
+ * |---|---|
+ * | `enable_emoji_kitchen_browse` | a browse surface in the emoji picker, not just suggested combos |
+ * | `enable_custom_sticker_tab` | a tab for your own stickers in the sticker picker |
+ * | `offline_translate` | the translate bar continuing to work with the network off |
+ * | `enable_settings_search` | a search affordance inside Gboard's own settings |
+ *
+ * The dex says all four are gated on data a resigned build never receives — download groups, an
+ * empty locale allowlist, language packs — so the expected result is still nothing. Off by default
+ * for exactly that reason: a patch that probably does nothing must not claim otherwise in the
+ * picker.
  */
 @Suppress("unused")
-val hiddenEmojiKitchenBrowsePatch = bytecodePatch(
-    name = "Hidden: Emoji Kitchen browse",
-    description = "Turns on one finished Gboard feature that a resigned build can never " +
-        "receive: browsing Emoji Kitchen rather than only being offered its suggestions. Phenotype delivers flags per app " +
-        "signature, so a patched APK never receives them and the feature stays off. " +
-        "Opt-in until seen working on a device: these are flags Google never sends this build, " +
-        "so nothing but a device can confirm the feature behind one is really there.",
+val hiddenFeaturesUnconfirmedPatch = bytecodePatch(
+    name = "Hidden Features (unconfirmed)",
+    description = "Turns on four finished Gboard features that a resigned build can never " +
+        "receive: Emoji Kitchen browse, the custom sticker tab, offline translation, and search " +
+        "in Gboard's settings. Off by default because none of the four has been seen working on " +
+        "a device — the flags flip, but each also depends on data Google only sends to an " +
+        "unpatched install. Safe to try: none of them crashes.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -136,121 +151,8 @@ val hiddenEmojiKitchenBrowsePatch = bytecodePatch(
     execute {
         forceFlagsOn(
             "enable_emoji_kitchen_browse",
-        )
-    }
-}
-
-/**
- * `enable_custom_sticker_tab` -- a tab for stickers you added yourself.
- *
- * Opt-in. Forcing all seven at once would not start Gboard (v2.3.0-dev.0); the cause was
- * `enable_on_device_proofread`, now dropped. The rest are still unconfirmed individually.
- */
-@Suppress("unused")
-val hiddenCustomStickerTabPatch = bytecodePatch(
-    name = "Hidden: custom sticker tab",
-    description = "Turns on one finished Gboard feature that a resigned build can never " +
-        "receive: a tab for stickers you added yourself. Phenotype delivers flags per app " +
-        "signature, so a patched APK never receives them and the feature stays off. " +
-        "Opt-in until seen working on a device: these are flags Google never sends this build, " +
-        "so nothing but a device can confirm the feature behind one is really there.",
-    default = false,
-) {
-    compatibleWith(COMPATIBILITY_GBOARD)
-
-    dependsOn(basePatch)
-
-    execute {
-        forceFlagsOn(
             "enable_custom_sticker_tab",
-        )
-    }
-}
-
-/**
- * `offline_translate` -- translation without a network round trip.
- *
- * Opt-in. Forcing all seven at once would not start Gboard (v2.3.0-dev.0); the cause was
- * `enable_on_device_proofread`, now dropped. The rest are still unconfirmed individually.
- */
-@Suppress("unused")
-val hiddenOfflineTranslatePatch = bytecodePatch(
-    name = "Hidden: offline translate",
-    description = "Turns on one finished Gboard feature that a resigned build can never " +
-        "receive: translation without a network round trip. Phenotype delivers flags per app " +
-        "signature, so a patched APK never receives them and the feature stays off. " +
-        "Opt-in until seen working on a device: these are flags Google never sends this build, " +
-        "so nothing but a device can confirm the feature behind one is really there.",
-    default = false,
-) {
-    compatibleWith(COMPATIBILITY_GBOARD)
-
-    dependsOn(basePatch)
-
-    execute {
-        forceFlagsOn(
             "offline_translate",
-        )
-    }
-}
-
-/**
- * `enable_close_proactive_suggestions_access_point` -- a close control on the chips Gboard offers unprompted.
- *
- * The one flag of the seven with no constant of its own, so it takes the
- * isolating emission rather than a straight flip.
- *
- * Opt-in. Forcing all seven at once would not start Gboard (v2.3.0-dev.0); the cause was
- * `enable_on_device_proofread`, now dropped. The rest are still unconfirmed individually.
- */
-@Suppress("unused")
-val hiddenDismissableChipsPatch = bytecodePatch(
-    name = "Hidden: dismissable chips",
-    description = "Turns on one finished Gboard feature that a resigned build can never " +
-        "receive: a close control on the chips Gboard offers unprompted. Phenotype delivers flags per app " +
-        "signature, so a patched APK never receives them and the feature stays off. " +
-        "Opt-in until seen working on a device: these are flags Google never sends this build, " +
-        "so nothing but a device can confirm the feature behind one is really there.",
-    default = false,
-) {
-    compatibleWith(COMPATIBILITY_GBOARD)
-
-    dependsOn(basePatch)
-
-    execute {
-        forceFlagsOn(
-            "enable_close_proactive_suggestions_access_point",
-            // Gboard hoists one zero in Lqjx; and feeds it to this flag and
-            // enable_auto_fill_pk_fallback_ui both. Rewriting it would turn on an
-            // unrelated autofill surface, so this one gets a constant scoped to its
-            // own call.
-            isolating = setOf("enable_close_proactive_suggestions_access_point"),
-        )
-    }
-}
-
-/**
- * `enable_settings_search` -- search within Gboard's own settings.
- *
- * Opt-in. Forcing all seven at once would not start Gboard (v2.3.0-dev.0); the cause was
- * `enable_on_device_proofread`, now dropped. The rest are still unconfirmed individually.
- */
-@Suppress("unused")
-val hiddenSettingsSearchPatch = bytecodePatch(
-    name = "Hidden: settings search",
-    description = "Turns on one finished Gboard feature that a resigned build can never " +
-        "receive: search within Gboard's own settings. Phenotype delivers flags per app " +
-        "signature, so a patched APK never receives them and the feature stays off. " +
-        "Opt-in until seen working on a device: these are flags Google never sends this build, " +
-        "so nothing but a device can confirm the feature behind one is really there.",
-    default = false,
-) {
-    compatibleWith(COMPATIBILITY_GBOARD)
-
-    dependsOn(basePatch)
-
-    execute {
-        forceFlagsOn(
             "enable_settings_search",
         )
     }
