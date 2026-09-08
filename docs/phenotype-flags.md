@@ -57,6 +57,13 @@ Two of seven. That ratio is the single most useful number in this document, beca
 not picked carelessly — each was chosen because Google ships the feature publicly, so the code
 behind the flag was known to be finished.
 
+The two that work were then recombined into one default-on patch and shipped as v2.3.0-dev.4,
+which was confirmed on a device: the keyboard starts and both features are present. That is the loop
+the incident was about. v2.3.0-dev.0 shipped default-on on the strength of the emission being
+correct — which it was, and which turned out not to be the question. The same two flags are
+default-on again, on the strength of having been watched working. Nothing else changed about how
+they are applied.
+
 "No effect seen" is deliberately weaker than "no effect". Each of those four surfaces somewhere a
 tester has to navigate to — inside the emoji picker, in the sticker picker's tab strip, in the
 translate bar with the network off, behind a search affordance in Gboard's settings. Not having
