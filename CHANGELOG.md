@@ -1,3 +1,7 @@
+# [2.3.0](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.4...v2.3.0) (2026-09-08)
+
+* **Gboard:** docs: write down what forcing a Phenotype flag actually does
+
 # [2.3.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.3...v2.3.0-dev.4) (2026-09-06)
 
 * **Gboard:** feat: default-on the two flags that were watched working
