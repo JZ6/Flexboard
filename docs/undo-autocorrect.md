@@ -159,7 +159,73 @@ and is **first** in the handler list — ahead of `ScrubDeleteMotionEventHandler
 | Hook `ScrubMotionEventHandler` | It is the most delicate thing the bundle patches, and `trackAcrossFullKeyboard` has already widened its vertical corridor. |
 | Write our own direction detection | `Lpvi;->h` already does it, threshold-driven and per-key-class. |
 
+## Contention, and why a corridor settles it
+
+The worry was that `trackAcrossFullKeyboard` widened the scrub corridor vertically, so an upward
+swipe and a scrub-delete share one pointer stream. Two facts make that narrower than it looked.
+
+**The dangerous direction is already excluded.** `Lpvi;->h` emits SLIDE_UP only when
+`abs(dy) > abs(dx)`. A mostly-horizontal scrub can never be read as an up-flick; it returns
+SLIDE_LEFT or SLIDE_RIGHT instead. Gboard's own 45-degree cone does that for free.
+
+**The remaining direction is self-limiting.** The scrub's word count comes from walking the `h:[F`
+distance table against *horizontal* travel. A gesture vertical enough to clear the cone needs a full
+step of horizontal distance before it deletes even one word. Narrow the cone and the scrub is not a
+competitor, it is a no-op: the two gestures occupy disjoint regions of the same stream.
+
+So the patch adds its own corridor on top of Gboard's, as a **ratio** — `abs(dx) * 2 <= abs(dy)`,
+roughly 26 degrees.
+
+A ratio rather than an absolute distance on purpose. The tempting number is the scrub's own 8pt step
+(`e:F`, `0x7f07090e`), which looks principled and is not: `ScrubTuningPatch` rescales that distance
+table, so a threshold derived from the stock value would be quietly wrong for anyone who tuned their
+swipe length. A ratio has no such coupling.
+
+One thing the corridor has to carry alone: **time no longer separates the two gestures, because we
+removed that separation ourselves.** Stock scrub was a press-and-drag; `ScrubTuningPatch` lowered
+the hold delay so it registers on a flick. A fast upward flick and a fast scrub now start
+identically in time.
+
+## The plan
+
+**Hook:** `BasicMotionEventHandler->g(Landroid/view/MotionEvent;)V`, at the ActionDef fall-through
+(~pc 217). Ungated, always attached, and `LatinMotionEventHandler` — which overrides `g` — is first
+in the handler list. Frame is 21 registers, 348 instructions.
+
+**Guard**, all three required before emitting:
+
+1. direction `v4 == Lpmy;->c` (SLIDE_UP)
+2. the ActionDef from `Lpvi;->j(v4)` is null — the key defines no real SLIDE_UP, so nothing is being
+   stolen. This also keeps flick-for-symbols intact, since Gboard's flick path stands down on keys
+   that *do* define SLIDE_UP.
+3. `abs(dx) * 2 <= abs(dy)`, from `Lpvi;->d/e:F` minus `Lpvi;->b/c:F` — the same deltas `h()` uses
+
+**Emit:**
+
+```smali
+new-instance   vA, Lpnu;
+const/16       vB, -10045
+const          vC, 0x7fffffff
+const/4        vD, 0
+invoke-direct  {vA, vB, vD, vD, vC}, Lpnu;-><init>(ILpnt;Ljava/lang/Object;I)V
+invoke-static  {vA}, Lnur;->d(Lpnu;)Lnur;
+move-result-object vA
+iget-object    vE, p0, BasicMotionEventHandler;->p:Lpvo;
+invoke-interface {vE, vA}, Lpvo;->n(Lnur;)V
+```
+
+`Lpvo;->n(Lnur;)V` is the documented dispatch route — `motion-event-handlers.md` records it under
+its 17.7.7 name `Lpbr;->n(Lnbj;)V`. `BasicMotionEventHandler->p:Lpvo;` is the delegate field, read
+seven times elsewhere in the same class.
+
+**Shape:** own package `features/undoautocorrect/`, declaration plus emitter sibling, `default =
+false` until seen working. No shared gesture library — see the audit note in the roadmap; the two
+existing gesture features share no direction logic, and a third with one caller would not justify
+one.
+
 ## Open risks
+
+
 
 **Scrub contention.** `trackAcrossFullKeyboard` sets `rect.top = 0; rect.bottom = getHeight()`
 (`ScrubEmitter.kt:361-367`) so vertical movement no longer cancels a scrub. A straight-up swipe
