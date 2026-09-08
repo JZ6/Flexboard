@@ -10,6 +10,7 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import dev.jz6.flexboard.patches.shared.methodsMatching
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
+import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 import dev.jz6.flexboard.patches.shared.calledDescriptors
 import dev.jz6.flexboard.patches.shared.opcodeName
@@ -72,11 +73,10 @@ internal class ControllerCanvas(
 internal fun BytecodePatchContext.resolveControllerCanvas(): ControllerCanvas {
     // Anchor the bar-controller class on the split method — shape-derived, not name-derived.
     val splits = methodsMatching { it.splitsAccessPoints() }
-    check(splits.size == 1) {
+    val controllerType = splits.sole {
         "The bar-controller anchor moved: expected exactly one method that splits a List around " +
-            "subList+Math.min, found ${splits.size}: ${splits.map { it.toDescriptor() }}"
-    }
-    val controllerType = splits.single().definingClass
+            "subList+Math.min, found $it: ${splits.map { it.toDescriptor() }}"
+    }.definingClass
     val controllerClass = classDefByOrNull(controllerType)
         ?: error("$controllerType is not in the APK; the bar controller cannot be hooked")
 
@@ -106,12 +106,11 @@ private fun resolveControllerRegisterCall(controllerClass: ClassDef): String {
                         ?.toString() == lAysPut
             } == true
     }
-    check(candidates.size == 1) {
+    return candidates.sole {
         "The bar controller's register call moved: expected exactly one (*, Z)V method on " +
-            "${controllerClass.type} that invokes Lays.put on `h`, found ${candidates.size}: " +
+            "${controllerClass.type} that invokes Lays.put on `h`, found $it: " +
             candidates.map { it.toDescriptor() }
-    }
-    return candidates.single().toDescriptor()
+    }.toDescriptor()
 }
 
 /** The immutable `<init>(Context, ?)` declaration; identified once and shared by the rest. */

@@ -5,6 +5,7 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.androidAttribute
 import dev.jz6.flexboard.patches.shared.childElements
 import dev.jz6.flexboard.patches.shared.setAndroidAttribute
+import dev.jz6.flexboard.patches.shared.sole
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 
@@ -174,21 +175,19 @@ private fun Element.findGlideDeleteRow(glideRow: Element): Element {
  */
 private fun Element.findGlideTypingRow(): Element {
     val dependents = childElements().filter { it.androidAttribute("dependency") != null }.toList()
-    check(dependents.size == 1) {
+    val dependencyKey = dependents.sole {
         // Gboard's own Glide trail row, which depends on glide typing. This patch adds no
         // dependency of its own any more, so the only one in the file is Gboard's.
         "Expected exactly one row with android:dependency=… in $GESTURE_SETTINGS_XML, found " +
-            "${dependents.size} — the row that identifies glide typing is no longer unique"
-    }
-    val dependencyKey = dependents.single().androidAttribute("dependency")
+            "$it — the row that identifies glide typing is no longer unique"
+    }.androidAttribute("dependency")
 
     val matches = childElements().filter { it.androidAttribute("key") == dependencyKey }.toList()
-    check(matches.size == 1) {
+    val glideRow = matches.sole {
         "Expected exactly one row keyed '$dependencyKey' in $GESTURE_SETTINGS_XML, found " +
-            "${matches.size} — obfuscated key names are no longer distinct once decoded, so the " +
+            "$it — obfuscated key names are no longer distinct once decoded, so the " +
             "glide typing row cannot be told apart from its siblings"
     }
-    val glideRow = matches.single()
     check(glideRow.androidAttribute("dependency") == null) {
         "The glide typing row already declares a dependency on " +
             "'${glideRow.androidAttribute("dependency")}', which this patch would overwrite"

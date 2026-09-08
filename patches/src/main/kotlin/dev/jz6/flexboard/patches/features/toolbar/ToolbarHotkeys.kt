@@ -10,6 +10,7 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.shared.methodsMatching
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.toDescriptor
 import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
@@ -253,11 +254,10 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
     val moduleClass = classDefByOrNull(moduleType)
         ?: error("$moduleType is not in the APK; the toolbar module cannot be hooked")
     val controllerFields = moduleClass.fields.filter { it.type == canvas.controllerType }.toList()
-    check(controllerFields.size == 1) {
+    val controllerField = controllerFields.sole {
         "$moduleType should carry exactly one ${canvas.controllerType} field, found " +
             controllerFields.map { "${it.definingClass}->${it.name}:${it.type}" }
-    }
-    val controllerField = controllerFields.single().let {
+    }.let {
         "${it.definingClass}->${it.name}:${it.type}"
     }
 

@@ -14,6 +14,7 @@ import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.usesField
 
 /** `KeyEvent.KEYCODE_DEL`, the key Gboard scopes its word-scrub delete to. */
@@ -102,12 +103,11 @@ internal fun MutableMethod.writeWildcardStartKey() {
         instruction.opcodeName() == "CONST_16" &&
             (instruction as? NarrowLiteralInstruction)?.narrowLiteral == STOCK_START_KEYCODE
     }
-    check(matches.size == 1) {
+    val (keyIndex, keyInstruction) = matches.sole {
         "Expected exactly one `const/16 …, $STOCK_START_KEYCODE` in " +
-            "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>, found ${matches.size}. " +
+            "$SCRUB_DELETE_MOTION_EVENT_HANDLER-><init>, found $it. " +
             "Gboard's scrub delete no longer starts on KEYCODE_DEL, or the constructor changed."
     }
-    val (keyIndex, keyInstruction) = matches.single()
     val startKeyRegister = (keyInstruction as OneRegisterInstruction).registerA
 
     val configIndex = instructions.indexOfSoleCall(
@@ -154,11 +154,10 @@ internal fun MutableMethod.acceptWildcardStartKey() {
             instruction.usesField(CONFIG_START_KEY_FIELD) &&
             body.getOrNull(index + 1)?.opcodeName() == "IF_NE"
     }
-    check(reads.size == 1) {
+    val (readIndex, read) = reads.sole {
         "Expected exactly one read of $CONFIG_START_KEY_FIELD tested by `if-ne` in " +
-            "$SCRUB_MOTION_EVENT_HANDLER->g, found ${reads.size}"
+            "$SCRUB_MOTION_EVENT_HANDLER->g, found $it"
     }
-    val (readIndex, read) = reads.single()
     val configRegister = (read as OneRegisterInstruction).registerA
 
     val gateIndex = readIndex + 1
@@ -270,11 +269,10 @@ internal fun MutableMethod.trackAcrossFullKeyboard() {
         val matches = body.withIndex().filter { (_, instruction) ->
             instruction.opcodeName() == "IPUT" && instruction.usesField(field)
         }
-        check(matches.size == 1) {
+        val (index, instruction) = matches.sole {
             "Expected exactly one write to $field in $SCRUB_MOTION_EVENT_HANDLER->g, " +
-                "found ${matches.size}"
+                "found $it"
         }
-        val (index, instruction) = matches.single()
         return IndexedValue(index, instruction as TwoRegisterInstruction)
     }
 
@@ -322,12 +320,11 @@ internal fun MutableMethod.trackAcrossFullKeyboard() {
         .filter { it.opcodeName() == "IGET" && it.usesField(CONFIG_START_KEY_FIELD) }
         .map { (it as TwoRegisterInstruction).registerB }
         .toSet()
-    check(configRegisters.size == 1) {
+    val configRegister = configRegisters.sole {
         "Reads of $CONFIG_START_KEY_FIELD in $SCRUB_MOTION_EVENT_HANDLER->g go through " +
-            "${configRegisters.size} different registers ($configRegisters); with more than one " +
+            "$it different registers ($configRegisters); with more than one " +
             "there is no single register this patch can safely read the sentinel from"
     }
-    val configRegister = configRegisters.single()
 
     // Both registers are read at the insertion point but derived from instructions well before it
     // — the view register some twenty instructions earlier. Ordering was asserted above; that is

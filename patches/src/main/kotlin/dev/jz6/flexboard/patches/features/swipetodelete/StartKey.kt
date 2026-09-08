@@ -10,6 +10,7 @@ import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.sole
 
 /**
  * Recovering *which key the gesture started on*, mid-gesture.
@@ -73,11 +74,10 @@ internal fun BytecodePatchContext.resolveStartKeyChain(): StartKeyChain {
         instruction.opcodeName() == "IPUT_OBJECT" &&
             (instruction.fieldReferenceOrNull()?.type == "Landroid/view/View;")
     }
-    check(viewWrites.size == 1) {
-        "Expected exactly one write to a View-typed field in $where, found ${viewWrites.size} — " +
+    val startViewField = viewWrites.sole {
+        "Expected exactly one write to a View-typed field in $where, found $it — " +
             "the starting key is no longer retained where this patch reads it"
-    }
-    val startViewField = viewWrites.single().value.fieldDescriptor()
+    }.value.fieldDescriptor()
 
     // The anchor: called once, where `f` is called twice.
     val keyDataCalls = body.withIndex().filter { (_, instruction) ->
@@ -85,11 +85,10 @@ internal fun BytecodePatchContext.resolveStartKeyChain(): StartKeyChain {
             it.returnType == "Lpnu;" && it.parameterTypes.isEmpty()
         } == true
     }
-    check(keyDataCalls.size == 1) {
+    val (keyDataIndex, keyDataCall) = keyDataCalls.sole {
         "Expected exactly one no-argument call returning Lpnu; in $where, found " +
-            "${keyDataCalls.size} — the key-data accessor can no longer be picked out by shape"
+            "$it — the key-data accessor can no longer be picked out by shape"
     }
-    val (keyDataIndex, keyDataCall) = keyDataCalls.single()
     val keyDataAccessor = keyDataCall.methodDescriptor()
     val actionRegister = keyDataCall.invokeRegisterAt(0)
 
@@ -121,10 +120,9 @@ internal fun BytecodePatchContext.resolveStartKeyChain(): StartKeyChain {
     val keycodeReads = body.filter {
         it.opcodeName() == "IGET" && it.fieldReferenceOrNull()?.definingClass == "Lpnu;"
     }
-    check(keycodeReads.size == 1) {
-        "Expected exactly one read of an Lpnu; field in $where, found ${keycodeReads.size}"
-    }
-    val keycodeField = keycodeReads.single().fieldDescriptor()
+    val keycodeField = keycodeReads.sole {
+        "Expected exactly one read of an Lpnu; field in $where, found $it"
+    }.fieldDescriptor()
 
     return StartKeyChain(
         startViewField = startViewField,

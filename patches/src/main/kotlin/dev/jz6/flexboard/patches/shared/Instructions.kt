@@ -121,14 +121,28 @@ internal fun Instruction.destinationRegistersOrEmpty(): List<Int> {
 }
 
 /**
+ * The only element, failing with [lazyMessage] when there is not exactly one. The count is passed
+ * in so a message can report what it found.
+ *
+ * Every one of these searches genuinely expects a single hit, and "silently took the first of two"
+ * is the failure worth spending an assertion on — Gboard grows near-duplicate methods between
+ * releases, and a resolution that quietly picks one patches something nobody looked at. Written out
+ * by hand at twenty-five sites before this existed, which is twenty-five chances to write
+ * `.first()` and forget the check.
+ */
+internal inline fun <T> Collection<T>.sole(lazyMessage: (Int) -> String): T {
+    check(size == 1) { lazyMessage(size) }
+    return single()
+}
+
+/**
  * Index of the single instruction invoking [descriptor], failing loudly when there is not exactly
  * one. Every call site in these patches genuinely expects one, and "silently patched the wrong one
  * of two" is the failure mode worth spending an assertion on.
  */
 internal fun List<Instruction>.indexOfSoleCall(descriptor: String, context: String): Int {
-    val matches = withIndex().filter { (_, instruction) -> instruction.callsMethod(descriptor) }
-    check(matches.size == 1) {
-        "Expected exactly one call to $descriptor in $context, found ${matches.size}"
-    }
-    return matches.single().index
+    return withIndex()
+        .filter { (_, instruction) -> instruction.callsMethod(descriptor) }
+        .sole { "Expected exactly one call to $descriptor in $context, found $it" }
+        .index
 }

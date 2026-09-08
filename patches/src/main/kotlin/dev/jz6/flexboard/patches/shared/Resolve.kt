@@ -96,12 +96,11 @@ internal fun BytecodePatchContext.soleMethodWithSignature(
     what: String,
 ): String {
     val matches = methodsWithSignature(owner, signature)
-    check(matches.size == 1) {
+    return matches.sole {
         "Expected exactly one $what on $owner — a method with signature $signature — but found " +
-            "${matches.size}: ${matches.map { it.name }}. A name cannot be picked out by shape " +
+            "$it: ${matches.map { it.name }}. A name cannot be picked out by shape " +
             "alone here, so this needs resolving by behaviour instead."
-    }
-    return matches.single().toDescriptor()
+    }.toDescriptor()
 }
 
 /**
@@ -119,13 +118,12 @@ internal fun BytecodePatchContext.soleMethodCalling(
 ): String {
     val candidates = methodsWithSignature(owner, signature)
     val matches = candidates.filter { it.calls(needle) }
-    check(matches.size == 1) {
+    return matches.sole {
         "Expected exactly one $what on $owner — a method with signature $signature calling " +
-            "$needle — but found ${matches.size} of ${candidates.size} candidates " +
+            "$needle — but found $it of ${candidates.size} candidates " +
             "(${candidates.map { it.name }}). Gboard no longer implements it the way this " +
             "resolution assumes."
-    }
-    return matches.single().toDescriptor()
+    }.toDescriptor()
 }
 
 /**
@@ -142,13 +140,12 @@ internal fun BytecodePatchContext.soleMethodNotCalling(
 ): String {
     val candidates = methodsWithSignature(owner, signature)
     val matches = candidates.filterNot { it.calls(needle) }
-    check(matches.size == 1) {
+    return matches.sole {
         "Expected exactly one $what on $owner — a method with signature $signature that does not " +
-            "call $needle — but found ${matches.size} of ${candidates.size} candidates " +
+            "call $needle — but found $it of ${candidates.size} candidates " +
             "(${candidates.map { it.name }}). Gboard no longer implements it the way this " +
             "resolution assumes."
-    }
-    return matches.single().toDescriptor()
+    }.toDescriptor()
 }
 
 /**

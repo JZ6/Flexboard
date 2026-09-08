@@ -27,12 +27,11 @@ private const val ON_CREATE_REGISTER_COUNT = 12
 internal fun BytecodePatchContext.publishInputMethodService() {
     val services = mutableListOf<ClassDef>()
     classDefForEach { if (it.superclass == INPUT_METHOD_SERVICE) services += it }
-    check(services.size == 1) {
-        "Expected exactly one InputMethodService subclass, found ${services.size}: " +
-            "${services.map { it.type }}. The toolbar actions need an unambiguous one."
-    }
 
-    val onCreate = services.single().methods.singleOrNull {
+    val onCreate = services.sole {
+        "Expected exactly one InputMethodService subclass, found $it: " +
+            "${services.map { it.type }}. The toolbar actions need an unambiguous one."
+    }.methods.singleOrNull {
         it.name == "onCreate" && it.parameterTypes.isEmpty() && it.returnType == "V"
     } ?: error("${services.single().type} does not declare onCreate()V")
 

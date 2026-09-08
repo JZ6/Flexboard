@@ -10,6 +10,7 @@ import dev.jz6.flexboard.patches.shared.methodsMatching
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.stringOrNull
 import dev.jz6.flexboard.patches.shared.toDescriptor
 
@@ -109,14 +110,13 @@ private fun Method.isAccessPointSeed(): Boolean {
 internal fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilder {
     val seeds = methodsMatching { it.isAccessPointSeed() }
 
-    check(seeds.size == 1) {
+
+    val seed = seeds.sole {
         "Expected exactly one access-point seed method — one using $SEED_ICON, $SEED_LABEL and " +
-            "$SEED_CONTENT_DESCRIPTION together — but found ${seeds.size}: " +
+            "$SEED_CONTENT_DESCRIPTION together — but found $it: " +
             "${seeds.map { it.toDescriptor() }}. Gboard no longer builds the text editing access " +
             "point the way this derivation assumes."
     }
-
-    val seed = seeds.single()
     val instructions = seed.body().ifEmpty {
         error("${seed.toDescriptor()} has no implementation")
     }
@@ -148,11 +148,10 @@ internal fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilde
         val matches = builderClass.methods.filter {
             "(${it.parameterTypes.joinToString("")})${it.returnType}" == signature
         }
-        check(matches.size == 1) {
+        return matches.sole {
             "Expected exactly one $what on $builderType — a method with signature $signature — " +
-                "but found ${matches.size}: ${matches.map { it.name }}"
+                "but found $it: ${matches.map { it.name }}"
         }
-        return matches.single()
     }
 
     val build = soleBuilderMethod("()${factory.definingClass}", "build method")
@@ -161,20 +160,16 @@ internal fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilde
     val masks = buildBody.filter { it.opcodeName() == "IGET_BYTE" }
         .map { it.fieldDescriptor() }
         .distinct()
-    check(masks.size == 1) {
-        "Expected exactly one byte field read in ${build.toDescriptor()} — the generated " +
-            "completeness mask — but found ${masks.size}: $masks"
-    }
 
-    val properties = build.resolveProperties(masks.single(), builderClass)
+    val properties = build.resolveProperties(masks.sole {
+        "Expected exactly one byte field read in ${build.toDescriptor()} — the generated " +
+            "completeness mask — but found $it: $masks"
+    }, builderClass)
     fun property(name: String) = properties[name]
         ?: error("${build.toDescriptor()} never names a$name property")
 
     val setId = soleBuilderMethod("(Ljava/lang/String;)V", "id setter")
     val idFields = setId.body().filter { it.opcodeName() == "IPUT_OBJECT" }.map { it.fieldDescriptor() }
-    check(idFields.size == 1) {
-        "Expected the id setter ${setId.toDescriptor()} to write exactly one field, found $idFields"
-    }
 
     /**
      * The `String` field carrying a literal value for [name].
@@ -205,7 +200,9 @@ internal fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilde
                 "is $descriptor, which is not a String — the constructor's argument order is not " +
                 "what this assumes"
         }
-        check(descriptor != idFields.single()) {
+        check(descriptor != idFields.sole {
+        "Expected the id setter ${setId.toDescriptor()} to write exactly one field, found $idFields"
+    }) {
             "The literal derived for the$name property is $descriptor, which is the access " +
                 "point's id — the constructor's argument order is not what this assumes"
         }
@@ -262,18 +259,16 @@ private fun Method.resolveProperties(
         if (!writesMask) return@forEach
 
         val bits = body.filterIsInstance<WideLiteralInstruction>().map { it.wideLiteral }
-        check(bits.size == 1) {
-            "Expected ${method.toDescriptor()} to contribute exactly one bit to $maskField, " +
-                "found ${bits.size}: $bits"
-        }
         val written = body.filter { it.opcodeName() == "IPUT" }.map { it.fieldDescriptor() }
-        check(written.size == 1) {
-            "Expected ${method.toDescriptor()} to write exactly one int field, found $written"
-        }
 
         val previous = byBit.put(
-            bits.single(),
-            BuilderProperty(method.toDescriptor(), bits.single(), written.single()),
+            bits.sole {
+            "Expected ${method.toDescriptor()} to contribute exactly one bit to $maskField, " +
+                "found $it: $bits"
+        },
+            BuilderProperty(method.toDescriptor(), bits.single(), written.sole {
+            "Expected ${method.toDescriptor()} to write exactly one int field, found $written"
+        }),
         )
         check(previous == null) {
             "${method.toDescriptor()} and ${previous?.setter} both set bit ${bits.single()} of " +
@@ -284,11 +279,10 @@ private fun Method.resolveProperties(
     val body = body()
     return PROPERTIES.associateWith { name ->
         val named = body.withIndex().filter { (_, instruction) -> instruction.stringOrNull() == name }
-        check(named.size == 1) {
+        val tested = body.take(named.sole {
             "Expected ${toDescriptor()} to name the$name property exactly once among the " +
-                "properties it refuses to build without, found ${named.size}"
-        }
-        val tested = body.take(named.single().index).lastOrNull { it is WideLiteralInstruction }
+                "properties it refuses to build without, found $it"
+        }.index).lastOrNull { it is WideLiteralInstruction }
             ?: error("No mask literal precedes the$name string in ${toDescriptor()}")
         val bit = (tested as WideLiteralInstruction).wideLiteral
         byBit[bit] ?: error(
