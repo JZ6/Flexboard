@@ -100,6 +100,11 @@ BINDINGS = {
     'start_key_holder': 'Lpnu;',          # holds the start keycode the scrub engine compares
     'key_selector': 'Lpmy;',              # the sget-object the start-key read goes through
     'pointer_tracker': 'Lpvi;',           # per-pointer state; holds a gesture's start and current x/y
+    'key_data': 'Lpnu;',                  # key data; the scrub engine calls the same class start_key_holder
+    'key_data_arg': 'Lpnt;',              # its second ctor argument, passed null here
+    'ime_event': 'Lnur;',                 # the IME event wrapper a key-data becomes
+    'pointer_delegate_iface': 'Lpvj;',    # how the tracker declares its owner
+    'event_sink': 'Lpvo;',                # the interface anything down here raises an IME event through
     'pointer_delegate': 'Lpvf;',          # owns the pointer trackers; where the flick preference lands
     'flag_box': 'Lnxp;',                  # boxed phenotype flag read by the scrub gate
     'access_point_map': 'Lays;',          # the map the toolbar register call writes into
@@ -324,6 +329,45 @@ def class_access_flags(dl, name):
                 '<8I', d.b, d.cls_o + 32 * i)
             if d.type(ci) == name:
                 return af
+    return None
+
+
+def class_interfaces(dl, name):
+    """Every interface a class declares, or None when the class is absent.
+
+    `implements` is not decoration when a patch emits a `check-cast`: casting a field typed as the
+    interface down to the implementation is only sound while the implementation still implements it.
+    dexlib's `classes()` discards `interfaces_off`, so read the class_def_item directly.
+    """
+    import struct
+    for d in dl:
+        for i in range(d.cls_n):
+            ci, _af, _su, io, _sf, _ao, _cd, _sv = struct.unpack_from(
+                '<8I', d.b, d.cls_o + 32 * i)
+            if d.type(ci) != name:
+                continue
+            if not io:
+                return []
+            size = struct.unpack_from('<I', d.b, io)[0]
+            return [d.type(struct.unpack_from('<H', d.b, io + 4 + 2 * k)[0])
+                    for k in range(size)]
+    return None
+
+
+def method_access_flags(dl, descriptor):
+    """A method's access flags, or None when it is absent.
+
+    Existence is not the property an emitter depends on. `invoke-static` against a method that
+    stopped being static, or `invoke-interface` against a class, assembles cleanly and fails
+    verification on the device -- where this project cannot read the error.
+    """
+    for d in dl:
+        for cname, _af, cd in d.classes():
+            if not descriptor.startswith(cname + '->'):
+                continue
+            for m, maf, _co in d.class_methods(cd):
+                if m == descriptor:
+                    return maf
     return None
 
 
@@ -2074,12 +2118,21 @@ def run(dl, apk=None):
     # actions 7, 9 and 10 -- ACTION_HOVER_* -- so an emission there would never see a finger. It
     # also carries two of these lookups where the release path carries one. Both facts are pinned,
     # because "patched the plausible-looking method" is the failure this cost a rewrite to find.
+    DISPATCH_EVENT = f"{B['event_sink']}->n({B['ime_event']})V"
     release = f"{B['pointer_delegate']}->t({B['pointer_tracker']}Landroid/view/MotionEvent;I)V"
     lookup = (f"{B['pointer_tracker']}->j({B['key_selector']})"
               'Lcom/google/android/libraries/inputmethod/metadata/ActionDef;')
 
     c_, ins_ = body(dl, release)
     if check('undo-ac: the pointer release path exists', ins_ is not None):
+        # R8 renames `t`; it does not rename strings. Gboard's own trace section names this method
+        # in plain text, which makes it the one anchor here that a re-obfuscation cannot move. It is
+        # also the evidence that this is the release path and not something that merely looks like
+        # it -- the reason the first version of this patch went to the wrong method.
+        traced = [a for _pc, n_, a in ins_
+                  if n_.startswith('const-string') and 'handleActionUp' in (a or '')]
+        check('undo-ac: the release path still identifies itself as handleActionUp',
+              len(traced) == 1, str(len(traced)))
         check('undo-ac: its frame is the one the scratch registers were measured against',
               c_['registers'] == E['undo_ac_register_count'], str(c_['registers']))
         hits = [i for i, (_pc, _n, a) in enumerate(ins_) if lookup in (a or '')]
@@ -2131,6 +2184,31 @@ def run(dl, apk=None):
           find_instance_field(dl, B['pointer_delegate'], 'd') is not None)
     check('undo-ac: the tracker declares its delegate back-reference',
           find_instance_field(dl, B['pointer_tracker'], 'r') is not None)
+
+    # The emitter hardcodes an invoke kind per call. Existence is not the property it depends on:
+    # invoke-static against a method that stopped being static, or invoke-interface against a
+    # class, both assemble and both fail verification on a device this project cannot read a log
+    # from. ACC_STATIC is 0x8, ACC_INTERFACE 0x200.
+    for desc, want_static in ((f"{B['key_data']}-><init>(IL{B['key_data_arg'][1:]}"
+                               'Ljava/lang/Object;I)V', False),
+                              (f"{B['ime_event']}->d({B['key_data']}){B['ime_event']}", True)):
+        maf = method_access_flags(dl, desc)
+        if check(f'undo-ac: {desc.split("->")[1][:28]} exists', maf is not None):
+            check(f'undo-ac: {desc.split("->")[1][:28]} staticness is what the invoke assumes',
+                  bool(maf & 0x8) == want_static, f'static={bool(maf & 0x8)}')
+
+    caf = class_access_flags(dl, B['event_sink'])
+    check('undo-ac: the event sink is an interface, as invoke-interface requires',
+          caf is not None and bool(caf & 0x200), f'flags={caf}')
+    maf = method_access_flags(dl, DISPATCH_EVENT)
+    check('undo-ac: the dispatch method is a non-static interface method',
+          maf is not None and not (maf & 0x8), f'flags={maf}')
+
+    # The check-cast the dispatch route depends on.
+    ifaces = class_interfaces(dl, B['pointer_delegate'])
+    check('undo-ac: the delegate still implements the interface the tracker field is typed as',
+          ifaces is not None and B['pointer_delegate_iface'] in ifaces,
+          str(ifaces))
 
     # Pinned on Gboard's own producer rather than on our copy of it. If the stock path stops
     # dispatching this code, the consumers that make an unarmed swipe a no-op are what changed.
