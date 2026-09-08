@@ -99,6 +99,8 @@ BINDINGS = {
     # any of them.
     'start_key_holder': 'Lpnu;',          # holds the start keycode the scrub engine compares
     'key_selector': 'Lpmy;',              # the sget-object the start-key read goes through
+    'pointer_tracker': 'Lpvi;',           # per-pointer state; holds a gesture's start and current x/y
+    'pointer_delegate': 'Lpvf;',          # owns the pointer trackers; where the flick preference lands
     'flag_box': 'Lnxp;',                  # boxed phenotype flag read by the scrub gate
     'access_point_map': 'Lays;',          # the map the toolbar register call writes into
     'immutable_set': 'Lvxe;',             # the allowed-set the order helper stores
@@ -141,6 +143,9 @@ EXPECTED = {
     'hidden_feature_flags_shared': [
         ('enable_close_proactive_suggestions_access_point', 'enable_auto_fill_pk_fallback_ui'),
     ],
+    'undo_ac_register_count': 16,
+    'undo_ac_slide_up_field': 'c',
+    'undo_ac_scratch': [3, 5, 6, 7, 8],
     'toolbar_capacity_flag': 'config_max_access_points',
     'toolbar_stock_flag_default': -1,
     'toolbar_stock_ceiling': 8,
@@ -2045,6 +2050,82 @@ def run(dl, apk=None):
                 jumps = [m for _pc, m, _a in ins_
                          if m.startswith(('if-', 'goto', 'packed-switch', 'sparse-switch'))]
                 check(f'flags: {flag} sits in straight-line code', not jumps, str(sorted(set(jumps))))
+
+    # ---- swipe up to undo autocorrect
+    #
+    # The patch inserts a guard before the ActionDef test on the pointer-release path and, on an
+    # upward flick over a key that claims none, dispatches Gboard's own revert-autocorrect event.
+    #
+    # The release path, not the touch handler: BasicMotionEventHandler->g dispatches only on
+    # actions 7, 9 and 10 -- ACTION_HOVER_* -- so an emission there would never see a finger. It
+    # also carries two of these lookups where the release path carries one. Both facts are pinned,
+    # because "patched the plausible-looking method" is the failure this cost a rewrite to find.
+    release = f"{B['pointer_delegate']}->t({B['pointer_tracker']}Landroid/view/MotionEvent;I)V"
+    lookup = (f"{B['pointer_tracker']}->j({B['key_selector']})"
+              'Lcom/google/android/libraries/inputmethod/metadata/ActionDef;')
+
+    c_, ins_ = body(dl, release)
+    if check('undo-ac: the pointer release path exists', ins_ is not None):
+        check('undo-ac: its frame is the one the scratch registers were measured against',
+              c_['registers'] == E['undo_ac_register_count'], str(c_['registers']))
+        hits = [i for i, (_pc, _n, a) in enumerate(ins_) if lookup in (a or '')]
+        if check('undo-ac: one action lookup to anchor on', len(hits) == 1, str(len(hits))):
+            i_ = hits[0]
+            check('undo-ac: the lookup result is moved',
+                  ins_[i_ + 1][1] == 'move-result-object', ins_[i_ + 1][1])
+            adr = re.match(r'\s*v(\d+)', ins_[i_ + 1][2] or '')
+            tests = [(j, ins_[j][0]) for j in range(i_ + 2, min(i_ + 10, len(ins_)))
+                     if ins_[j][1] == 'if-eqz' and adr
+                     and (ins_[j][2] or '').strip().startswith(f'v{adr.group(1)},')]
+            # Two const/4s sit between the move-result and this test. Assuming adjacency is what
+            # pointed the first version of the emitter at the wrong instruction.
+            if check('undo-ac: the ActionDef is tested with if-eqz nearby', len(tests) == 1,
+                     str(len(tests))):
+                at = tests[0][1]
+                free = set(live_free(ins_, c_['registers'], at))
+                want = set(E['undo_ac_scratch'])
+                check('undo-ac: the scratch registers are dead at the insertion point',
+                      want <= free, str(sorted(want - free)))
+
+    # The hover handler, pinned as the thing this is deliberately *not*. If a build ever moves the
+    # finger path into it, this fails and the choice gets revisited rather than silently inherited.
+    c_, ins_ = body(dl, 'Lcom/google/android/libraries/inputmethod/motioneventhandler/'
+                        'BasicMotionEventHandler;->g(Landroid/view/MotionEvent;)V')
+    if check('undo-ac: the hover handler still exists', ins_ is not None):
+        hover = [i for i, (_pc, _n, a) in enumerate(ins_) if lookup in (a or '')]
+        check('undo-ac: it is still the two-lookup hover path, not the release path',
+              len(hover) == 2, str(len(hover)))
+
+    # SLIDE_UP by name, not by letter. A build that reordered the enum would otherwise leave the
+    # patch comparing against SLIDE_DOWN in silence.
+    c_, ins_ = body(dl, f"{B['key_selector']}-><clinit>()V")
+    if check('undo-ac: the action enum clinit exists', ins_ is not None):
+        named, pending = {}, None
+        for _pc, n_, a_ in ins_:
+            if n_.startswith('const-string'):
+                m_ = re.search(r"'(.*)'", a_ or '')
+                if m_:
+                    pending = m_.group(1)
+            elif n_.startswith('sput-object') and pending and '->' in (a_ or ''):
+                named[a_.split('->')[1].split(':')[0]] = pending
+                pending = None
+        check('undo-ac: SLIDE_UP is still the field the patch spells',
+              named.get(E['undo_ac_slide_up_field']) == 'SLIDE_UP',
+              str(named.get(E['undo_ac_slide_up_field'])))
+
+    check('undo-ac: the delegate declares its event sink',
+          find_instance_field(dl, B['pointer_delegate'], 'd') is not None)
+    check('undo-ac: the tracker declares its delegate back-reference',
+          find_instance_field(dl, B['pointer_tracker'], 'r') is not None)
+
+    # Pinned on Gboard's own producer rather than on our copy of it. If the stock path stops
+    # dispatching this code, the consumers that make an unarmed swipe a no-op are what changed.
+    c_, ins_ = body(dl, 'Lcom/google/android/apps/inputmethod/libs/edittracker/'
+                        'EditTrackingImeWrapper;->q(Lnur;)Z')
+    if check('undo-ac: the stock backspace revert exists', ins_ is not None):
+        codes = [i for i, (_pc, n_, a_) in enumerate(ins_)
+                 if n_.startswith('const') and re.search(r'#-10045\b', a_ or '')]
+        check('undo-ac: it still dispatches the revert code', len(codes) == 1, str(len(codes)))
 
     # ---- toolbar capacity
     #

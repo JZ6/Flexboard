@@ -188,17 +188,36 @@ identically in time.
 
 ## The plan
 
-**Hook:** `BasicMotionEventHandler->g(Landroid/view/MotionEvent;)V`, at the ActionDef fall-through
-(~pc 217). Ungated, always attached, and `LatinMotionEventHandler` — which overrides `g` — is first
-in the handler list. Frame is 21 registers, 348 instructions.
+**Hook:** `Lpvf;->t(Lpvi;Landroid/view/MotionEvent;I)V`, at the ActionDef fall-through. Frame is 16
+registers, and it is **static** — no `this`.
+
+That is the pointer-*release* path: `Lpvf;->i(MotionEvent)V` calls it and then clears the tracker
+table when the masked action is `ACTION_UP`. So it runs once, at the end of a gesture, which is what
+lets the corridor measure a completed flick rather than a partial one.
+
+### The method this is not
+
+The first version of this plan hooked `BasicMotionEventHandler->g(Landroid/view/MotionEvent;)V`, on
+the reasoning that `LatinMotionEventHandler` overrides it, it is ungated, and it is first in the
+handler list. All three are true and the conclusion was still wrong: **`g` dispatches only on
+actions 7, 9 and 10** — `ACTION_HOVER_MOVE`, `ACTION_HOVER_ENTER`, `ACTION_HOVER_EXIT` — and sends
+everything else straight to its exit. It never sees a finger. A patch there would compile, pass
+every shape assertion, apply cleanly and never fire.
+
+It surfaced because `g` carries *two* action lookups and the new pin demanded one. Preflight now
+pins the hover handler as the thing this is deliberately not, so a build that moves the finger path
+into it fails rather than being silently inherited.
 
 **Guard**, all three required before emitting:
 
-1. direction `v4 == Lpmy;->c` (SLIDE_UP)
-2. the ActionDef from `Lpvi;->j(v4)` is null — the key defines no real SLIDE_UP, so nothing is being
-   stolen. This also keeps flick-for-symbols intact, since Gboard's flick path stands down on keys
-   that *do* define SLIDE_UP.
-3. `abs(dx) * 2 <= abs(dy)`, from `Lpvi;->d/e:F` minus `Lpvi;->b/c:F` — the same deltas `h()` uses
+1. direction `== Lpmy;->c` (SLIDE_UP)
+2. the `ActionDef` from `Lpvi;->j` is null — the key claims no SLIDE_UP, so nothing is being stolen.
+   This also keeps flick-for-symbols intact: Gboard's flick path stands down on keys that *do*
+   define SLIDE_UP.
+3. `abs(dx) * 2 <= abs(dy)`, from `Lpvi;->d/e:F` minus `Lpvi;->b/c:F` — the deltas `Lpvi;->h` uses
+
+The null test is *searched for* within a short window rather than assumed adjacent: two `const/4`s
+sit between it and the `move-result-object` on this build.
 
 **Emit:**
 
@@ -206,22 +225,32 @@ in the handler list. Frame is 21 registers, 348 instructions.
 new-instance   vA, Lpnu;
 const/16       vB, -10045
 const          vC, 0x7fffffff
-const/4        vD, 0
-invoke-direct  {vA, vB, vD, vD, vC}, Lpnu;-><init>(ILpnt;Ljava/lang/Object;I)V
-invoke-static  {vA}, Lnur;->d(Lpnu;)Lnur;
+const/4        vD, 0x0
+invoke-direct  { vA, vB, vD, vD, vC }, Lpnu;-><init>(ILpnt;Ljava/lang/Object;I)V
+invoke-static  { vA }, Lnur;->d(Lpnu;)Lnur;
 move-result-object vA
-iget-object    vE, p0, BasicMotionEventHandler;->p:Lpvo;
-invoke-interface {vE, vA}, Lpvo;->n(Lnur;)V
+iget-object    vE, vPointer, Lpvi;->r:Lpvj;
+check-cast     vE, Lpvf;
+iget-object    vE, vE, Lpvf;->d:Lpvo;
+invoke-interface { vE, vA }, Lpvo;->n(Lnur;)V
 ```
 
-`Lpvo;->n(Lnur;)V` is the documented dispatch route — `motion-event-handlers.md` records it under
-its 17.7.7 name `Lpbr;->n(Lnbj;)V`. `BasicMotionEventHandler->p:Lpvo;` is the delegate field, read
-seven times elsewhere in the same class.
+Because `t` is static there is no handler to read the event sink from, so it is reached through the
+pointer's own delegate. The `check-cast` is not a guess — Gboard does exactly that cast on
+`Lpvi;->r` in its own flick path.
+
+**Scratch registers** are v3, v5, v6, v7, v8: dead at the insertion point by preflight's `live_free`,
+a backward analysis over the real control-flow graph, and all below v16 for the `35c` invoke. The
+emitter also runs a forward scan, but only as a veto — preflight's own docstring records a case
+where the forward method calls a register free that a branch reaches and reads.
+
+**No Latin scoping.** `Lpvf;` is shared by every keyboard, and being static it has no handler to
+test with `instance-of`. Two things make that acceptable rather than merely convenient: Japanese
+layouts, the only ones binding SLIDE_UP, fail guard 2; and everywhere else the dispatch is a proven
+no-op when there is nothing to revert. It is a deliberate widening, not an oversight.
 
 **Shape:** own package `features/undoautocorrect/`, declaration plus emitter sibling, `default =
-false` until seen working. No shared gesture library — see the audit note in the roadmap; the two
-existing gesture features share no direction logic, and a third with one caller would not justify
-one.
+false` until seen working.
 
 ## Open risks
 

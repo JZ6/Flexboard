@@ -1,27 +1,12 @@
 # [2.3.0](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.4...v2.3.0) (2026-09-08)
 
 * **Gboard:** docs: write down what forcing a Phenotype flag actually does
-
-# [2.3.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.3...v2.3.0-dev.4) (2026-09-06)
-
 * **Gboard:** feat: default-on the two flags that were watched working
-
-# [2.3.0-dev.3](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.2...v2.3.0-dev.3) (2026-09-06)
-
 * **Gboard:** fix: drop on-device proofread, the flag that would not let Gboard start
-
-# [2.3.0-dev.2](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.1...v2.3.0-dev.2) (2026-09-06)
-
 * **Gboard:** fix: split Hidden Features into one patch per flag, all opt-in
-
-# [2.3.0-dev.1](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.0...v2.3.0-dev.1) (2026-09-06)
-
 * **Gboard:** 2.3.0-dev.1
 * **Gboard:** docs: finish counting the ids the slot raise changed
 * **Gboard:** feat: raise the hotkey slots from six to eight
-
-# [2.3.0-dev.0](https://github.com/JZ6/Flexboard/compare/v2.2.1...v2.3.0-dev.0) (2026-09-05)
-
 * **Gboard:** refactor: separate the two biggest patches from their emitters
 * **Gboard:** refactor: give every feature's fingerprints one place to live
 * **Gboard:** refactor: name ToolbarIdAdmissionPatch.kt for what it declares
