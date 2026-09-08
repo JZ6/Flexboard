@@ -452,8 +452,20 @@ def invoke_regs(arg):
 # Mnemonics whose first register operand is a *source*, not a destination. Everything else that
 # names a register writes the first one, which is what makes `writes_before` usable as a liveness
 # test rather than a guess.
+#
+# `check-cast` belongs here and was missing. It reads its register, verifies the type and leaves the
+# value in place -- it writes nothing. Treating it as a write let liveness *discard* the register,
+# which under-approximates liveness and so over-reports deadness: the one direction that hands an
+# emitter a register still carrying a live value. `Lpvf;->t` alone has three of them on registers
+# this project uses as scratch.
 READS_FIRST_OPERAND = ('if-', 'invoke', 'iput', 'sput', 'aput', 'return', 'throw', 'monitor',
-                       'fill-array', 'packed-switch', 'sparse-switch')
+                       'fill-array', 'packed-switch', 'sparse-switch', 'check-cast')
+
+# Mnemonics whose first register operand is *both* source and destination: `add-int/2addr v0, v1`
+# is `v0 += v1`. Killing v0 without first counting it as a read loses the liveness of every value
+# feeding an accumulator. dis.py prints these as family placeholders (`binop2addr...`), so match on
+# the substring rather than on any one mnemonic.
+READS_AND_WRITES_FIRST_OPERAND = ('2addr',)
 
 
 def writes_before(ins, reg, after_pc, before_pc):
@@ -499,6 +511,8 @@ def live_free(ins, register_count, at_pc):
                 out |= live[t]
             if mnemonic.startswith(READS_FIRST_OPERAND):
                 sources, destination = r, None
+            elif any(k in mnemonic for k in READS_AND_WRITES_FIRST_OPERAND):
+                sources, destination = r, (r[0] if r else None)
             else:
                 sources, destination = r[1:], (r[0] if r else None)
             new = set(out)
