@@ -413,7 +413,22 @@ def _check_hidden_features_count(problems):
         return
     seen = {}
     for said, call in zip(saids, calls):
-        flags = re.findall(r'^\s*"([a-z0-9_]+)",', call, re.M)
+        # Only the positional arguments are forced flags. `isolating = setOf(...)` names a subset of
+        # them again to choose an emission, and counting those as extra flags made the count check
+        # report four flags for a two-flag patch.
+        positional, _, isolating_clause = call.partition('isolating')
+        flags = re.findall(r'^\s*"([a-z0-9_]+)",', positional, re.M)
+        # Any identifier-shaped literal, not just lower-case ones: a typo that changes the case
+        # would otherwise not match the pattern at all and so report nothing.
+        isolated = re.findall(r'"(\w+)"', isolating_clause)
+        # A name here that is not being forced is a typo that silently selects nothing: the flag
+        # keeps the in-place rewrite it was supposed to be moved off.
+        for flag in isolated:
+            if flag not in flags:
+                problems.append(
+                    f"  Hidden Features isolates {flag!r}, which it does not force on — "
+                    f"isolating names a subset of the flags in the same call"
+                )
         claimed = words.get(said)
         if claimed is None:
             problems.append(f"  Hidden Features says {said!r} features, which is not a number word")

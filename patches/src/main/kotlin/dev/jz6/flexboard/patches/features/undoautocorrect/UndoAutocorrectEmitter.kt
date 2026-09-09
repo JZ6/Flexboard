@@ -4,12 +4,8 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLa
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.util.smali.ExternalLabel
-import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
-import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
-import com.android.tools.smali.dexlib2.iface.instruction.ThreeRegisterInstruction
-import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.checkFieldExists
 import dev.jz6.flexboard.patches.shared.checkMethodExists
@@ -17,6 +13,7 @@ import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.registersRead
 import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
 /**
@@ -163,21 +160,4 @@ private fun assertNotReadBeforeWritten(body: List<Instruction>, insertIndex: Int
             )
         }
     }
-}
-
-/**
- * Every register an instruction names as a source.
- *
- * A destination is included when the instruction also reads it — the `2addr` family reads its first
- * operand — which is why this does not subtract the destinations. The caller tests "written" first,
- * so an instruction that only writes ends the walk before this is consulted.
- */
-private fun Instruction.registersRead(): List<Int> = when (this) {
-    is FiveRegisterInstruction ->
-        listOf(registerC, registerD, registerE, registerF, registerG).take(registerCount)
-    is RegisterRangeInstruction -> (startRegister until startRegister + registerCount).toList()
-    is ThreeRegisterInstruction -> listOf(registerA, registerB, registerC)
-    is TwoRegisterInstruction -> listOf(registerA, registerB)
-    is OneRegisterInstruction -> listOf(registerA)
-    else -> emptyList()
 }

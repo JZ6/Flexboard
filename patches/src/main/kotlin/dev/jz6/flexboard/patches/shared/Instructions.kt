@@ -5,6 +5,8 @@ import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.ThreeRegisterInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import com.android.tools.smali.dexlib2.iface.reference.StringReference
@@ -99,6 +101,24 @@ internal fun Instruction.invokeRegisterCount(): Int =
     (this as? RegisterRangeInstruction)?.registerCount
         ?: (this as? FiveRegisterInstruction)?.registerCount
         ?: error("Not an invoke: `${opcode.name}`")
+
+/**
+ * Every register this instruction names as a source.
+ *
+ * Deliberately over-inclusive: a destination that is also a source (`add-int/2addr` reads its first
+ * operand) is included, and no attempt is made to widen a wide *source* to its second word. Both
+ * choices err toward reporting a read. Every caller uses this to decide whether a register is still
+ * in use, where a false "yes" costs an emission a register and a false "no" corrupts a value.
+ */
+internal fun Instruction.registersRead(): List<Int> = when (this) {
+    is FiveRegisterInstruction ->
+        listOf(registerC, registerD, registerE, registerF, registerG).take(registerCount)
+    is RegisterRangeInstruction -> (startRegister until startRegister + registerCount).toList()
+    is ThreeRegisterInstruction -> listOf(registerA, registerB, registerC)
+    is TwoRegisterInstruction -> listOf(registerA, registerB)
+    is OneRegisterInstruction -> listOf(registerA)
+    else -> emptyList()
+}
 
 /**
  * The register this instruction *writes*, or null when it writes none.

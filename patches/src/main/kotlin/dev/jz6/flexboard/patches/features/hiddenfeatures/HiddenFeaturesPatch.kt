@@ -108,7 +108,13 @@ val hiddenFeaturesPatch = bytecodePatch(
             // enable_auto_fill_pk_fallback_ui both. Rewriting it would turn on an unrelated
             // autofill surface, so this one gets a constant scoped to its own call.
             "enable_close_proactive_suggestions_access_point",
-            isolating = setOf("enable_close_proactive_suggestions_access_point"),
+            // Both share their default with later flags in the same <clinit>, so both get a
+            // constant scoped to their own call. "enable_grammar_checker" was rewriting the shared
+            // zero in Ljpf; and taking three flags with it, one of them the LLM grammar checker.
+            isolating = setOf(
+                "enable_grammar_checker",
+                "enable_close_proactive_suggestions_access_point",
+            ),
         )
     }
 }
@@ -157,6 +163,9 @@ val hiddenFeaturesUnconfirmedPatch = bytecodePatch(
             "enable_custom_sticker_tab",
             "offline_translate",
             "enable_settings_search",
+            // Sticker tab shares its zero with allow_u18_for_custom_sticker, and emoji kitchen
+            // browse with three of its own search flags.
+            isolating = setOf("enable_custom_sticker_tab", "enable_emoji_kitchen_browse"),
         )
     }
 }

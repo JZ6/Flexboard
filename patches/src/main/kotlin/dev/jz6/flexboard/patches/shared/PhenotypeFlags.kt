@@ -127,33 +127,29 @@ private fun MutableMethod.flipFlagDefault(
     // Second argument of the call: the default. The first is the name.
     val booleanRegister = body[callIndex].invokeRegisterAt(1)
 
-    // The constant must be this flag's own, written after the name and before the call. A default
-    // loaded earlier is shared with every later flag using the same register, and flipping it
-    // would turn those on too.
-    val defaultIndex = (nameIndex + 1 until callIndex).lastOrNull { index ->
-        val instruction = body[index]
-        instruction.opcodeName().startsWith("CONST") &&
-            (instruction as? OneRegisterInstruction)?.registerA == booleanRegister
-    }
-    if (defaultIndex == null) {
-        check(isolating) {
-            "\"$name\" in ${toDescriptor()} takes its default from a register loaded before the " +
-                "flag's own name — the constant is shared with other flags in this <clinit>, and " +
-                "flipping it would enable them too. Pass it in forceFlagsOn(isolating = ...) to " +
-                "give it a constant of its own instead."
-        }
-        isolateAndFlip(name, nameIndex, callIndex, booleanRegister, body)
-        return
-    }
+    // Which constant feeds this call. Preferring the flag's own window keeps the common case
+    // exact; falling back to an earlier write is what makes a hoisted default resolvable at all.
+    val ownIndex = (nameIndex + 1 until callIndex).lastOrNull { index -> writesConst(body, index, booleanRegister) }
+    val constIndex = ownIndex
+        ?: (0 until nameIndex).lastOrNull { index -> writesConst(body, index, booleanRegister) }
+        ?: error(
+            "\"$name\" in ${toDescriptor()} reads v$booleanRegister as its default but nothing in " +
+                "this <clinit> ever writes that register — the call no longer has the shape this " +
+                "patch understands"
+        )
 
-    check(!isolating) {
-        "\"$name\" in ${toDescriptor()} loads its own default now, so it no longer needs the " +
-            "isolating emission — drop it from forceFlagsOn(isolating = ...) rather than leave a " +
-            "claim about Gboard's bytecode that stopped being true."
-    }
-    val literal = when (val instruction = body[defaultIndex]) {
-        is WideLiteralInstruction -> instruction.wideLiteral
-        is NarrowLiteralInstruction -> instruction.narrowLiteral.toLong()
+    val literal = when (val instruction = body[constIndex]) {
+        // Order matters: NarrowLiteralInstruction extends WideLiteralInstruction, so the wide arm
+        // matches both. A const-wide reaching here would be replaced by a narrow const/4 and orphan
+        // its high half, so refuse it by name rather than by interface.
+        is WideLiteralInstruction -> {
+            check(!instruction.opcodeName().startsWith("CONST_WIDE")) {
+                "\"$name\"'s default in ${toDescriptor()} is a ${instruction.opcodeName()} — a " +
+                    "64-bit constant, which this patch cannot rewrite as a boolean without " +
+                    "leaving the second word of the pair holding a stale value"
+            }
+            instruction.wideLiteral
+        }
         else -> error("\"$name\"'s default in ${toDescriptor()} is not a literal")
     }
     check(literal == 0L) {
@@ -161,7 +157,46 @@ private fun MutableMethod.flipFlagDefault(
             "so this patch would be claiming credit for nothing and hiding a real change"
     }
 
-    replaceInstruction(defaultIndex, "const/4 v$booleanRegister, 0x1")
+    // **Both directions.** The window above proves the constant was not inherited from an earlier
+    // flag. It says nothing about who inherits it next, and that was the whole bug: in Ljpf; one
+    // `const/4 v1, #0` is written once and read by four flag calls, so rewriting it in place turned
+    // on three flags nobody asked for — one of them fronting the LLM machinery that has already
+    // stopped Gboard starting once.
+    val nextWrite = (callIndex + 1 until body.size)
+        .firstOrNull { booleanRegister in body[it].destinationRegistersOrEmpty() }
+        ?: body.size
+    val laterReader = (callIndex + 1 until nextWrite)
+        .firstOrNull { booleanRegister in body[it].registersRead() }
+
+    if (ownIndex == null || laterReader != null) {
+        check(isolating) {
+            val why = if (ownIndex == null) {
+                "takes its default from a register loaded before the flag's own name"
+            } else {
+                "shares its default with ${body[laterReader!!].stringOrNull()?.let { "\"$it\"" } ?: "a later read"} " +
+                    "at index $laterReader, which reads v$booleanRegister before anything rewrites it"
+            }
+            "\"$name\" in ${toDescriptor()} $why — the constant is shared with other flags in this " +
+                "<clinit>, and rewriting it would enable them too. Pass it in " +
+                "forceFlagsOn(isolating = ...) to give it a constant of its own instead."
+        }
+        isolateAndFlip(name, callIndex, booleanRegister, body)
+        return
+    }
+
+    check(!isolating) {
+        "\"$name\" in ${toDescriptor()} loads its own default and nothing later reads it, so it no " +
+            "longer needs the isolating emission — drop it from forceFlagsOn(isolating = ...) " +
+            "rather than leave a claim about Gboard's bytecode that stopped being true."
+    }
+    replaceInstruction(constIndex, "const/4 v$booleanRegister, 0x1")
+}
+
+/** A `const`-family write of [register] at [index]. */
+private fun writesConst(body: List<Instruction>, index: Int, register: Int): Boolean {
+    val instruction = body[index]
+    return instruction.opcodeName().startsWith("CONST") &&
+        (instruction as? OneRegisterInstruction)?.registerA == register
 }
 
 /**
@@ -170,33 +205,14 @@ private fun MutableMethod.flipFlagDefault(
  * override immediately before the flag's own call and restores the register straight after, so the
  * change is scoped to a single call and the siblings never see it.
  */
+@Suppress("UNUSED_PARAMETER")
 private fun MutableMethod.isolateAndFlip(
     name: String,
-    nameIndex: Int,
     callIndex: Int,
     booleanRegister: Int,
     body: List<Instruction>,
 ) {
-    // The shared constant still has to be a zero: if Gboard already ships this flag on, the patch
-    // would be claiming credit for nothing, exactly as in the dedicated case.
-    val sharedIndex = (0 until nameIndex).lastOrNull { index ->
-        val instruction = body[index]
-        instruction.opcodeName().startsWith("CONST") &&
-            (instruction as? OneRegisterInstruction)?.registerA == booleanRegister
-    } ?: error(
-        "\"$name\" in ${toDescriptor()} reads v$booleanRegister as its default but nothing in " +
-            "this <clinit> ever writes that register — the call no longer has the shape this " +
-            "patch understands"
-    )
-    val literal = when (val instruction = body[sharedIndex]) {
-        is WideLiteralInstruction -> instruction.wideLiteral
-        is NarrowLiteralInstruction -> instruction.narrowLiteral.toLong()
-        else -> error("\"$name\"'s shared default in ${toDescriptor()} is not a literal")
-    }
-    check(literal == 0L) {
-        "\"$name\" already defaults to $literal in ${toDescriptor()}, not 0 — Gboard ships it on, " +
-            "so this patch would be claiming credit for nothing and hiding a real change"
-    }
+    // The constant itself is left alone; the caller has already proved it is a zero.
     // A move-result must stay welded to its invoke, so the restore goes after it, not before.
     val movesResult = body.getOrNull(callIndex + 1)?.opcodeName()?.startsWith("MOVE_RESULT") == true
     val restoreIndex = callIndex + if (movesResult) 2 else 1
