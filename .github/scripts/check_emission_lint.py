@@ -36,14 +36,23 @@ BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 LINE_COMMENT = re.compile(r"//[^\n]*")
 RAW_STRING = re.compile(r'"""(.*?)"""', re.S)
 KOTLIN_CONST = re.compile(r'const\s+val\s+(\w+)\s*=\s*"([^"]+)"')
-CALL = re.compile(r"\b(addInstructions(?:WithLabels)?)\s*\(")
+# Every emission entry point, not just the two that take a list. replaceInstruction and
+# addInstruction were unlinted, which left 10 of 21 call sites unvisited.
+CALL = re.compile(r"\b((?:add|replace)Instructions?(?:WithLabels)?)\s*\(")
 EXTERNAL_LABEL = re.compile(r"ExternalLabel\(\s*(\w+)")
 DOLLAR_REF = re.compile(r"\$\{?(\w+)\}?")
 
-LABEL_DEF = re.compile(r"^\s*:(\w+)\s*$")
-LABEL_REF = re.compile(r":(\w+)\b")
+# `$` and `${...}` are part of a label token, and leaving them out was not a small gap: every
+# label in this project is interpolated (`:$SKIP_LABEL`, `:$lab$slot`), so `\w+` matched none of
+# them. R2 and R3 iterated over empty sets and could not fail. Measured before the fix: 4 label
+# definitions and 28 branch-to-label lines in the tree, 0 seen by either rule.
+LABEL_TOKEN = r"(?:\$\{\w+\}|\$\w+|\w+)+"
+LABEL_DEF = re.compile(r"^\s*:(" + LABEL_TOKEN + r")\s*$")
+LABEL_REF = re.compile(r":(" + LABEL_TOKEN + r")")
 BRANCH = re.compile(r"^\s*(if-\w+|goto(?:/\w+)?)\b")
-CONST_INSTR = re.compile(r"^\s*(const/4|const/16)\s+v[\w${}]+\s*,\s*(#?-?0x[0-9a-fA-F]+|#?-?\d+)")
+# The register may be interpolated whole (`$a`, which expands to `v4`) rather than spelled
+# `v$name`, which is how composed payloads write it -- so the leading `v` cannot be required.
+CONST_INSTR = re.compile(r"^\s*(const/4|const/16)\s+[\w${}]+\s*,\s*(#?-?0x[0-9a-fA-F]+|#?-?\d+)")
 
 WIDTHS = {"const/4": (-8, 7), "const/16": (-32768, 32767)}
 
@@ -71,6 +80,18 @@ def collect_calls(text):
 
 def expand(token, consts):
     return DOLLAR_REF.sub(lambda m: consts.get(m.group(1), m.group(0)), token)
+
+
+def canon(token, consts):
+    """A label reduced to the form both sides of a comparison can agree on.
+
+    Interpolations of a `const val` expand to their value. The rest are local vals the linter cannot
+    see -- `val done = "${CAP_DONE_LABEL}_$ordinal"` -- so their `$` markers are stripped instead,
+    which makes the reference `:$done` and the declaration `ExternalLabel(done, ...)` the same token.
+    Comparing the two spellings directly is what made the first run of the repaired R2 report a
+    branch that is perfectly well declared.
+    """
+    return expand(token, consts).replace("${", "").replace("}", "").replace("$", "")
 
 
 def lint_block(problems, name, line_no, payload, externals, consts, labeled):
@@ -107,14 +128,14 @@ def lint_block(problems, name, line_no, payload, externals, consts, labeled):
         for ln in useful:
             d = LABEL_DEF.match(ln)
             if d:
-                label = expand(d.group(1), consts)
+                label = canon(d.group(1), consts)
                 if label in defs:
                     problems.append(
                         f"  {name}:{line_no} defines label :{label} twice in one block (R3)")
                 defs.add(label)
             if BRANCH.match(ln):
                 for r in LABEL_REF.findall(ln):
-                    refs.add(expand(r, consts))
+                    refs.add(canon(r, consts))
         for r in sorted(refs - defs - externals):
             problems.append(
                 f"  {name}:{line_no} branches to :{r}, defined neither in the block nor in "
@@ -206,10 +227,26 @@ def main():
         consts.update(KOTLIN_CONST.findall(text))
 
     problems = []
+
+    # R4 everywhere, not only at call sites. Three of the largest payloads in this project --
+    # hotkeyBlock, toSmali, branchOnStartKey -- are composed in helper functions and spliced in by
+    # name, so a call-site-scoped sweep never reads their instruction text at all. Measured before
+    # this: 85 of 151 smali lines linted. Only the width rule runs here, because it is the one rule
+    # that is purely local; a composed fragment may legitimately end on a label or reference one
+    # defined by whatever splices it in, so R1/R2/R3 still need a call site to judge.
+    for path, text in sorted(texts.items(), key=lambda kv: kv[0].name):
+        for fragment in RAW_STRING.finditer(text):
+            line_no = text.count("\n", 0, fragment.start()) + 1
+            lint_widths(problems, path.name, line_no, fragment.group(1))
+    swept = set(problems)
+
     for path, text in sorted(texts.items(), key=lambda kv: kv[0].name):
         for line_no, variant, args, end in collect_calls(text):
             labeled = variant == "addInstructionsWithLabels"
-            externals = {consts.get(t, t) for t in EXTERNAL_LABEL.findall(args)}
+            # The declaration names the constant, not an interpolation, so it is looked up
+            # directly first and only then canonicalised.
+            externals = {canon(consts.get(t, t), consts)
+                         for t in EXTERNAL_LABEL.findall(args)}
 
             raw = RAW_STRING.search(args)
             if raw:
@@ -241,6 +278,11 @@ def main():
                     f"instruction at the end (R7) — Morphe resolves a terminal label as external "
                     f"and dies at `length=0; index=0`"
                 )
+
+    # The call-site pass re-reads blocks the sweep already covered, so a width problem in one of
+    # them would otherwise be reported twice.
+    seen = set()
+    problems = [q for q in problems if not (q in seen or seen.add(q))]
 
     if problems:
         print("Smali emission lint:")
