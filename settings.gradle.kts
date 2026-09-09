@@ -25,8 +25,10 @@ plugins {
 // extension module. See stubs/build.gradle.kts and the stub class's own Javadoc.
 include(":stubs")
 
-// Local-only compile proof of the extension with plain javac and no Android SDK — its sources
-// plus hand-written android.* stubs. CI's real extension build does not touch this module; see
+// A compile proof of the extension with plain javac and no Android SDK — its sources plus
+// hand-written android.* stubs. It is what makes the extension checkable on a desk that cannot
+// run `buildAndroid`, and it is a lane of `tools/gate`, so CI compiles it too now that the gate
+// runs there. It is still not how the shipped extension is built; see
 // extension-check/build.gradle.kts.
 include(":extension-check")
 

@@ -13,8 +13,8 @@ import dev.jz6.flexboard.patches.shared.checkInvokeKind
 import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
+import dev.jz6.flexboard.patches.shared.assertNotReadBeforeWritten
 import dev.jz6.flexboard.patches.shared.opcodeName
-import dev.jz6.flexboard.patches.shared.registersRead
 import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
 /**
@@ -105,7 +105,7 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick() {
         avoid = listOf(pointerRegister, directionRegister, actionDefRegister),
         what = what,
     )
-    assertNotReadBeforeWritten(body, insertIndex, what)
+    assertNotReadBeforeWritten(body, insertIndex, SCRATCH_REGISTERS, what)
 
     val (a, b, c, d, e) = SCRATCH_REGISTERS
 
@@ -144,28 +144,4 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick() {
         """.trimIndent(),
         ExternalLabel(SKIP_LABEL, stockTest),
     )
-}
-
-/**
- * Refuses a build where a scratch register is read before anything writes it, walking forward from
- * the insertion point.
- *
- * A veto, never a licence. This follows the instruction stream rather than the control-flow graph,
- * so a register reached only by a branch is not modelled and a *pass* here proves nothing. The
- * registers were chosen from preflight's backward analysis; this exists so that a build which moved
- * them fails at patch time as well as in the gate.
- */
-private fun assertNotReadBeforeWritten(body: List<Instruction>, insertIndex: Int, what: String) {
-    for (register in SCRATCH_REGISTERS) {
-        for (index in insertIndex until body.size) {
-            val instruction = body[index]
-            if (register in instruction.destinationRegistersOrEmpty()) break
-            if (register !in instruction.registersRead()) continue
-            error(
-                "v$register is read by `${instruction.opcodeName()}` at $index before anything " +
-                    "writes it, walking forward from the insertion point in $what — it carries a " +
-                    "live value across the seam and cannot be scratch",
-            )
-        }
-    }
 }

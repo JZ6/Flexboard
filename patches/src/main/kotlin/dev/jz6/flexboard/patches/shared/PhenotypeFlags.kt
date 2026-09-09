@@ -85,6 +85,10 @@ internal fun BytecodePatchContext.forceFlagsOn(
     }
 
     val flipped = mutableSetOf<String>()
+    // Without this, a moved factory makes every flag fail with "it is no longer a boolean flag",
+    // which sends the reader to the flags instead of to the one descriptor that actually moved.
+    checkMethodExists(BOOLEAN_FLAG_FACTORY, "the Phenotype boolean flag factory")
+
     for (holder in holders) {
         val body = holder.implementation?.instructions?.toList() ?: continue
         val descriptor = holder.toDescriptor()

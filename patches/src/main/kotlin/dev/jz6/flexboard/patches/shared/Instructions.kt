@@ -166,3 +166,32 @@ internal fun List<Instruction>.indexOfSoleCall(descriptor: String, context: Stri
         .sole { "Expected exactly one call to $descriptor in $context, found $it" }
         .index
 }
+
+/**
+ * Refuses a build where a scratch register is read before anything writes it, walking forward from
+ * the insertion point.
+ *
+ * A veto, never a licence. This follows the instruction stream rather than the control-flow graph,
+ * so a register reached only by a branch is not modelled and a *pass* here proves nothing. The
+ * registers were chosen from preflight's backward analysis; this exists so that a build which moved
+ * them fails at patch time as well as in the gate.
+ */
+internal fun assertNotReadBeforeWritten(
+    body: List<Instruction>,
+    insertIndex: Int,
+    scratch: List<Int>,
+    what: String,
+) {
+    for (register in scratch) {
+        for (index in insertIndex until body.size) {
+            val instruction = body[index]
+            if (register in instruction.destinationRegistersOrEmpty()) break
+            if (register !in instruction.registersRead()) continue
+            error(
+                "v$register is read by `${instruction.opcodeName()}` at $index before anything " +
+                    "writes it, walking forward from the insertion point in $what — it carries a " +
+                    "live value across the seam and cannot be scratch",
+            )
+        }
+    }
+}

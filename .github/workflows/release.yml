@@ -114,25 +114,22 @@ jobs:
         if: steps.decide.outputs.release == 'true'
         run: .github/scripts/check_version.sh "${{ steps.decide.outputs.version }}" "$GITHUB_REF_NAME"
 
-      # A source-level invariant, so it runs on every push rather than only on releases: the
-      # preference keys and defaults are deliberately duplicated across the patches and the
-      # extension DEX, and nothing about changing one alone fails to compile.
-      - name: Check the patch and the extension agree
-        run: .github/scripts/check_shared_constants.py
-
-      # Two faster-than-compile lanes over the patch sources: every obfuscated Gboard class the
-      # Kotlin names must be a preflight anchor, and every emitted smali block must survive the
-      # structural rules Morphe's own parser enforces at patch time (labels resolve, no terminal
-      # label, const widths). Both fail here instead of in a Manager log on a phone.
-      - name: Check dex anchors and emission strings
-        run: |
-          .github/scripts/check_dex_pins.py
-          .github/scripts/check_emission_lint.py
-
-      # tools/gate is the gate. Listing its lanes again here is the second hand-maintained list
-      # that AGENTS.md says is how a lane goes missing -- and the two had already drifted. The
-      # dex-dependent lanes skip on a runner with no gboard.apk, which the gate reports as SKIP.
+      # tools/gate is the gate, and running it here is the whole point: the three script lanes
+      # used to be listed again in this file, which is the second hand-maintained list AGENTS.md
+      # says is how a lane goes missing -- and the two had already drifted apart by two lanes and a
+      # compile target. It runs on every push rather than only on releases, because the preference
+      # keys and defaults are deliberately duplicated across the patches and the extension DEX and
+      # nothing about changing one alone fails to compile.
+      #
+      # The dex-dependent lanes report SKIP on a runner with no gboard.apk, which the gate prints
+      # as a paragraph rather than a tick.
+      #
+      # GITHUB_TOKEN is not optional: the compile lane resolves app.morphe.patches from GitHub
+      # Packages, which is a credentialed repository. Leaving it off is what made the first version
+      # of this step fail with "plugin not found" while every other Gradle step here worked.
       - name: Run the gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: tools/gate
 
       # What is NOT checked here, so nobody has to rediscover it:

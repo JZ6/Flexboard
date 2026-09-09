@@ -30,6 +30,7 @@ import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.PACKED_INVOKE_REGISTER_LIMIT
 import dev.jz6.flexboard.patches.shared.TypedRegister
+import dev.jz6.flexboard.patches.shared.assertNotReadBeforeWritten
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.checkAssignable
 import dev.jz6.flexboard.patches.shared.findInstanceField
@@ -289,6 +290,17 @@ private fun MutableMethod.capWordCount(
         listOf(countRegister, thisRegister),
         "$SCRUB_MOTION_EVENT_HANDLER->r",
     )
+    // A register-count assertion does not make a register-allocation analysis binding: R8
+    // reallocates freely within the same frame size, and validateScratchRegisters checks
+    // distinctness, collisions and the nibble ceiling but cannot check liveness. The KDoc above
+    // reasons the three registers are dead from both insertion points onward; this makes a build
+    // that moved them fail here rather than leave the claim unverified.
+    producers.sortedDescending().forEach { producerIndex ->
+        assertNotReadBeforeWritten(
+            instructions.toList(), producerIndex + 1, CLAMP_SCRATCH_REGISTERS,
+            "$SCRUB_MOTION_EVENT_HANDLER->r",
+        )
+    }
 
     // Descending, so inserting at one site cannot shift the index of the other.
     producers.sortedDescending().forEachIndexed { ordinal, producerIndex ->

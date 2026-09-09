@@ -148,6 +148,17 @@ private fun MutableMethod.raiseFlagDefault() {
     val defaultIndex = keyIndex + 1 + defaultOffset
     val default = instructions[defaultIndex]
 
+    // `NarrowLiteralInstruction` extends `WideLiteralInstruction`, so the search above also matches
+    // `const/4`, `const/16` and `const`. Replacing one of those with `const-wide/16` writes the
+    // register *and its successor*, corrupting whatever the neighbour held in this `<clinit>`. The
+    // literal check below does not close it: a `const/4 vN, -0x1` has a wideLiteral of -1 and
+    // passes. So assert the opcode, not just the interface.
+    check(default.opcodeName().startsWith("CONST_WIDE")) {
+        "\"$MAX_ACCESS_POINTS_FLAG\"'s default in ${toDescriptor()} is a " +
+            "${default.opcodeName()}, not a const-wide — rewriting a narrow constant as a wide one " +
+            "would clobber the register above it"
+    }
+
     val literal = (default as WideLiteralInstruction).wideLiteral
     check(literal == STOCK_FLAG_DEFAULT) {
         "\"$MAX_ACCESS_POINTS_FLAG\" defaults to $literal in ${toDescriptor()}, not " +
