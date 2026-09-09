@@ -76,9 +76,15 @@ private fun widenAllowedIdSet() {
     // carries a few array members nothing draws.
     val admittedIds = Regex("""name="(flexboard_\w+)"""").findAll(fragment)
         .map { it.groupValues[1] }.toList()
-    val hotkeyIds = admittedIds.filter { it.startsWith(HOTKEY_ID_PREFIX) }
-    require(hotkeyIds.size == HOTKEY_SLOTS) {
-        "$ADMITTED_IDS carries ${hotkeyIds.size} hotkey ids, expected $HOTKEY_SLOTS"
+    // Set equality, not a count. The emission spells "$HOTKEY_ID_PREFIX$slot" for slot in
+    // 1..HOTKEY_SLOTS; counting alone accepts a file that renames hotkey_8 to hotkey_9 and keeps
+    // the total, which registers slot 8's access point against an allowed set that never admits
+    // it. The button then never renders and nothing names the cause.
+    val hotkeyIds = admittedIds.filter { it.startsWith(HOTKEY_ID_PREFIX) }.toSet()
+    val expectedHotkeyIds = (1..HOTKEY_SLOTS).map { "$HOTKEY_ID_PREFIX$it" }.toSet()
+    require(hotkeyIds == expectedHotkeyIds) {
+        "$ADMITTED_IDS admits $hotkeyIds, but the hotkey emission registers $expectedHotkeyIds — " +
+            "an id registered and not admitted is a button that silently never renders"
     }
     require(admittedIds.size == ADMITTED_ID_COUNT) {
         "$ADMITTED_IDS carries ${admittedIds.size} admitted ids, expected $ADMITTED_ID_COUNT — a new " +

@@ -446,6 +446,39 @@ def _check_hidden_features_count(problems):
             seen[flag] = True
 
 
+def _check_admitted_ids(problems):
+    """The admitted id set is exactly what the hotkey emission registers.
+
+    ToolbarIdAdmissionPatch now compares these as sets, but that check runs inside Morphe and there
+    is no Android SDK here, so no patch is ever executed locally. Without a copy in the gate, a
+    rename that preserves the count -- flexboard_hotkey_8 to _9 -- passes every lane and ships a
+    button that registers against an allowed set which never admits it, renders nothing, and says
+    nothing. That is this project's worst silent failure, recorded as such in AGENTS.md.
+    """
+    slots_xml = PATCHES.parent / "resources/values/flexboard_toolbar_slots.xml"
+    hotkeys_kt = PATCHES / "dev/jz6/flexboard/patches/features/toolbar/ToolbarHotkeys.kt"
+    if not slots_xml.exists() or not hotkeys_kt.exists():
+        problems.append("  admitted id check cannot find flexboard_toolbar_slots.xml or ToolbarHotkeys.kt")
+        return
+    kt = hotkeys_kt.read_text()
+    slots = re.search(r'HOTKEY_SLOTS\s*=\s*(\d+)', kt)
+    prefix = re.search(r'HOTKEY_ID_PREFIX\s*=\s*"([^"]+)"', kt)
+    if not slots or not prefix:
+        problems.append("  admitted id check cannot read HOTKEY_SLOTS/HOTKEY_ID_PREFIX")
+        return
+    count, pre = int(slots.group(1)), prefix.group(1)
+    admitted = set(re.findall(r'name="(flexboard_\w+)"', slots_xml.read_text()))
+    expected = {f"{pre}{i}" for i in range(1, count + 1)}
+    missing, extra = expected - admitted, {a for a in admitted if a.startswith(pre)} - expected
+    if missing or extra:
+        problems.append(
+            f"  flexboard_toolbar_slots.xml admits {sorted(admitted & set(admitted))} but the "
+            f"hotkey emission registers {sorted(expected)}"
+            + (f"; missing {sorted(missing)}" if missing else "")
+            + (f"; unregistered {sorted(extra)}" if extra else "")
+        )
+
+
 def _check_stock_package_name(problems):
     """The extension's fallback package name matches Constants.GBOARD_PACKAGE_NAME.
 
@@ -502,14 +535,39 @@ def _check_settings_row_mirror(problems):
         return
     mirrored = dict(re.findall(r'\(\s*"([^"]+)"\s*,\s*"([^"]*)"\s*\)', mirror.group(1)))
 
-    for attr, const in (("title", "ENTRY_TITLE"), ("summary", "ENTRY_SUMMARY"), ("key", "ENTRY_KEY")):
-        m = re.search(rf'{const}\s*=\s*"([^"]*)"', kt)
-        if not m:
-            problems.append(f"  {const} not found in SettingsScreenPatch.kt")
+    # Read off the emission rather than from a hand-listed set of constant names. The list was
+    # ("title", "summary", "key") while addFlexboardEntry writes six, so `icon`, `fragment` and
+    # `persistent` were unmirrored -- and a stale fragment or icon is exactly what the docstring
+    # above calls the case that matters, because the replay would prove a row nobody ships.
+    emission = re.search(r'createElement\(PREFERENCE_TAG\)\.apply \{(.*?)\n    \}', kt, re.S)
+    if not emission:
+        problems.append("  the settings row emission could not be located in SettingsScreenPatch.kt")
+        return
+    written = re.findall(r'setAndroidAttribute\("(\w+)",\s*([^)]+)\)', emission.group(1))
+
+    def resolve(token):
+        token = token.strip()
+        if token.startswith('"'):
+            return token.strip('"')
+        for source in PATCHES.rglob("*.kt"):
+            hit = re.search(rf'\b{re.escape(token)}\s*=\s*"([^"]*)"', source.read_text())
+            if hit:
+                return hit.group(1)
+        return None
+
+    if len(written) != len(mirrored):
+        problems.append(
+            f"  the settings row writes {len(written)} attributes but SETTINGS_ROW_ATTRS mirrors "
+            f"{len(mirrored)} — the resource lane is rehearsing a different row"
+        )
+    for attr, token in written:
+        value = resolve(token)
+        if value is None:
+            problems.append(f"  the settings row's {attr} is {token}, which resolves to no constant")
             continue
-        if mirrored.get(attr) != m.group(1):
+        if mirrored.get(attr) != value:
             problems.append(
-                f"  the settings row's {attr} is {m.group(1)!r} in SettingsScreenPatch.kt but "
+                f"  the settings row's {attr} is {value!r} in SettingsScreenPatch.kt but "
                 f"{mirrored.get(attr)!r} in check_patch_resources.py's SETTINGS_ROW_ATTRS — the "
                 f"resource lane is rehearsing a row the patch does not write"
             )
@@ -897,6 +955,7 @@ def main():
 
     _check_extension_references(problems)
     _check_section_sentinels(problems)
+    _check_admitted_ids(problems)
     _check_stock_package_name(problems)
     _check_hidden_features_count(problems)
     _check_allowed_set_sentinel(problems)

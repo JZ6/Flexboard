@@ -95,18 +95,35 @@ VALUE_MERGES = [
     ("values/flexboard_toolbar_slots.xml", "res/values/strings.xml"),
 ]
 
+def _admitted_id_count():
+    """HOTKEY_SLOTS + 3, read out of the Kotlin rather than restated here.
+
+    The previous version counted `flexboard_hotkey_\\d+` in the same values file the replay reads
+    ids from, so the assertion below compared a number against itself. It was a tautology in both
+    directions, and it hid the fact that the two sides were counting different things: the patch
+    admits `flexboard_\\w+`, which is the eight hotkeys *and* select-all, copy and paste.
+    """
+    hotkeys = re.search(
+        r'HOTKEY_SLOTS\s*=\s*(\d+)',
+        (REPO / "patches/src/main/kotlin/dev/jz6/flexboard/patches/features/toolbar/"
+         "ToolbarHotkeys.kt").read_text(),
+    )
+    admitted = re.search(
+        r'ADMITTED_ID_COUNT\s*=\s*HOTKEY_SLOTS\s*\+\s*(\d+)',
+        (REPO / "patches/src/main/kotlin/dev/jz6/flexboard/patches/features/toolbar/"
+         "ToolbarIdAdmissionPatch.kt").read_text(),
+    )
+    if not hotkeys or not admitted:
+        raise SystemExit("check_patch_resources: cannot read the admitted id count from the patch "
+                         "source — the constants this lane mirrors have been renamed")
+    return int(hotkeys.group(1)) + int(admitted.group(1))
+
+
 # Arrays the patch widens, replayed on the real decoded array: (sentinel id value whose
 # *referencing* string locates the holder array, how many ids get appended). Mirrors
 # widenAllowedIdSet() in ToolbarIdAdmissionPatch.kt — the sentinel is a content pin precisely
-# because the array's name is obfuscated per build. The appended count is read off the same
-# values fragment the patch splices in, so trimming/expanding the slot count never has to be
-# restated here (the patch's own require() holds fragment and HOTKEY_SLOTS in step).
-ARRAY_WIDENINGS = [
-    ("editor_info",
-     len(re.findall(r'name="flexboard_hotkey_\d+"',
-                    (REPO / "patches/src/main/resources/values/"
-                     "flexboard_toolbar_slots.xml").read_text()))),
-]
+# because the array's name is obfuscated per build.
+ARRAY_WIDENINGS = [("editor_info", _admitted_id_count())]
 
 # Any patch resource under values/ that is NOT covered by VALUE_MERGES. Values files are
 # banned on this branch; surfacing one as an error is the lane doing its job.
@@ -414,13 +431,20 @@ def replay(scratch):
     if ARRAY_WIDENINGS and arrays_xml.exists():
         arrays = arrays_xml.read_text()
         strings = strings_xml.read_text() if strings_xml.exists() else ""
+        # The same pattern ToolbarIdAdmissionPatch uses. Matching only the hotkeys meant three
+        # ids the shipped patch writes into arrays.xml — select all, copy and paste — were never
+        # DOM-parsed and never went through the arsclib encode, which is the exact lane that
+        # killed dev.3 and dev.4.
         new_ids = re.findall(
-            r'name="(flexboard_hotkey_\d+)"',
+            r'name="(flexboard_\w+)"',
             (REPO / "patches" / "src" / "main" / "resources" / VALUE_MERGES[0][0]).read_text(),
         )
         for sentinel, count in ARRAY_WIDENINGS:
-            assert len(new_ids) == count, \
-                f"ARRAY_WIDENINGS wants {count} ids, the mapped values file carries {len(new_ids)}"
+            # Not an assert: `python -O` strips those, and this is now a real cross-check between
+            # the values file and the patch's own constants rather than a number against itself.
+            if len(new_ids) != count:
+                fail("replay", f"the patch admits {count} ids but the mapped values file carries "
+                               f"{len(new_ids)} — the two halves of the widening disagree")
             m = re.search(rf'<string name="([\w.]+)"[^>]*>{sentinel}</string>', strings)
             if not m:
                 fail("replay", f"sentinel id {sentinel!r} resolves to no string — seam moved")
