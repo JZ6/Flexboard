@@ -511,6 +511,79 @@ READS_FIRST_OPERAND = ('if-', 'invoke', 'iput', 'sput', 'aput', 'return', 'throw
 # the substring rather than on any one mnemonic.
 READS_AND_WRITES_FIRST_OPERAND = ('2addr',)
 
+# `filled-new-array` reads every register it names and writes none -- its result goes to a following
+# `move-result-object`. It is not caught by the 'fill-array' prefix above, which matches only
+# `fill-array-data`, so it was being treated as a write and killing its own first argument.
+READS_FIRST_OPERAND = READS_FIRST_OPERAND + ('filled-new-array',)
+
+# ---- 64-bit operands -------------------------------------------------------------------------
+#
+# A wide value occupies a register *pair*, r and r+1. Modelling only r loses half of every long and
+# double: `move-result-wide v5` silently clobbers v6, and `cmp-long v11, v4, v11` silently reads v5
+# and v12. Both directions of that error report a register as free when it is not.
+#
+# dis.py renders arithmetic as opcode-hex families (`binop9b`, `unop81`) rather than mnemonics, so
+# these are decoded from the opcode byte, which is exact. Everything else is named.
+WIDE_DEST_NAMES = ('const-wide', 'move-wide', 'move-result-wide', 'iget-wide', 'sget-wide',
+                   'aget-wide')
+WIDE_SRC_NAMES = ('move-wide', 'iput-wide', 'sput-wide', 'aput-wide', 'return-wide', 'cmp-long',
+                  'cmpg-double', 'cmpl-double')
+# neg-long, not-long, neg-double, int-to-long, int-to-double, long-to-double, float-to-long,
+# float-to-double, double-to-long. 0x89 was missed on the first pass and the omission was
+# caught by a real pin: the scrub clamp inserts at a `float-to-double`, which writes the very
+# pair the emission borrows, so leaving it out reported its high half live on entry.
+_UNOP_WIDE_DEST = {0x7d, 0x7e, 0x80, 0x81, 0x83, 0x86, 0x88, 0x89, 0x8b}
+_UNOP_WIDE_SRC = {0x7d, 0x7e, 0x80, 0x84, 0x85, 0x86, 0x8a, 0x8b, 0x8c}
+# long: 0x9b-0xa5 and 0xbb-0xc5.  double: 0xab-0xaf and 0xcb-0xcf.
+_BINOP_WIDE = set(range(0x9b, 0xa6)) | set(range(0xab, 0xb0))
+_BINOP2_WIDE = set(range(0xbb, 0xc6)) | set(range(0xcb, 0xd0))
+# shl/shr/ushr-long take a *narrow* second operand, so their last source is not a pair.
+_SHIFT_LONG = {0xa3, 0xa4, 0xa5, 0xc3, 0xc4, 0xc5}
+
+
+def _family_opcode(mnemonic):
+    """The opcode byte behind a `binop9b`/`unop81`-style family placeholder, or None."""
+    for prefix in ('binop2addr', 'binop', 'unop'):
+        if mnemonic.startswith(prefix):
+            try:
+                return int(mnemonic[len(prefix):], 16)
+            except ValueError:
+                return None
+    return None
+
+
+def wide_pairs(mnemonic, registers):
+    """(extra_sources, extra_destinations) contributed by 64-bit operands.
+
+    Returns the *second* word of every register pair the instruction touches, so a caller can add
+    them to what `regs`/`invoke_regs` already found. Sources and destinations are separated because
+    over-reporting a source is conservative and over-reporting a destination is not.
+    """
+    if not registers:
+        return [], []
+    op = _family_opcode(mnemonic)
+    if op is not None:
+        if op in _UNOP_WIDE_DEST or op in _UNOP_WIDE_SRC:
+            dest = [registers[0] + 1] if op in _UNOP_WIDE_DEST else []
+            src = [registers[1] + 1] if op in _UNOP_WIDE_SRC and len(registers) > 1 else []
+            return src, dest
+        if op in _BINOP_WIDE or op in _BINOP2_WIDE:
+            sources = registers[1:] if op in _BINOP_WIDE else registers
+            if op in _SHIFT_LONG and sources:
+                sources = sources[:-1]
+            return [r + 1 for r in sources], [registers[0] + 1]
+        return [], []
+    dest = [registers[0] + 1] if mnemonic.startswith(WIDE_DEST_NAMES) else []
+    if mnemonic.startswith(WIDE_SRC_NAMES):
+        # `move-wide vA, vB` writes the A pair and reads the B pair. `cmp-long`/`cmp?-double` write
+        # a *narrow* int into vA and read two pairs. The stores read every operand they name.
+        if mnemonic.startswith(('move-wide', 'cmp-long', 'cmpg-double', 'cmpl-double')):
+            sources = registers[1:]
+        else:
+            sources = registers
+        return [r + 1 for r in sources], dest
+    return [], dest
+
 
 def writes_before(ins, reg, after_pc, before_pc):
     """Instructions in (after_pc, before_pc] that overwrite vreg."""
@@ -532,36 +605,55 @@ def live_free(ins, register_count, at_pc):
     pcs = [i[0] for i in ins]
     index = {p: k for k, p in enumerate(pcs)}
 
+    # A switch's case targets live in a payload this function does not read, so its edges would be
+    # missing entirely and every register the cases read would look dead. Refuse rather than answer:
+    # no call site analyses a switch today, and a wrong answer here is not visible on a device.
+    if any(mnemonic.startswith(('packed-switch', 'sparse-switch')) for _pc, mnemonic, _a in ins):
+        raise ValueError('live_free cannot model a method containing a switch')
+
+    # Every handler entry is a `move-exception`, and an exception can be raised anywhere inside the
+    # try. Edging every instruction to every handler over-approximates -- some of those instructions
+    # are outside any try -- which keeps registers live that might not be, the safe direction.
+    handlers = [k for k, (_pc, mnemonic, _a) in enumerate(ins)
+                if mnemonic.startswith('move-exception')]
+
     def successors(k):
         _, mnemonic, args = ins[k]
         match = re.search(r'-> (\d+)', args)
+        # Only a branch's operand is a target. `fill-array-data` also carries `-> pc`, and matching
+        # it invents an edge to a payload.
+        target = ([index[int(match.group(1))]]
+                  if match and mnemonic.startswith(('goto', 'if-')) else [])
         if mnemonic.startswith('goto'):
-            return [index[int(match.group(1))]] if match else []
-        if mnemonic.startswith(('return', 'throw')):
-            return []
-        out = [index[int(match.group(1))]] if match else []
-        if k + 1 < n:
-            out.append(k + 1)
-        return out
+            out = target
+        elif mnemonic.startswith(('return', 'throw')):
+            out = []
+        else:
+            out = target + ([k + 1] if k + 1 < n else [])
+        return out + handlers
 
     live = [set() for _ in range(n + 1)]
     for _ in range(500):
         changed = False
         for k in range(n - 1, -1, -1):
             _, mnemonic, args = ins[k]
-            r = regs(args)
+            # invoke_regs, not regs: `{v3 .. v12}` is ten registers, and reading it as its two
+            # endpoints declared v4-v11 dead at the instruction that passes them as arguments.
+            r = invoke_regs(args)
             out = set()
             for t in successors(k):
                 out |= live[t]
             if mnemonic.startswith(READS_FIRST_OPERAND):
-                sources, destination = r, None
-            elif any(k in mnemonic for k in READS_AND_WRITES_FIRST_OPERAND):
-                sources, destination = r, (r[0] if r else None)
+                sources, destinations = r, []
+            elif any(w in mnemonic for w in READS_AND_WRITES_FIRST_OPERAND):
+                sources, destinations = r, ([r[0]] if r else [])
             else:
-                sources, destination = r[1:], (r[0] if r else None)
+                sources, destinations = r[1:], ([r[0]] if r else [])
+            wide_sources, wide_destinations = wide_pairs(mnemonic, r)
+            sources = list(sources) + wide_sources
+            destinations = list(destinations) + (wide_destinations if destinations else [])
             new = set(out)
-            if destination is not None:
-                new.discard(destination)
+            new -= set(destinations)
             new |= set(sources)
             if new != live[k]:
                 live[k] = new
