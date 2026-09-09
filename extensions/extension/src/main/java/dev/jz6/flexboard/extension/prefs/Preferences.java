@@ -85,6 +85,17 @@ public final class Preferences {
             return application;
         }
         Context storage = application.createDeviceProtectedStorageContext();
-        return storage != null ? storage : application;
+        if (storage == null) {
+            // No fallback, deliberately. This class's own javadoc says a guard here "would also be
+            // worse than useless -- falling back would silently return to reading the wrong file",
+            // and returning the credential-encrypted context does worse than that: reading its
+            // SharedPreferences before the user unlocks throws IllegalStateException, on a path
+            // reached from Application.onCreate. That is a keyboard that will not start until
+            // unlock, on a device whose unlock needs a keyboard.
+            throw new IllegalStateException(
+                "no device-protected storage context; refusing to read credential-encrypted "
+                    + "preferences, which are unavailable before first unlock");
+        }
+        return storage;
     }
 }

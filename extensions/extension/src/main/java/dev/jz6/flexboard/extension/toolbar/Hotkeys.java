@@ -113,6 +113,16 @@ public final class Hotkeys {
      * typing a text is how one appears, clearing it is how it goes away.
      */
     public static boolean shown(Context context, int slot) {
+        // Called from the bar controller's constructor and from onStartInputView, so a
+        // throw here is a keyboard that will not draw rather than a wrong icon.
+        try {
+            return shownUnguarded(context, slot);
+        } catch (Throwable oops) {
+            return false;
+        }
+    }
+
+    private static boolean shownUnguarded(Context context, int slot) {
         if (slot < 1 || slot > SLOT_COUNT) {
             return false;
         }
@@ -142,6 +152,16 @@ public final class Hotkeys {
      * the bundled-id era (dev.7 and earlier) degrade gracefully rather than blanking.
      */
     public static int iconOf(Context context, int slot) {
+        // Called from the bar controller's constructor and from onStartInputView, so a
+        // throw here is a keyboard that will not draw rather than a wrong icon.
+        try {
+            return iconOfUnguarded(context, slot);
+        } catch (Throwable oops) {
+            return 0;
+        }
+    }
+
+    private static int iconOfUnguarded(Context context, int slot) {
         // Bounds-checked like shown() above. Both readers index DEFAULT_ICON_NAMES[slot - 1]
         // directly, and are safe today only because the emitted smali gates them behind shown()
         // and the fragment loops 1..slotCount(). The array being longer than SLOT_COUNT is what
@@ -219,6 +239,16 @@ public final class Hotkeys {
      * measure pass shifts every row next to it.
      */
     public static String labelOf(Context context, int slot) {
+        // Called from the bar controller's constructor and from onStartInputView, so a
+        // throw here is a keyboard that will not draw rather than a wrong icon.
+        try {
+            return labelOfUnguarded(context, slot);
+        } catch (Throwable oops) {
+            return "";
+        }
+    }
+
+    private static String labelOfUnguarded(Context context, int slot) {
         String text = textOf(context, slot).trim();
         if (text.codePointCount(0, text.length()) <= LABEL_MAX) {
             return text;

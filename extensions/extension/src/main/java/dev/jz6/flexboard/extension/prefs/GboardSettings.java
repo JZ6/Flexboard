@@ -80,6 +80,20 @@ public final class GboardSettings {
      * — a switch that will not stay where it is put is worse than one that visibly cannot move.
      */
     public static void forceScrubPreferences(Context context) {
+        // Reached from Application.onCreate. This class's own javadoc argues that a
+        // throw here "is not a settings screen failing, it is the whole app failing to
+        // start, on a keyboard, with no keyboard left to report it with" -- and then
+        // guarded only getString. Preferences.of and editor.apply can both throw too:
+        // a device-protected storage context is not guaranteed, and reading credential
+        // encrypted preferences before unlock is an IllegalStateException.
+        try {
+            forceScrubPreferencesUnguarded(context);
+        } catch (Throwable oops) {
+            // A default not applied is a preference the user can still set by hand.
+        }
+    }
+
+    private static void forceScrubPreferencesUnguarded(Context context) {
         String scrub = keyOrNull(context, ENABLE_SCRUB_DELETE);
         String glide = keyOrNull(context, ENABLE_GESTURE_INPUT);
         SharedPreferences.Editor editor = Preferences.of(context).edit();
@@ -146,6 +160,20 @@ public final class GboardSettings {
      * </ul>
      */
     public static void defaultSuggestedSettings(Context context) {
+        // Reached from Application.onCreate. This class's own javadoc argues that a
+        // throw here "is not a settings screen failing, it is the whole app failing to
+        // start, on a keyboard, with no keyboard left to report it with" -- and then
+        // guarded only getString. Preferences.of and editor.apply can both throw too:
+        // a device-protected storage context is not guaranteed, and reading credential
+        // encrypted preferences before unlock is an IllegalStateException.
+        try {
+            defaultSuggestedSettingsUnguarded(context);
+        } catch (Throwable oops) {
+            // A default not applied is a preference the user can still set by hand.
+        }
+    }
+
+    private static void defaultSuggestedSettingsUnguarded(Context context) {
         SharedPreferences preferences = Preferences.of(context);
         SharedPreferences.Editor editor = preferences.edit();
         boolean wrote = false;
