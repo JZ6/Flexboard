@@ -44,6 +44,13 @@ if printf '%s' "$VERSION" | grep -q -- '-'; then
     if ! printf '%s' "$VERSION" | grep -Eq -- '-(dev|beta|rc|alpha|preview)\.[0-9]+$'; then
         fail "Pre-release '$VERSION' must end in -<dev|beta|rc|alpha|preview>.<number>, e.g. ${VERSION%%-*}-dev.1. Without the dot before the number, Morphe orders the tenth pre-release below the ninth."
     fi
+elif [ "$BRANCH" = "dev" ]; then
+    # The mirror of tools/promote's rule that main takes no suffix. Only one direction was
+    # enforced, and a bare version was released from dev once already: v2.3.0 is tagged on a dev
+    # commit, is flagged prerelease because the flag comes from the branch, and left main and dev
+    # serving a byte-identical bundle -- the state the ranking check below calls a mistake
+    # regardless. tools/promote is now permanently blocked on it by its own tag check.
+    fail "'$VERSION' has no pre-release suffix. dev is the pre-release channel; use ${VERSION}-dev.1 and promote to main for a stable release."
 fi
 
 if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null 2>&1; then
@@ -55,7 +62,12 @@ fi
 # explicitly rather than trusting a remote-tracking ref to be present; a guard that quietly skips
 # itself is worse than no guard.
 if [ "$BRANCH" = "dev" ]; then
-    git fetch --quiet --no-tags origin main 2>/dev/null || true
+    # No `|| true`: the comment above says a guard that quietly skips itself is worse than no
+    # guard, and that is exactly what the swallowed failure produced -- an unreachable origin/main
+    # made the whole ranking check vanish and the script print success.
+    if ! git fetch --quiet --no-tags origin main 2>/dev/null; then
+        fail "cannot fetch origin/main, so the dev-beats-main ranking cannot be checked. A dev release that does not outrank main is never offered to anyone, silently."
+    fi
     if git cat-file -e "origin/main:patches-bundle.json" 2>/dev/null; then
         STABLE=$(git show origin/main:patches-bundle.json | jq -r '.version // ""')
         if [ -n "$STABLE" ]; then

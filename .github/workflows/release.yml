@@ -20,6 +20,7 @@ name: Release
 # See docs/releasing.md.
 
 on:
+  pull_request:
   push:
     branches: [dev, main]
   workflow_dispatch:
@@ -63,9 +64,29 @@ jobs:
             exit 1
           fi
 
-          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-            echo "v$VERSION is already released. Compiling only."
+          # A pull request verifies and never publishes. Without this the version-not-yet-tagged
+          # rule would make a PR from a fork tag and release the repository.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Pull request: verifying only."
             echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+            echo "mpp=patches/build/libs/patches-$VERSION.mpp" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A tag is pushed *before* the release is published, so "the tag exists" is not the
+          # same as "the release shipped". If publishing failed after tagging, a re-run used to
+          # take this branch, skip publish and verification, pass every source check and finish
+          # green -- a green run reachable by doing nothing, masking the failure it followed.
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null \
+             && gh release view "v$VERSION" --json assets --jq '.assets | length' 2>/dev/null \
+                | grep -qE '^[1-9]'; then
+            echo "v$VERSION is already released with assets. Compiling only."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          elif git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::warning::v$VERSION is tagged but has no published assets — completing the release."
+            echo "release=true" >> "$GITHUB_OUTPUT"
           else
             echo "v$VERSION is new. This push releases it."
             echo "release=true" >> "$GITHUB_OUTPUT"
@@ -107,6 +128,12 @@ jobs:
         run: |
           .github/scripts/check_dex_pins.py
           .github/scripts/check_emission_lint.py
+
+      # tools/gate is the gate. Listing its lanes again here is the second hand-maintained list
+      # that AGENTS.md says is how a lane goes missing -- and the two had already drifted. The
+      # dex-dependent lanes skip on a runner with no gboard.apk, which the gate reports as SKIP.
+      - name: Run the gate
+        run: tools/gate
 
       # What is NOT checked here, so nobody has to rediscover it:
       #
