@@ -56,6 +56,11 @@ skip() {
 
 have_apk() { [ -e gboard.apk ] && [ -d gboard-apk ]; }
 
+# First, because it is the only lane that tests the tooling rather than the APK, it needs nothing
+# from the filesystem, and it runs in milliseconds. Every other lane here trusts code that this one
+# checks: four defects in the register analysis and two dead rules in the emission linter all
+# shipped while the lanes built on them reported PASS.
+lane "unit tests"     python3 -m unittest discover -s tools/tests -t tools/tests -q
 lane "compile"        ./gradlew :patches:compileKotlin :extension-check:compileJava -q
 lane "constants"      python3 .github/scripts/check_shared_constants.py
 lane "dex pins"       python3 .github/scripts/check_dex_pins.py
