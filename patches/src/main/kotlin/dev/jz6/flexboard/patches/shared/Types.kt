@@ -1,5 +1,6 @@
 package dev.jz6.flexboard.patches.shared
 
+import com.android.tools.smali.dexlib2.AccessFlags
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import com.android.tools.smali.dexlib2.iface.Field
@@ -98,6 +99,24 @@ internal fun BytecodePatchContext.superclassChain(type: String): List<String>? {
  * patch author reading it should not have to open the APK to understand what went wrong.
  */
 internal fun BytecodePatchContext.checkAssignable(type: String, target: String, what: String) {
+    // The rule was stated in this file's own header as prose and never enforced. An interface
+    // target makes the superclass walk below meaningless -- implementing a type does not put it in
+    // the chain -- so the check would produce a confident, wrong failure.
+    classDefByOrNull(target)?.let {
+        check(!AccessFlags.INTERFACE.isSet(it.accessFlags)) {
+            "$what checks assignability to $target, which is an interface. A superclass walk " +
+                "cannot answer that; assert the cast at its use instead."
+        }
+    }
+    // A primitive or an array is not a class, so `classDefByOrNull` returns null for it and the
+    // walk below would return early and pass. Silently accepting `I` where a Context is required
+    // is the failure this function exists to stop.
+    check(target.startsWith("L") && target.endsWith(";")) {
+        "$what checks assignability to $target, which is not a class descriptor"
+    }
+    check(type.startsWith("L") && type.endsWith(";")) {
+        "$what is $type, which is not a class descriptor, so it cannot be a $target"
+    }
     if (type == target) return
     // Unknowable rather than wrong. Saying nothing beats failing a patch on a framework subclass
     // this cannot see, which would make the check worse than useless.
@@ -163,6 +182,7 @@ internal fun validateScratchRegisters(
     scratch: List<Int>,
     avoid: List<Int>,
     what: String,
+    registerCount: Int? = null,
 ) {
     check(scratch.distinct().size == scratch.size) {
         "Scratch registers $scratch are not distinct in $what"
@@ -172,6 +192,17 @@ internal fun validateScratchRegisters(
     }
     check(scratch.all { it < PACKED_INVOKE_REGISTER_LIMIT }) {
         "Scratch registers $scratch do not all fit a 35c invoke's nibbles in $what"
+    }
+    check(scratch.all { it >= 0 }) {
+        "Scratch registers $scratch include a negative slot in $what"
+    }
+    // The nibble limit is an *encoding* ceiling. The method's own frame is a second one, usually
+    // lower: v12 in a ten-register method assembles and fails to verify. Every caller has just
+    // called assertRegisterCount and is holding the number, so passing it costs nothing.
+    if (registerCount != null) {
+        check(scratch.all { it < registerCount }) {
+            "Scratch registers $scratch do not all fit $what's $registerCount-register frame"
+        }
     }
 }
 

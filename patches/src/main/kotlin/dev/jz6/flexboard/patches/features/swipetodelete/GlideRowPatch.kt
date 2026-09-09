@@ -129,9 +129,13 @@ private fun Document.disableGlideRows() {
  * leaving two, and Glide delete is the first of those. The assertions cover the shape — four rows,
  * exactly two left after eliminating — but they cannot catch a reorder.
  *
- * What makes that acceptable is the pin. `COMPATIBILITY_GBOARD` fixes this bundle to one Gboard
- * build by version *and* signature, and a reorder cannot reach us without a new build failing that
- * gate first. It is also a milder bet than several the project already makes: the hardcoded
+ * What makes that acceptable is **not** the pin, and this paragraph used to say it was.
+ * `COMPATIBILITY_GBOARD` is advisory metadata: `shared/Constants.kt` records that Patcher never
+ * reads `compatiblePackages`, and AGENTS.md repeats it. A reorder would reach us with nothing
+ * failing first. This is the live instance of the warning those two were written about.
+ *
+ * What actually makes it acceptable is the size of the loss. It is a milder bet than several the
+ * project already makes: the hardcoded
  * resource ids in [forceScrubPreferencesPatch] and `suggestedSettingsPatch` would silently write
  * *wrong preference* on a changed build, where the worst this can do is grey the cursor-control row
  * instead of this one. Cosmetic, and visible the moment the screen is opened.

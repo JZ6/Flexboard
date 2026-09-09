@@ -194,6 +194,7 @@ private fun MutableMethod.substituteHoldDelay(context: BytecodePatchContext) {
         scratch = listOf(scratchRegister),
         avoid = listOf(contextRegister, configRegister, delayRegister, delayRegister + 1),
         what = "$SCRUB_MOTION_EVENT_HANDLER-><init> (hold delay)",
+        registerCount = ENGINE_CONSTRUCTOR_REGISTER_COUNT,
     )
 
     // The key and default are staged in the delay pair itself, which is about to be overwritten on

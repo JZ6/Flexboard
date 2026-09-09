@@ -276,6 +276,7 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
         scratch = listOf(0, 1, 2, 4),
         avoid = (START_INPUT_REGISTER_COUNT - START_INPUT_ARGUMENT_COUNT until START_INPUT_REGISTER_COUNT).toList(),
         what = startDescriptor,
+        registerCount = START_INPUT_REGISTER_COUNT,
     )
 
     // Emitted as invoke-virtual on every keyboard open, and pinned nowhere until now: not its

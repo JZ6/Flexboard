@@ -14,6 +14,7 @@ import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.stringOrNull
 import dev.jz6.flexboard.patches.shared.toDescriptor
 
@@ -134,7 +135,12 @@ internal const val TOOLBAR_CAPACITY = 12
 private fun MutableMethod.raiseFlagDefault() {
     val instructions = instructions.toList()
 
-    val keyIndex = instructions.indexOfFirst { it.stringOrNull() == MAX_ACCESS_POINTS_FLAG }
+    val keyIndex = instructions.withIndex()
+        .filter { (_, instruction) -> instruction.stringOrNull() == MAX_ACCESS_POINTS_FLAG }
+        // Two loads of the same flag name would mean two defaults, and rewriting the first one
+        // found is a coin flip over which.
+        .sole { "\"$MAX_ACCESS_POINTS_FLAG\" is loaded $it times in ${toDescriptor()}, expected 1" }
+        .index
     check(keyIndex >= 0) {
         "const-string \"$MAX_ACCESS_POINTS_FLAG\" not found in ${toDescriptor()} — the toolbar " +
             "capacity flag is no longer initialised here"

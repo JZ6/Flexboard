@@ -104,6 +104,7 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick() {
         scratch = SCRATCH_REGISTERS,
         avoid = listOf(pointerRegister, directionRegister, actionDefRegister),
         what = what,
+        registerCount = RELEASE_REGISTER_COUNT,
     )
     assertNotReadBeforeWritten(body, insertIndex, SCRATCH_REGISTERS, what)
 
