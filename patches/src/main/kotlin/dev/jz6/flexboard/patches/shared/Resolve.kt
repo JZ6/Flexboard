@@ -45,8 +45,16 @@ internal fun BytecodePatchContext.checkFieldExists(descriptor: String, what: Str
     val owner = descriptor.substringBefore("->")
     val name = descriptor.substringAfter("->").substringBefore(":")
     val type = descriptor.substringAfter(":")
-    val found = findInstanceField(owner, name)
-        ?: error("$what refers to $descriptor, but neither $owner nor anything above it declares `$name`")
+    val found = when (val lookup = findField(owner, name)) {
+        is FieldLookup.Found -> lookup.field
+        // Saying nothing beats failing a patch on a framework class this cannot see. The same
+        // choice checkAssignable makes, for the same reason.
+        is FieldLookup.Unknowable -> return
+        FieldLookup.Absent -> error(
+            "$what refers to $descriptor, but neither $owner nor anything above it declares " +
+                "`$name`, and the whole chain was readable inside the APK",
+        )
+    }
     check(found.type == type) {
         "$what refers to $descriptor, but `$name` is a ${found.type} — the letter survived on a " +
             "field of a different type, so emitting this would read the wrong thing"

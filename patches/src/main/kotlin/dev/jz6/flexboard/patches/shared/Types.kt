@@ -176,8 +176,9 @@ internal fun validateScratchRegisters(
 }
 
 /**
- * Instance field [name] on [type] or any class above it, resolved the way the runtime resolves a
- * field reference — by walking up until something declares it.
+ * Instance field [name] on [type] or any class above it. Use [findField] unless the field being
+ * *an instance field* is itself the property under test — the one caller here reads an `iget`
+ * receiver, where a static would be the wrong answer rather than an acceptable one.
  *
  * **`ClassDef.instanceFields` is not enough**, which is worth stating because assuming otherwise
  * shipped as `0.0.2-dev.1`. It lists only what a class *declares*, and inherited fields are the
@@ -188,6 +189,47 @@ internal fun validateScratchRegisters(
  * Returns the declaration, so callers get the class that actually declares the field and can emit
  * that spelling rather than a subclass's.
  */
+/**
+ * The outcome of resolving a field reference, which is three-valued and not two.
+ *
+ * "Not found" and "cannot tell" are different answers and conflating them is what let a real patch
+ * be rejected: the walk left the APK at `Ljava/lang/Enum;`, returned the same `null` it uses for
+ * absence, and the caller reported a field that plainly exists as missing. [superclassChain] draws
+ * this distinction already; field lookup did not.
+ */
+internal sealed interface FieldLookup {
+    /** Declared here, with the class that declares it. */
+    data class Found(val field: Field) : FieldLookup
+
+    /** The chain was walked to its root inside the APK, and nothing declares it. */
+    data object Absent : FieldLookup
+
+    /** The chain left the APK at [at], so nothing above it can be read. */
+    data class Unknowable(val at: String) : FieldLookup
+}
+
+/**
+ * Field [name] on [type] or anything above it, **static or instance**, resolved the way the runtime
+ * resolves a field reference.
+ *
+ * Both kinds, because a descriptor does not say which it is and the emitters read both: `sget-object
+ * Lpmy;->c:Lpmy;` is an enum constant, and enum constants are static. Searching only
+ * `instanceFields` made [checkFieldExists] reject every `sget` this project emits — a patch that
+ * throws before writing an instruction, which Morphe catches and continues past, shipping a build
+ * with the feature quietly missing.
+ */
+internal fun BytecodePatchContext.findField(type: String, name: String): FieldLookup {
+    var current: String? = type
+    while (current != null) {
+        val definition = classDefByOrNull(current) ?: return FieldLookup.Unknowable(current)
+        (definition.staticFields + definition.instanceFields)
+            .firstOrNull { it.name == name }
+            ?.let { return FieldLookup.Found(it) }
+        current = definition.superclass
+    }
+    return FieldLookup.Absent
+}
+
 internal fun BytecodePatchContext.findInstanceField(type: String, name: String): Field? {
     var current: String? = type
     while (current != null) {
