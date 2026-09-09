@@ -174,6 +174,23 @@ It is always on when the patch is applied. Swiping right after a delete did noth
 Gboard, so nothing is being taken away by giving it a meaning — and Gboard fills the same undo slot
 when you swipe on the backspace key, so it works there too.
 
+## Swipe up to undo autocorrect
+
+Swipe up on the keyboard to put back the word an autocorrect just replaced.
+
+Gboard can already do this, but only on backspace, and only if you have found **Undo autocorrect
+with backspace** in the settings. This adds a gesture for the same thing, and it works whether or
+not that setting is on — it does not go through Gboard's arming, and nothing downstream checks.
+
+A swipe with nothing to undo does nothing at all. The gesture is only read on keys that do not
+already define an upward flick of their own, so flick-for-symbols keys keep their behaviour, and
+the swipe has to be reasonably vertical — twice as much up as sideways — which is what keeps it
+apart from the sideways scrub that **Swipe left to delete** uses.
+
+**Off by default.** It has not yet been confirmed on a device, and this project has shipped one
+default-on patch that had to be bisected across four releases afterwards. Turn it on in the patch
+selector if you want to try it.
+
 ## Text action buttons
 
 Adds **Select all**, **Copy** and **Paste** buttons to the toolbar above the keyboard. One tap

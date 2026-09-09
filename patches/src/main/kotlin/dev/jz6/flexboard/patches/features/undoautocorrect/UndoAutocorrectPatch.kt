@@ -22,11 +22,18 @@ import dev.jz6.flexboard.patches.shared.basePatch
  * anything to do with it, because no Latin layout binds a SLIDE_UP action. So the emission sits at
  * the `ActionDef` lookup that comes back null, and nothing here detects a gesture.
  *
- * Three routes that looked better and are not, each recorded in `docs/undo-autocorrect.md`: binding
+ * The attachment point is `Lpvf;->t`, which Gboard's own trace section names
+ * `TouchActionBundle.handleActionUp` — a pointer *release*, so the gesture is measured once, at the
+ * end, rather than part-way through.
+ *
+ * Four routes that looked better and are not, each recorded in `docs/undo-autocorrect.md`: binding
  * a SLIDE_UP action declaratively (no Latin layout binds any slide action, and doing so would switch
  * off flick-for-symbols on that key); hooking `LatinGestureMotionEventHandler` (gated on
- * `enable_gesture_input`, which Swipe to Delete turns off); and writing our own direction detection
- * (unnecessary).
+ * `enable_gesture_input`, which Swipe to Delete turns off); writing our own direction detection
+ * (unnecessary); and `BasicMotionEventHandler->g`, which this patch was actually written against
+ * first. `LatinMotionEventHandler` overrides it, it is ungated, and it is first in the handler list
+ * — all true, and it still dispatches only on `ACTION_HOVER_*`, so it never sees a finger. That
+ * version would have compiled, applied, and silently never fired.
  *
  * ## The scrub gesture
  *

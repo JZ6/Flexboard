@@ -57,8 +57,14 @@ internal const val ACTION_DEF_LOOKUP =
  */
 internal const val SLIDE_UP = "Lpmy;->c:Lpmy;"
 
-/** Key data, and the wrapper that turns it into an event. Gboard's own revert builds exactly this. */
-internal const val KEY_DATA_CTOR = "Lpnu;-><init>(ILpnt;Ljava/lang/Object;I)V"
+/**
+ * Key data, and the wrapper that turns it into an event. Gboard's own revert builds exactly this.
+ *
+ * `Swipe to Delete` knows the same class as the start-key holder, which is what preflight calls it.
+ * One class, two jobs; named here for the job this patch gives it.
+ */
+internal const val KEY_DATA = "Lpnu;"
+internal const val KEY_DATA_CTOR = "$KEY_DATA-><init>(ILpnt;Ljava/lang/Object;I)V"
 internal const val EVENT_FROM_KEY_DATA = "Lnur;->d(Lpnu;)Lnur;"
 
 /**

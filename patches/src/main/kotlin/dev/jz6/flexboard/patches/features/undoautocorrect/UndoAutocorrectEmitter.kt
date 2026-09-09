@@ -125,7 +125,7 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick() {
             cmpg-float v$c, v$a, v$b
             if-gtz v$c, :$SKIP_LABEL
 
-            new-instance v$a, Lpnu;
+            new-instance v$a, $KEY_DATA
             const/16 v$b, $REVERT_AUTOCORRECT
             const v$c, $EVENT_PRIORITY
             const/4 v$d, 0x0
