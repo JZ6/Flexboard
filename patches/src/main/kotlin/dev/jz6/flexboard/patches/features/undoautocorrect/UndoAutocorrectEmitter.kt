@@ -8,7 +8,8 @@ import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.checkFieldExists
-import dev.jz6.flexboard.patches.shared.checkMethodExists
+import dev.jz6.flexboard.patches.shared.InvokeKind
+import dev.jz6.flexboard.patches.shared.checkInvokeKind
 import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
@@ -55,8 +56,15 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick() {
     // Every obfuscated member the emission spells out, before a single instruction is written. A
     // rename is then a patch-time failure naming the member, rather than a verify error on a device
     // with no way to read it.
-    checkMethodExists(ACTION_DEF_LOOKUP, "the action lookup this patch anchors on")
-    checkMethodExists(EVENT_FROM_KEY_DATA, "the event wrapper the revert is dispatched through")
+    checkInvokeKind(ACTION_DEF_LOOKUP, InvokeKind.VIRTUAL, "the action lookup this patch anchors on")
+    checkInvokeKind(
+        EVENT_FROM_KEY_DATA, InvokeKind.STATIC,
+        "the event wrapper the revert is dispatched through",
+    )
+    // Both of these are spelled in the emission below and neither was checked, despite the comment
+    // above claiming every member is.
+    checkInvokeKind(KEY_DATA_CTOR, InvokeKind.DIRECT, "the key-data constructor the revert builds")
+    checkInvokeKind(DISPATCH_EVENT, InvokeKind.INTERFACE, "the event sink the revert is raised on")
     checkFieldExists(SLIDE_UP, "the SLIDE_UP action constant")
     checkFieldExists(POINTER_DELEGATE_FIELD, "the pointer's delegate back-reference")
     checkFieldExists(EVENT_SINK_FIELD, "the delegate's event sink")

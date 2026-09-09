@@ -2,7 +2,8 @@ package dev.jz6.flexboard.patches.features.swipetodelete
 
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.patch.BytecodePatchContext
-import dev.jz6.flexboard.patches.shared.checkMethodExists
+import dev.jz6.flexboard.patches.shared.InvokeKind
+import dev.jz6.flexboard.patches.shared.checkInvokeKind
 import dev.jz6.flexboard.patches.shared.soleMethodCalling
 
 /**
@@ -105,9 +106,13 @@ internal fun BytecodePatchContext.resolvePreferenceGetParsedInt(): String =
 // does it in Java against `SharedPreferences.contains`, which has no sibling to be confused with.
 // See `GboardSettings` and `shared/AppStart.kt`.
 
-/** Asserts the store descriptors that are safe to pin are still present. */
+/** Asserts the store descriptors that are safe to pin are still present, and still callable. */
 internal fun BytecodePatchContext.checkPreferenceStorePins() {
-    checkMethodExists(PREFERENCE_STORE_GET, "The preference store's singleton getter")
+    // The kind, not only the name. Both scrub emissions spell `invoke-static` for this by hand, and
+    // a getter that stopped being static would leave the descriptor intact and the call unverifiable.
+    checkInvokeKind(
+        PREFERENCE_STORE_GET, InvokeKind.STATIC, "The preference store's singleton getter",
+    )
 }
 
 /**

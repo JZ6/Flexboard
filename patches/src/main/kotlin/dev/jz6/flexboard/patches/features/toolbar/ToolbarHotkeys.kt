@@ -12,6 +12,8 @@ import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.toDescriptor
+import dev.jz6.flexboard.patches.shared.InvokeKind
+import dev.jz6.flexboard.patches.shared.checkInvokeKind
 import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
 /**
@@ -274,6 +276,12 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
         scratch = listOf(0, 1, 2, 4),
         avoid = (START_INPUT_REGISTER_COUNT - START_INPUT_ARGUMENT_COUNT until START_INPUT_REGISTER_COUNT).toList(),
         what = startDescriptor,
+    )
+
+    // Emitted as invoke-virtual on every keyboard open, and pinned nowhere until now: not its
+    // existence, not its kind, not whether Lnvd; is a class at all.
+    checkInvokeKind(
+        MODULE_CONTEXT, InvokeKind.VIRTUAL, "the module's Context getter the refresh reads",
     )
 
     val returns = start.implementation!!.instructions

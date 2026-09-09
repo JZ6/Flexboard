@@ -1,5 +1,6 @@
 package dev.jz6.flexboard.patches.shared
 
+import com.android.tools.smali.dexlib2.AccessFlags
 import app.morphe.patcher.patch.BytecodePatchContext
 import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -37,6 +38,50 @@ internal fun BytecodePatchContext.checkMethodExists(descriptor: String, what: St
         "$what refers to $descriptor, which $owner does not declare. The name has moved; emitting " +
             "it would assemble cleanly and fail at run time, which is the failure mode this check " +
             "exists to convert into a refused patch."
+    }
+}
+
+/**
+ * How an emission spells a call. Getting this wrong is not a compile error and not a patch failure:
+ * it assembles, and the device throws `IncompatibleClassChangeError` at the call site.
+ */
+internal enum class InvokeKind(val mnemonic: String) {
+    STATIC("invoke-static"),
+    VIRTUAL("invoke-virtual"),
+    INTERFACE("invoke-interface"),
+    DIRECT("invoke-direct"),
+}
+
+/**
+ * Fails the patch when [descriptor] is not callable the way [kind] spells it.
+ *
+ * [checkMethodExists] proves a name is present. It says nothing about whether the thing behind the
+ * name is static, or whether its owner is an interface, and every emission in this project picks an
+ * invoke mnemonic by hand. A method that stops being static, or a class that becomes an interface,
+ * leaves the descriptor intact and the emission wrong -- and the error arrives on a phone, where
+ * this project cannot read it.
+ */
+internal fun BytecodePatchContext.checkInvokeKind(
+    descriptor: String,
+    kind: InvokeKind,
+    what: String,
+) {
+    checkMethodExists(descriptor, what)
+    val owner = descriptor.substringBefore("->")
+    val definition = classDefByOrNull(owner) ?: return
+    val method = definition.methods.single { it.toDescriptor() == descriptor }
+    val isStatic = AccessFlags.STATIC.isSet(method.accessFlags)
+    val isInterface = AccessFlags.INTERFACE.isSet(definition.accessFlags)
+
+    check(isStatic == (kind == InvokeKind.STATIC)) {
+        "$what emits ${kind.mnemonic} for $descriptor, which is ${if (isStatic) "" else "not "}" +
+            "static — the call would assemble and fail to verify on the device"
+    }
+    check(isInterface == (kind == InvokeKind.INTERFACE)) {
+        "$what emits ${kind.mnemonic} for $descriptor, but $owner is " +
+            "${if (isInterface) "an interface" else "a class"} — invoke-interface and " +
+            "invoke-virtual are not interchangeable and the mismatch is an " +
+            "IncompatibleClassChangeError at the call site"
     }
 }
 
