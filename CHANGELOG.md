@@ -1,3 +1,24 @@
+# [2.3.1-dev.0](https://github.com/JZ6/Flexboard/compare/v2.3.0...v2.3.1-dev.0) (2026-09-09)
+
+* **Gboard:** fix: the gate step had no GitHub Packages credentials
+* **Gboard:** fix: four ways CI could be green while guarding nothing
+* **Gboard:** fix: guard the extension paths that can take the keyboard down
+* **Gboard:** fix: the resource lane was rehearsing a different row and a shorter array
+* **Gboard:** fix: assert invoke kinds and one unguarded scratch register
+* **Gboard:** fix: two emission lint rules were checking nothing
+* **Gboard:** fix: live_free was blind to range invokes, wide pairs and switches
+* **Gboard:** fix: Hidden Features was turning on four flags and saying two
+* **Gboard:** fix: checkFieldExists rejected every static field
+* **Gboard:** docs: README section for the undo-autocorrect patch, and two namings
+* **Gboard:** fix: UndoEmitter checked its scratch registers by hand
+* **Gboard:** refactor: one sole() for the twenty-six single-match searches
+* **Gboard:** test: pin the invoke kinds and the one anchor R8 cannot move
+* **Gboard:** fix: live_free over-reported dead registers
+* **Gboard:** feat: swipe up to undo an autocorrect
+* **Gboard:** docs: settle the scrub contention and write the plan down
+* **Gboard:** docs: research for swipe-up-to-undo-autocorrect, and the gesture layer
+* **Gboard:** docs: record that the rebuilt default-on ship was verified
+
 # [2.3.0](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.4...v2.3.0) (2026-09-08)
 
 * **Gboard:** docs: write down what forcing a Phenotype flag actually does
