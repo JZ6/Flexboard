@@ -18,6 +18,7 @@ import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.sole
+import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
 /**
  * Asserted rather than adapted to. Every register below is read off the anchor instructions, but
@@ -296,11 +297,16 @@ internal fun MutableMethod.undoOnRightwardScrub() {
     }
 
     val (slot, value) = SCRATCH_REGISTERS
-    val claimed = listOf(countRegister, thisRegister, flagRegister, slot, value)
-    check(claimed.distinct().size == claimed.size) {
-        "Register collision in $LATIN_IME->q: count=v$countRegister this=v$thisRegister " +
-            "flag=v$flagRegister scratch=$SCRATCH_REGISTERS"
-    }
+
+    // The shared check rather than a local distinctness test. The hand-rolled version this replaces
+    // caught collisions but not the nibble range, and the emission below includes a `35c` invoke,
+    // whose registers are four bits each — a scratch slot above v15 would assemble and then fail to
+    // verify on a device, which is the one place this project cannot read the error from.
+    validateScratchRegisters(
+        scratch = SCRATCH_REGISTERS,
+        avoid = listOf(countRegister, thisRegister, flagRegister),
+        what = "$LATIN_IME->q",
+    )
 
     // A leftward or empty scrub leaves on the first comparison with nothing touched, which is what
     // keeps Gboard's own path byte-identical in the common case.
