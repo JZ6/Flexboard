@@ -332,6 +332,30 @@ def class_access_flags(dl, name):
     return None
 
 
+def find_string_holder(dl, needle):
+    """The class whose `<clinit>` loads [needle] as a string literal, or None.
+
+    Flags are declared in R8-generated holder classes whose names move between builds, so they are
+    located by the one thing that does not move -- the flag name itself.
+    """
+    for d in dl:
+        for cname, _af, cd in d.classes():
+            for m, _maf, co in d.class_methods(cd):
+                if not co or not m.endswith('-><clinit>()V'):
+                    continue
+                # ddis, not a bare `disasm`. The first version of this named the wrong module and
+                # the except below swallowed the NameError, so the helper returned None for every
+                # flag and six pins failed with no hint why.
+                code = d.code(co)
+                if code is None:
+                    continue
+                ins = ddis.disasm(d, code)
+                for _pc, n_, a_ in ins:
+                    if n_.startswith('const-string') and f"'{needle}'" in (a_ or ''):
+                        return cname
+    return None
+
+
 def class_interfaces(dl, name):
     """Every interface a class declares, or None when the class is absent.
 
@@ -2347,6 +2371,68 @@ def run(dl, apk=None):
         codes = [i for i, (_pc, n_, a_) in enumerate(ins_)
                  if n_.startswith('const') and re.search(r'#-10045\b', a_ or '')]
         check('undo-ac: it still dispatches the revert code', len(codes) == 1, str(len(codes)))
+
+    # ---- rambler (agentic dictation)
+    #
+    # Six conditions gate Lmev;->B(Context). Five are booleans or registrations the patch sets or
+    # inherits; the sixth is a long compared against a constant, and it is the one that made this
+    # look impossible. Pinned in full because the whole feature turns on it.
+    c_, ins_ = body(dl, 'Lmqk;->c()Z')
+    if check('rambler: the activation gate exists', ins_ is not None):
+        lits = [i for i, (_pc, n_, a_) in enumerate(ins_) if n_.startswith('const')]
+        target = [literal_of(ins_[i][2]) for i in lits]
+        check('rambler: the gate still compares against a computed constant',
+              any(t == 4 for t in target), str(target))
+        check('rambler: it reads a long flag', any('Long' in (a_ or '') for _pc, _n, a_ in ins_))
+
+    c_, ins_ = body(dl, 'La;->ad(I)I')
+    if check('rambler: the ordinal helper exists', ins_ is not None):
+        # 4 is not 1, so the else arm applies: 4 - 2 = 2. Pinned as the arithmetic, not the answer.
+        subs = [a_ for _pc, n_, a_ in ins_ if n_.startswith('lit8') and '#-2' in (a_ or '')]
+        check('rambler: ad(4) still computes n - 2', len(subs) == 1, str(len(subs)))
+
+    holder = find_string_holder(dl, 'ad_activation_type')
+    if check('rambler: the activation flag is declared', holder is not None, str(holder)):
+        c_, ins_ = body(dl, f'{holder}-><clinit>()V')
+        idx = next((i for i, (_pc, n_, a_) in enumerate(ins_ or [])
+                    if n_.startswith('const-string') and "'ad_activation_type'" in (a_ or '')), None)
+        if check('rambler: its declaration is locatable', idx is not None):
+            wide = next((j for j in range(idx + 1, min(idx + 5, len(ins_)))
+                         if ins_[j][1].startswith('const-wide')), None)
+            if check('rambler: it is declared as a long', wide is not None):
+                check('rambler: it still ships as 1, the value the patch replaces',
+                      literal_of(ins_[wide][2]) == 1, str(literal_of(ins_[wide][2])))
+            factory = [a_ for _pc, n_, a_ in ins_[idx:idx + 6]
+                       if 'Ljava/lang/String;J)' in (a_ or '')]
+            check('rambler: through the long flag factory, not the boolean one',
+                  len(factory) == 1, str(len(factory)))
+
+    # The five booleans the patch forces, and which of them hoist their default. A flag that stops
+    # sharing its constant makes the isolating emission wrong, and vice versa; forceFlagsOn refuses
+    # either mismatch, so this pins the shape it will refuse on.
+    for flag, shared in (('enable_agentic_dictation', False),
+                         ('enable_jetson_in_toolbar', True),
+                         ('enable_rambler_al_toolbar', True),
+                         ('enable_rambler_toolbar_at_cursor_position', True),
+                         ('filter_rambler_contributed_input_view_session', True)):
+        owner = find_string_holder(dl, flag)
+        if not check(f'rambler: {flag} is declared', owner is not None, str(owner)):
+            continue
+        c_, ins_ = body(dl, f'{owner}-><clinit>()V')
+        i_ = next((i for i, (_pc, n_, a_) in enumerate(ins_ or [])
+                   if n_.startswith('const-string') and f"'{flag}'" in (a_ or '')), None)
+        if i_ is None:
+            check(f'rambler: {flag} declaration is locatable', False)
+            continue
+        call = next((j for j in range(i_ + 1, min(i_ + 9, len(ins_)))
+                     if re.search(r'->\w\(Ljava/lang/String;Z\)', ins_[j][2] or '')), None)
+        if not check(f'rambler: {flag} goes through the boolean factory', call is not None):
+            continue
+        reg = invoke_regs(ins_[call][2])[1]
+        own = [j for j in range(i_ + 1, call)
+               if ins_[j][1].startswith('const') and regs(ins_[j][2] or '')[:1] == [reg]]
+        check(f'rambler: {flag} default is {"hoisted" if shared else "its own"}',
+              (len(own) == 0) == shared, f'own consts between name and call: {len(own)}')
 
     # ---- toolbar capacity
     #
