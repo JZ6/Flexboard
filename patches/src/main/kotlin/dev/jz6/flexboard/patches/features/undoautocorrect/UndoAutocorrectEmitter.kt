@@ -7,6 +7,7 @@ import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
+import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.checkFieldExists
 import dev.jz6.flexboard.patches.shared.InvokeKind
 import dev.jz6.flexboard.patches.shared.checkInvokeKind
@@ -76,6 +77,22 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
     }
 
     val body = method.instructions.toList()
+
+    // Both swipe-up patches attach to this one instruction, and Morphe cannot declare two patches
+    // mutually exclusive, so selecting both used to fail here with "the fall-through this emission
+    // relies on is not there" -- which reads as though Gboard had changed. It had not: the first
+    // emission inserts about twenty instructions between the lookup and the `if-eqz`, and the
+    // second patch's search window is eight.
+    //
+    // Stock `Lpvf;->t` contains no call to the event sink at all, pinned in preflight, so finding
+    // one means this method has already been emitted into.
+    val alreadyEmitted = body.count { it.callsMethod(DISPATCH_EVENT) }
+    check(alreadyEmitted == 0) {
+        "$what already carries a Flexboard emission. \"Swipe up to undo autocorrect\" and " +
+            "\"Swipe up diagnostic (temporary)\" both attach to the same instruction — enable one " +
+            "of them, not both."
+    }
+
     val lookupIndex = body.indexOfSoleCall(ACTION_DEF_LOOKUP, what)
 
     // Both registers read off the anchor rather than pinned.

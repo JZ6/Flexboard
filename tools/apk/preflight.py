@@ -2269,6 +2269,15 @@ def run(dl, apk=None):
                 check('undo-ac: the scratch registers are dead at the insertion point',
                       want <= free, str(sorted(want - free)))
 
+    # The emission's own "have I already run here" signal. Both swipe-up patches attach to this
+    # method, and the second one distinguishes "already patched" from "Gboard moved" by counting
+    # dispatches. That only works while stock carries none.
+    c_, ins_ = body(dl, release)
+    if ins_ is not None:
+        sinks = [i for i, (_pc, _n, a) in enumerate(ins_) if DISPATCH_EVENT in (a or '')]
+        check('undo-ac: stock dispatches no IME event from the release path',
+              len(sinks) == 0, f'found {len(sinks)}')
+
     # The hover handler, pinned as the thing this is deliberately *not*. If a build ever moves the
     # finger path into it, this fails and the choice gets revisited rather than silently inherited.
     c_, ins_ = body(dl, 'Lcom/google/android/libraries/inputmethod/motioneventhandler/'
