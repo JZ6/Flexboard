@@ -48,7 +48,10 @@ private const val SKIP_LABEL = "flexboard_not_undo_autocorrect"
  * reached by falling out of the guard rather than by branching into it. Nothing is excised and the
  * stock instruction keeps its identity as the label target.
  */
-internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick() {
+internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
+    keycode: Int = REVERT_AUTOCORRECT,
+    requireCorridor: Boolean = true,
+) {
     val method = pointerReleaseFingerprint().method
     val what = "$POINTER_DELEGATE->t"
     method.assertRegisterCount(RELEASE_REGISTER_COUNT, what)
@@ -110,13 +113,10 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick() {
 
     val (a, b, c, d, e) = SCRATCH_REGISTERS
 
-    method.addInstructionsWithLabels(
-        insertIndex,
-        """
-            sget-object v$a, $SLIDE_UP
-            if-ne v$directionRegister, v$a, :$SKIP_LABEL
-            if-nez v$actionDefRegister, :$SKIP_LABEL
-
+    // Dropping the corridor is only ever a diagnostic: without it an upward-ish drag that was
+    // meant as a scrub also fires. It exists so one install can separate "the flick is never
+    // recognised" from "the corridor rejects it".
+    val corridor = if (!requireCorridor) "" else """
             iget v$a, v$pointerRegister, $POINTER_X
             iget v$b, v$pointerRegister, $POINTER_START_X
             sub-float/2addr v$a, v$b
@@ -130,9 +130,17 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick() {
             add-float/2addr v$a, v$a
             cmpg-float v$c, v$a, v$b
             if-gtz v$c, :$SKIP_LABEL
+    """.trimIndent().prependIndent("            ")
 
+    method.addInstructionsWithLabels(
+        insertIndex,
+        """
+            sget-object v$a, $SLIDE_UP
+            if-ne v$directionRegister, v$a, :$SKIP_LABEL
+            if-nez v$actionDefRegister, :$SKIP_LABEL
+$corridor
             new-instance v$a, $KEY_DATA
-            const/16 v$b, $REVERT_AUTOCORRECT
+            const/16 v$b, $keycode
             const v$c, $EVENT_PRIORITY
             const/4 v$d, 0x0
             invoke-direct { v$a, v$b, v$d, v$d, v$c }, $KEY_DATA_CTOR
