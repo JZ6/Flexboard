@@ -1,3 +1,12 @@
+# [2.3.1-dev.1](https://github.com/JZ6/Flexboard/compare/v2.3.1-dev.0...v2.3.1-dev.1) (2026-09-10)
+
+* **Gboard:** fix: the scratch veto refused a correct patch
+* **Gboard:** fix: importing a blob left stale icon overrides behind
+* **Gboard:** fix: Export and Import were paired to nothing
+* **Gboard:** fix: four preflight checks that were weaker than their names
+* **Gboard:** fix: assertions that were stated in prose and never made
+* **Gboard:** test: a suite for the code the gate trusts
+
 # [2.3.1-dev.0](https://github.com/JZ6/Flexboard/compare/v2.3.0...v2.3.1-dev.0) (2026-09-09)
 
 * **Gboard:** fix: the gate step had no GitHub Packages credentials
