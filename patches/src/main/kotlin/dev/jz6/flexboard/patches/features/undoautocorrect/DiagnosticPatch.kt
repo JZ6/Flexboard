@@ -33,9 +33,12 @@ private const val KEYCODE_DEL = 67
  * dispatch. The fault is downstream, in the revert being unarmed, and the fix is the one-slot
  * capture-and-restore rather than anything about the gesture.
  *
- * **Nothing happens** — the chain fails before dispatch. The next build drops the corridor test
- * (`requireCorridor = false`, one line below) to separate "the flick is never recognised" from "the
- * corridor rejects it".
+ * **Nothing happens** — the chain fails before dispatch.
+ *
+ * Round one ran with all three guards and nothing happened. This is round two, with only the
+ * direction test left. Because the null-ActionDef guard is gone, a flick on a key that *does* define
+ * an upward action now deletes a character instead of inserting that key's symbol — deliberate, and
+ * another reason this file is temporary.
  *
  * Do not enable this alongside *Swipe up to undo autocorrect*. Both attach to the same instruction
  * in `Lpvf;->t`, and selecting both emits two guards at one anchor: a swipe would delete a
@@ -57,8 +60,20 @@ val undoAutocorrectDiagnosticPatch = bytecodePatch(
     dependsOn(basePatch)
 
     execute {
-        // Same guards as the real emission on purpose. Changing two things at once would leave a
-        // negative result meaning nothing.
-        emitUndoAutocorrectOnUpFlick(keycode = KEYCODE_DEL, requireCorridor = true)
+        // **Round two.** Round one kept all three guards and nothing happened, which proves the
+        // chain fails before dispatch but not where. This drops everything except the direction
+        // test, so it answers the one question the rest depend on: does `Lpvi;->h` ever come back
+        // SLIDE_UP for a flick on an ordinary key?
+        //
+        // A character deletes -> the direction works, and the fault is the null-ActionDef guard or
+        // the corridor; those come back one at a time.
+        // Nothing happens -> the direction is never SLIDE_UP, and the cause is upstream of
+        // anything this patch controls: `Lpvi;->M()`, `Lpvj;->r()`, the `Lpvi;->t` branch, or the
+        // per-key slide threshold in `Lpvf;->e`..`i`.
+        emitUndoAutocorrectOnUpFlick(
+            keycode = KEYCODE_DEL,
+            requireCorridor = false,
+            requireUnclaimedKey = false,
+        )
     }
 }

@@ -52,6 +52,7 @@ private const val SKIP_LABEL = "flexboard_not_undo_autocorrect"
 internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
     keycode: Int = REVERT_AUTOCORRECT,
     requireCorridor: Boolean = true,
+    requireUnclaimedKey: Boolean = true,
 ) {
     val method = pointerReleaseFingerprint().method
     val what = "$POINTER_DELEGATE->t"
@@ -133,6 +134,11 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
     // Dropping the corridor is only ever a diagnostic: without it an upward-ish drag that was
     // meant as a scrub also fires. It exists so one install can separate "the flick is never
     // recognised" from "the corridor rejects it".
+    // Dropping the null-ActionDef guard is diagnostic only: it makes the emission fire on keys
+    // that define an upward flick of their own, stealing the symbol they would have inserted.
+    val unclaimed = if (!requireUnclaimedKey) "" else
+        "            if-nez v$actionDefRegister, :$SKIP_LABEL\n"
+
     val corridor = if (!requireCorridor) "" else """
             iget v$a, v$pointerRegister, $POINTER_X
             iget v$b, v$pointerRegister, $POINTER_START_X
@@ -154,8 +160,7 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
         """
             sget-object v$a, $SLIDE_UP
             if-ne v$directionRegister, v$a, :$SKIP_LABEL
-            if-nez v$actionDefRegister, :$SKIP_LABEL
-$corridor
+$unclaimed$corridor
             new-instance v$a, $KEY_DATA
             const/16 v$b, $keycode
             const v$c, $EVENT_PRIORITY
