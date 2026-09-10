@@ -116,10 +116,77 @@ Two consequences:
 1. `forceFlagsOn` is boolean-only and structurally cannot do this. Setting a group needs a typed
    override covering the long and string factories as well. `ToolbarCapacityPatch` already flips a
    long-valued flag (`config_max_access_points`) through its own `raiseFlagDefault`, so the same job
-   is currently written twice in two shapes.
+   is currently written twice in two shapes. **This has now blocked two features** — proofread's
+   model configuration, and Rambler's `ad_activation_type` — so it is a real gap rather than a
+   tidiness complaint. It is still not sufficient on its own: in both cases the values that would
+   have to be written are observations from a provisioned device, not facts derivable from the APK.
 2. A flag whose safety depends on what the *device* can provide should be a user choice with a
    conservative default, not a compile-time constant. There is no way to detect AICore provisioning
    from inside a patch.
+
+## A worked refusal: Rambler
+
+Asked to enable "rambler mode" from the roadmap, the answer came out as *no*, and the shape of the
+no is more useful than the seven earlier results because the blocking condition is a single readable
+comparison rather than an inference from companion parameters.
+
+**Rambler is agentic dictation** — `libs/agenticdictation/`, 51 classes, "Push to Ramble". It rewrites
+speech into composed text. Nothing in the dex spells `rambler mode`; the marketing name and the
+internal one (`jetson`) differ, which is why the first search for it has to be for the feature rather
+than the phrase.
+
+The eligibility check is `Lmev;->B(Landroid/content/Context;)Z`, and it requires all six of:
+
+| | Condition | Ships as |
+|---|---|---|
+| 1 | `enable_agentic_dictation` | boolean `0` — forceable |
+| 2 | `config_agentic_dictation` | boolean `1` — already on |
+| 3 | `enable_jetson_in_toolbar` | boolean — forceable |
+| 4 | `ModuleManager` reports `Lmql;` enabled | module registration |
+| 5 | `Lmqk;->b(Context)` | reads the user preference `enable_jetson`, default off |
+| 6 | `Lmqk;->c()` | **`ad_activation_type == 2`** |
+
+Condition 6 ends it:
+
+```smali
+# Lmqk;->c()
+sget-object v0, Lmql;->D:Lnxp;        # ad_activation_type
+...
+const/4 v2, #4
+invoke-static {v2}, La;->ad(I)I       # 4 != 1, so 4 - 2 = 2
+cmp-long v0, v0, v2
+```
+
+```smali
+# Lmql;-><clinit>
+const-string  v0, 'ad_activation_type'
+const-wide/16 v1, #1
+invoke-static {v0, v1, v2}, Lnxs;->c(Ljava/lang/String;J)Lnxp;
+```
+
+**The gate needs 2 and the flag ships 1**, so `c()` is false and `B()` is false no matter what any
+boolean does. It is also a `long`, which `forceFlagsOn` structurally cannot write — see the typed
+override below. Two independent reasons the feature is out of reach, and the second one holds even
+after the first is fixed.
+
+Everything behind the gate is the server-configured pattern in its clearest form:
+`agentic_dictation_backend_type` (`..._BACKEND_TYPE_S3`), `..._max_server_retries`,
+`..._quota_refresh_hour_pt`, `..._server_quota_drained_error_code` with an
+`AgenticDictationQuotaDrainedDialog`, an `agenticdictation/compliance/` package, seventeen onboarding
+strings including `AGENTIC_DICTATION_ONBOARDING_ACCEPTED`, and `agentic_dictation_excluded_language_tags`.
+An activation mode, a quota and a consent record are three things a resigned build cannot obtain.
+
+Condition 5 is the one part that *is* reachable: `enable_jetson` is an ordinary preference key, and
+`GboardSettings` already writes Gboard preferences from the extension. It sits downstream of a gate
+that is not reachable, which is the whole lesson in one line.
+
+**A note on method.** The first pass at this reported zero dex strings containing `rambl`, because
+the scan looped over `d.h['string_ids_size']` and `Dex` has no `h` attribute — so it iterated nothing
+and returned a confident empty answer. The correct attribute is `str_n`; the real count is 56 across
+120,537 strings. A search that finds nothing and a search that never ran look identical, which is the
+same failure this document's own classifier section is about. The second thing found was that
+`show_rambler_dict_settings` has **zero readers in the dex** — it had been proposed as the "safest
+first probe" precisely because it sounded harmless, and it is inert.
 
 ## Trying to automate the rule, and failing
 

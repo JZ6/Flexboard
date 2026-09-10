@@ -5,6 +5,14 @@
 
 some settings disabled like grammer check and ai writing tools, rambler mode etc
 
+> Partly answered. **Grammar check** ships in Hidden Features. **AI writing tools**
+> (`enable_on_device_proofread`) stopped Gboard starting and was deleted. **Rambler** is agentic
+> dictation, and it is gated on `ad_activation_type == 2` — a long-valued flag that ships as 1,
+> which `forceFlagsOn` cannot write, in front of a backend with a server quota and a consent
+> record. Investigated and refused; the gate chain is written up in
+> [`docs/phenotype-flags.md`](phenotype-flags.md#a-worked-refusal-rambler). The remaining "etc" is
+> unenumerated — if there is a specific fourth setting, name it and it can be checked the same way.
+
 flick up to undo autocorrect 
 
 clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
