@@ -116,19 +116,19 @@ Two consequences:
 1. `forceFlagsOn` is boolean-only and structurally cannot do this. Setting a group needs a typed
    override covering the long and string factories as well. `ToolbarCapacityPatch` already flips a
    long-valued flag (`config_max_access_points`) through its own `raiseFlagDefault`, so the same job
-   is currently written twice in two shapes. **This has now blocked two features** — proofread's
-   model configuration, and Rambler's `ad_activation_type` — so it is a real gap rather than a
-   tidiness complaint. It is still not sufficient on its own: in both cases the values that would
-   have to be written are observations from a provisioned device, not facts derivable from the APK.
+   is currently written twice in two shapes. That duplication is a refactor, **not a missing
+   capability**, and reading it as one is what produced the wrong Rambler answer recorded below.
+   Long and string flags can be written today by rewriting the literal, exactly as
+   `raiseFlagDefault` does; what `forceFlagsOn` lacks is a *shared* way to do it.
 2. A flag whose safety depends on what the *device* can provide should be a user choice with a
    conservative default, not a compile-time constant. There is no way to detect AICore provisioning
    from inside a patch.
 
-## A worked refusal: Rambler
+## A worked mistake: Rambler
 
-Asked to enable "rambler mode" from the roadmap, the answer came out as *no*, and the shape of the
-no is more useful than the seven earlier results because the blocking condition is a single readable
-comparison rather than an inference from companion parameters.
+Asked to enable "rambler mode" from the roadmap, the answer came out as *no*. **The answer was
+wrong**, and it is kept here in full because the way it was wrong is more instructive than the seven
+earlier results. The gate analysis below is correct; the conclusion drawn from it was not.
 
 **Rambler is agentic dictation** — `libs/agenticdictation/`, 51 classes, "Push to Ramble". It rewrites
 speech into composed text. Nothing in the dex spells `rambler mode`; the marketing name and the
@@ -165,9 +165,39 @@ invoke-static {v0, v1, v2}, Lnxs;->c(Ljava/lang/String;J)Lnxp;
 ```
 
 **The gate needs 2 and the flag ships 1**, so `c()` is false and `B()` is false no matter what any
-boolean does. It is also a `long`, which `forceFlagsOn` structurally cannot write — see the typed
-override below. Two independent reasons the feature is out of reach, and the second one holds even
-after the first is fixed.
+boolean does.
+
+### Why the conclusion was wrong
+
+From that, the original write-up concluded: *it is also a `long`, which `forceFlagsOn` structurally
+cannot write, so the feature is out of reach.* The first clause is true. The second does not follow,
+and the counter-example was already in this repository:
+
+```kotlin
+// ToolbarCapacityPatch.raiseFlagDefault — a long-valued flag, rewritten in place
+replaceInstruction(defaultIndex, "const-wide/16 v$register, 0x${TOOLBAR_CAPACITY.toString(16)}")
+```
+
+`forceFlagsOn` is boolean-only. Rewriting a `const-wide/16` literal is not `forceFlagsOn`, and this
+project has done it since the toolbar work. The paragraph two sections above even says so — filed
+there as a *tidiness* complaint about the same job being written twice, and read as one.
+
+The error is worth naming precisely, because it is not a missing fact. Every fact needed was present
+and correct. The step that failed was concluding **"the capability does not exist"** from **"the
+helper I reached for does not have it"**. A second implementation was thirty lines away in a sibling
+patch.
+
+The fix is one instruction:
+
+```kotlin
+replaceInstruction(valueIndex, "const-wide/16 v$valueRegister, 0x2")
+```
+
+The server-configured argument was overstated too. The quota, consent and compliance machinery is
+real, and a resigned build cannot obtain any of it — but a working implementation exists that routes
+the flag *reads* through a runtime policy rather than trying to supply the configuration, which
+sidesteps the problem entirely. "Cannot be configured" and "cannot be enabled" are different claims,
+and only the first was ever established.
 
 Everything behind the gate is the server-configured pattern in its clearest form:
 `agentic_dictation_backend_type` (`..._BACKEND_TYPE_S3`), `..._max_server_retries`,
