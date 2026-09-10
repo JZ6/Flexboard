@@ -468,7 +468,14 @@ public final class Hotkeys {
         for (int slot = 1; slot <= SLOT_COUNT; slot++) {
             String text = texts[slot];
             editor.putString(textKey(slot), text != null ? text : "");
-            if (texts[slot] != null && icons[slot] != null) {
+            if (texts[slot] == null) {
+                // Replace, not merge, for the icon as well as the text. Clearing one and leaving
+                // the other made a slot the blob did not mention come back with the icon override
+                // from before the import as soon as it was typed into again -- and an
+                // export/import/export round trip still matched, because serialize skips
+                // unoccupied slots, so no lane could see it.
+                editor.remove(iconKey(slot));
+            } else if (icons[slot] != null) {
                 editor.putString(iconKey(slot), icons[slot]);
             }
         }
