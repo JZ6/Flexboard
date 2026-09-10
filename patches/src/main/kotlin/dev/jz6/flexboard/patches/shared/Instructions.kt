@@ -168,13 +168,23 @@ internal fun List<Instruction>.indexOfSoleCall(descriptor: String, context: Stri
 }
 
 /**
- * Refuses a build where a scratch register is read before anything writes it, walking forward from
- * the insertion point.
+ * Refuses a build where a scratch register is read before anything writes it, **within the basic
+ * block the insertion lands in**.
  *
- * A veto, never a licence. This follows the instruction stream rather than the control-flow graph,
- * so a register reached only by a branch is not modelled and a *pass* here proves nothing. The
- * registers were chosen from preflight's backward analysis; this exists so that a build which moved
- * them fails at patch time as well as in the gate.
+ * A veto, never a licence, and the scope is the whole of what makes it usable. Linear order is only
+ * control flow up to the next branch; past one, the next instruction in the list may not be
+ * reachable at all. Scanning further does not merely fail to prove deadness -- it invents failures,
+ * which is worse, because it refuses a patch that is correct. That is not hypothetical: this walked
+ * past a `goto -> 123` in `ScrubMotionEventHandler->r`, read the `add-int/2addr v2, v5` eleven
+ * instructions later at pc 112 -- code that jump cannot reach -- and stopped Swipe Left to Delete
+ * from applying at all, on a device.
+ *
+ * So the walk stops at the first instruction that transfers control. That instruction's own reads
+ * still count: `if-eqz v5` reads v5.
+ *
+ * A pass proves nothing either way. The registers come from preflight's backward analysis over the
+ * real control-flow graph, which the gate runs; this is the cheap copy that makes a build which
+ * moved them fail at patch time too.
  */
 internal fun assertNotReadBeforeWritten(
     body: List<Instruction>,
@@ -185,13 +195,22 @@ internal fun assertNotReadBeforeWritten(
     for (register in scratch) {
         for (index in insertIndex until body.size) {
             val instruction = body[index]
+            if (register in instruction.registersRead()) {
+                error(
+                    "v$register is read by `${instruction.opcodeName()}` at $index before anything " +
+                        "writes it, walking forward from the insertion point in $what — it carries " +
+                        "a live value across the seam and cannot be scratch",
+                )
+            }
             if (register in instruction.destinationRegistersOrEmpty()) break
-            if (register !in instruction.registersRead()) continue
-            error(
-                "v$register is read by `${instruction.opcodeName()}` at $index before anything " +
-                    "writes it, walking forward from the insertion point in $what — it carries a " +
-                    "live value across the seam and cannot be scratch",
-            )
+            if (instruction.transfersControl()) break
         }
     }
+}
+
+/** True when this instruction can send control somewhere other than the next one in the list. */
+private fun Instruction.transfersControl(): Boolean {
+    val name = opcodeName()
+    return name.startsWith("GOTO") || name.startsWith("IF_") || name.startsWith("RETURN") ||
+        name == "THROW" || name.endsWith("SWITCH")
 }

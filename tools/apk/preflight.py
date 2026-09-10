@@ -1112,14 +1112,17 @@ def run(dl, apk=None):
                   f'count=v{count_reg} this=v{this_reg} scratch={scratch}')
             check('tuning: scratch fits a 35c invoke', all(r < 16 for r in scratch))
             if ok:
-                convergence = ins[prod[-1] + 1][0]
-                live = set()
-                for pc, n, a in ins:
-                    if pc >= convergence:
-                        live.update(regs(a))
-                check('tuning: scratch is dead from the convergence onward',
-                      not (set(scratch) & live),
-                      f'scratch={scratch} live at/after {convergence}={sorted(live)}')
+                # Both insertion points, by backward liveness over the real control-flow graph.
+                # This replaced a textual "every register mentioned at or after the convergence"
+                # scan that covered only the *last* producer -- and the emission inserts after each
+                # of them. The patch-time copy of this check is deliberately basic-block scoped and
+                # cannot answer for either site; this is the one that actually proves it.
+                for site in prod:
+                    at = ins[site + 1][0]
+                    free = set(live_free(ins, c['registers'], at))
+                    check(f'tuning: scratch is dead at the insertion point after pc {ins[site][0]}',
+                          set(scratch) <= free,
+                          f'scratch={scratch} still live={sorted(set(scratch) - free)}')
 
     # ---- toolbar icon count
     #

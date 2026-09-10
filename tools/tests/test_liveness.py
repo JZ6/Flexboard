@@ -238,6 +238,26 @@ class LiveFree(unittest.TestCase):
         with self.assertRaises(ValueError):
             P.live_free(ins, 4, 0)
 
+    def test_unreachable_code_after_a_goto_does_not_make_a_register_live(self):
+        """The shape that broke a real build.
+
+        A linear forward walk from pc 0 reaches the `add-int/2addr v5` at pc 3 and concludes v5 is
+        live. It is not: the `goto` at pc 1 jumps over it, so that instruction cannot be reached
+        from here at all. The patch-time check made exactly this mistake in
+        `ScrubMotionEventHandler->r` -- it walked past a `goto -> 123`, read an instruction eleven
+        along at pc 112, and refused to apply Swipe Left to Delete. Backward liveness over the real
+        graph gets it right, which is why that is the check the gate runs.
+        """
+        ins = stream(
+            ("nop", ""),                                # pc 0 -- the insertion point
+            goto(4),                                    # pc 1
+            ("nop", ""),                                # pc 2 -- unreachable
+            ("binop2addrb0", "v2, v5"),                 # pc 3 -- unreachable, reads v5
+            ("return-void", ""),                        # pc 4
+        )
+        self.assertIn(5, self.free(ins, 8, 0),
+                      "v5 is only read by code the goto skips, so it is free")
+
     def test_fill_array_data_does_not_create_a_branch_edge(self):
         # Its operand also carries `-> pc`, and matching that invents an edge to the payload.
         ins = stream(
