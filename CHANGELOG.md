@@ -1,3 +1,10 @@
+# [2.3.1-dev.3](https://github.com/JZ6/Flexboard/compare/v2.3.1-dev.2...v2.3.1-dev.3) (2026-09-10)
+
+* **Gboard:** feat: enable Rambler
+* **Gboard:** docs: the Rambler refusal was wrong
+* **Gboard:** test: diagnostic round two, direction test only
+* **Gboard:** fix: name the real cause when both swipe-up patches are enabled
+
 # [2.3.1-dev.2](https://github.com/JZ6/Flexboard/compare/v2.3.1-dev.1...v2.3.1-dev.2) (2026-09-10)
 
 * **Gboard:** test: a diagnostic build for the swipe-up gesture

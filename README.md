@@ -35,9 +35,9 @@ Both keyboards stay installed, so you can switch back whenever you like.
 ## Patches
 
 <!-- PATCHES_START EXPANDED -->
-> **[v2.3.1-dev.2](https://github.com/JZ6/Flexboard/releases/tag/v2.3.1-dev.2)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;13 patches total
+> **[v2.3.1-dev.3](https://github.com/JZ6/Flexboard/releases/tag/v2.3.1-dev.3)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;14 patches total
 <details open>
-<summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;13 patches</summary>
+<summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;14 patches</summary>
 <br>
 
 **🎯 Supported versions:**
@@ -49,6 +49,7 @@ Both keyboards stay installed, so you can switch back whenever you like.
 |----------|----------------|-----------|
 | [Bigger Toolbar](#bigger-toolbar) | Raises how many icons Gboard's toolbar can hold — five on a stock build — to 12, so Flexboard's hotkeys and text action buttons fit alongside Gboard's own. How many actually show stays yours, set by dragging them in Gboard's toolbar settings. Force-stop Gboard afterwards: a cached keyboard view can go on showing the old capacity. |  |
 | [Bypass Gboard Signature](#bypass-gboard-signature) | Bypass Gboard's signature whitelist checks and force them to pass. |  |
+| Enable Rambler | Exposes Google Rambler — Gboard's agentic dictation, which rewrites what you say into composed text — as a choice in Voice settings. It is not switched on for you: the feature uses a Google server, has its own quota and asks for consent, so picking it is left to you. Off by default and not yet confirmed working on a device. |  |
 | [Hidden Features](#hidden-features) | Turns on two finished Gboard features that a resigned build can never receive: grammar check, and a close control on the chips Gboard offers unprompted. Their flags are delivered per app signature, so resigning the APK means they never arrive and stay off. Both are confirmed working on a device; five other flags were tried and dropped. |  |
 | Hidden Features (unconfirmed) | Turns on four finished Gboard features that a resigned build can never receive: Emoji Kitchen browse, the custom sticker tab, offline translation, and search in Gboard's settings. Off by default because none of the four has been seen working on a device — the flags flip, but each also depends on data Google only sends to an unpatched install. Safe to try: none of them crashes. |  |
 | [Install as Gboard Clone](#install-as-gboard-clone) | Rename the package to dev.jz6.com.google.android.inputmethod.latin so the patched build installs alongside the official Gboard instead of replacing it. |  |
