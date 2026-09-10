@@ -168,6 +168,21 @@ internal const val ABOUT_SOURCE_KEY = "flexboard_about_source"
 
 /** The scratch-pad row. Paired with the extension's copy, same as [ABOUT_SOURCE_KEY]. */
 internal const val TRY_KEYBOARD_KEY = "flexboard_try_keyboard"
+
+/**
+ * The Export and Import rows, paired the same way.
+ *
+ * These were bare literals in both the XML and the Java, and survived the "every key is the value
+ * of a patch constant" rule only through its family escape hatch — they begin with
+ * `flexboard_hotkey_`, which is a *toolbar access-point id* prefix from an unrelated namespace
+ * that happens to share seventeen characters. Renaming either side alone passed every lane and
+ * left the row consuming the tap and doing nothing.
+ *
+ * The names say hotkey_copy and hotkey_paste rather than export/import because they are the keys
+ * already shipped; changing them would reset the rows for anyone who has them.
+ */
+internal const val HOTKEY_EXPORT_KEY = "flexboard_hotkey_copy"
+internal const val HOTKEY_IMPORT_KEY = "flexboard_hotkey_paste"
 private const val ENTRY_TITLE = "Flexboard"
 
 /**

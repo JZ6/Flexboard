@@ -28,6 +28,9 @@ PATCHES = ROOT / "patches/src/main/kotlin"
 SETTINGS_XML = ROOT / "patches/src/main/resources/xml/flexboard_settings.xml"
 # (Kotlin name, Java name). The names differ where each side reads more naturally on its own terms;
 # what has to match is the value.
+# What may follow the index in a generated family key. "" is the bare `prefix + index` form.
+FAMILY_SUFFIXES = {"", "text", "icon"}
+
 PAIRS = [
     # The ordinals the patch hands the extension's constructor. The extension maps them to
     # android.R.id.* so the framework constants stay symbolic in the one language that can name
@@ -43,6 +46,11 @@ PAIRS = [
     # handler matches on. A drift here is a row that silently does nothing when tapped.
     ("ABOUT_SOURCE_KEY", "ABOUT_SOURCE_KEY"),
     ("TRY_KEYBOARD_KEY", "TRY_KEYBOARD_KEY"),
+    # Export and Import. Previously bare literals on both sides, blessed only by a prefix family
+    # borrowed from the toolbar id namespace, so renaming one side passed every lane and left the
+    # row doing nothing when tapped.
+    ("HOTKEY_EXPORT_KEY", "HOTKEY_EXPORT_KEY"),
+    ("HOTKEY_IMPORT_KEY", "HOTKEY_IMPORT_KEY"),
 ]
 
 # The slider contract between ScrubTuningPatch.kt and flexboard_settings.xml: the Kotlin name of
@@ -766,10 +774,28 @@ def _check_screen_contract(problems, kotlin):
     # `flexboard_hotkey_7_text` are produced by code, so they can't all be literal const values —
     # but they must begin with a family prefix an author committed to somewhere.
     families = [v for v in const_values if isinstance(v, str) and v.endswith("_")]
+
+    def in_a_family(key):
+        # A prefix family means "this prefix, an index, and a known suffix" -- the shape code
+        # actually generates -- not "this prefix plus anything". The only family in the tree is
+        # HOTKEY_ID_PREFIX, a *toolbar access-point id* prefix, and a bare startswith let it bless
+        # every preference key sharing those seventeen characters. flexboard_hotkey_copy and
+        # _paste rode in on that for as long as they existed, as constants in neither language, so
+        # renaming one in the XML alone passed every lane and left the row consuming the tap and
+        # doing nothing.
+        for family in families:
+            rest = key[len(family):] if key.startswith(family) else None
+            if rest is None:
+                continue
+            index, _, suffix = rest.partition("_")
+            if index.isdigit() and suffix in FAMILY_SUFFIXES:
+                return True
+        return False
+
     for key in set(keys):
         if key in const_values:
             continue
-        if any(key.startswith(family) for family in families):
+        if in_a_family(key):
             continue
         problems.append(
             f"  flexboard_settings.xml row {key!r} is not the value of any patch constant — "

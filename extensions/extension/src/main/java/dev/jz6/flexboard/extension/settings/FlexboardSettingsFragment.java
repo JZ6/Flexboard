@@ -77,6 +77,12 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     /** Paired with TRY_KEYBOARD_KEY in SettingsScreenPatch.kt. */
     private static final String TRY_KEYBOARD_KEY = "flexboard_try_keyboard";
 
+    /** Paired with HOTKEY_EXPORT_KEY in SettingsScreenPatch.kt. */
+    private static final String HOTKEY_EXPORT_KEY = "flexboard_hotkey_copy";
+
+    /** Paired with HOTKEY_IMPORT_KEY in SettingsScreenPatch.kt. */
+    private static final String HOTKEY_IMPORT_KEY = "flexboard_hotkey_paste";
+
     private static final String SOURCE_URL = "https://github.com/JZ6/Flexboard";
     private static final String SOURCE_URL_SHORT = "github.com/JZ6/Flexboard";
 
@@ -265,11 +271,11 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
                 return true;
             }
         }
-        if (isRow(preference, "flexboard_hotkey_copy")) {
+        if (isRow(preference, HOTKEY_EXPORT_KEY)) {
             export(preference);
             return true;
         }
-        if (isRow(preference, "flexboard_hotkey_paste")) {
+        if (isRow(preference, HOTKEY_IMPORT_KEY)) {
             importBlob(preference);
             return true;
         }
