@@ -666,6 +666,11 @@ def live_free(ins, register_count, at_pc):
 
 # --------------------------------------------------------------------------- checks
 
+# The floor for the check count. Not the exact number: adding a pin should not require editing
+# two places. It exists to catch a *collapse*, which is what an empty dex-derived list causes.
+MINIMUM_CHECKS = 290
+
+
 class Report:
     def __init__(self):
         self.rows = []
@@ -699,6 +704,19 @@ class Report:
         total = len(self.rows) - skipped
         tail = f', {skipped} skipped' if skipped else ''
         print(f'\n{total - failed}/{total} passed{tail}')
+
+        # A floor on the number of checks, because most of these rows are emitted inside `for`
+        # loops over lists derived from the dex. If one of those lists comes back empty -- a
+        # renamed class, a moved anchor, a regex that stopped matching -- its rows simply do not
+        # appear, and the run still prints N/N passed. That is the concrete mechanism behind
+        # AGENTS.md's "a pin count is a statement about Gboard, not about the build", and the only
+        # defence is to notice that the count fell. Raise it when the real count rises.
+        if len(self.rows) < MINIMUM_CHECKS:
+            print(f'\nFAIL  preflight produced {len(self.rows)} checks, fewer than the '
+                  f'{MINIMUM_CHECKS} it is expected to run. Rows are emitted inside loops over '
+                  f'dex-derived lists; a list that came back empty removes its checks silently '
+                  f'and leaves the total looking clean.')
+            failed += 1
         return failed
 
 
@@ -1133,9 +1151,11 @@ def run(dl, apk=None):
             default_reg = regs(ins[gi[0]][2])[2]
             src = [i for i in range(gi[0] - 1, -1, -1)
                    if ins[i][1].startswith('const') and regs(ins[i][2])[:1] == [default_reg]]
-            literal = re.search(r'#(-?\d+)', ins[src[0]][2]) if src else None
+            # Hex too: dis.py renders `const` and `const/high16` that way, and a decimal-only
+            # pattern matches the leading 0 of `#0x5` and calls the literal zero.
+            literal = re.search(r'#(-?0x[0-9a-fA-F]+|-?\d+)', ins[src[0]][2]) if src else None
             check("toolbar: Gboard's own starting count is unchanged",
-                  literal is not None and int(literal.group(1)) == E['toolbar_stock_count'],
+                  literal is not None and int(literal.group(1), 0) == E['toolbar_stock_count'],
                   f'got {literal and literal.group(1)}, '
                   f'expected {E["toolbar_stock_count"]}')
 
@@ -2272,10 +2292,15 @@ def run(dl, apk=None):
               named.get(E['undo_ac_slide_up_field']) == 'SLIDE_UP',
               str(named.get(E['undo_ac_slide_up_field'])))
 
-    check('undo-ac: the delegate declares its event sink',
-          find_instance_field(dl, B['pointer_delegate'], 'd') is not None)
-    check('undo-ac: the tracker declares its delegate back-reference',
-          find_instance_field(dl, B['pointer_tracker'], 'r') is not None)
+    # By type, not only by name. In R8 output "some instance field is called d" is close to a
+    # certainty, so a name-only check is nearly vacuous -- and the type is the whole reason these
+    # two fields are the ones the emission walks.
+    sink = find_instance_field(dl, B['pointer_delegate'], 'd')
+    check('undo-ac: the delegate declares its event sink, typed as the interface',
+          sink is not None and sink.endswith(f":{B['event_sink']}"), str(sink))
+    back = find_instance_field(dl, B['pointer_tracker'], 'r')
+    check('undo-ac: the tracker declares its delegate back-reference, typed as the interface',
+          back is not None and back.endswith(f":{B['pointer_delegate_iface']}"), str(back))
 
     # The emitter hardcodes an invoke kind per call. Existence is not the property it depends on:
     # invoke-static against a method that stopped being static, or invoke-interface against a
@@ -2331,9 +2356,9 @@ def run(dl, apk=None):
             wide = [i for i in range(k + 1, len(ins)) if ins[i][1].startswith('const-wide')]
             if check('toolbar: a wide default follows the flag name', bool(wide)):
                 di = wide[0]
-                lit = re.search(r'#(-?\d+)', ins[di][2] or '')
+                lit = re.search(r'#(-?0x[0-9a-fA-F]+|-?\d+)', ins[di][2] or '')
                 check('toolbar: the flag default is unset',
-                      lit is not None and int(lit.group(1)) == E['toolbar_stock_flag_default'],
+                      lit is not None and int(lit.group(1), 0) == E['toolbar_stock_flag_default'],
                       (ins[di][2] or '').strip())
                 gap = next((i - di - 1 for i in range(di + 1, len(ins))
                             if factory in (ins[i][2] or '')), None)
