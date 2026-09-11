@@ -54,10 +54,11 @@ private fun activationTypeHolderFingerprint() = Fingerprint(
  * feature talks to a server, has a quota and records a consent, and none of those are things a
  * patch should accept on someone's behalf.
  *
- * Four of the five booleans take their default from a constant shared with later flags in the same
- * `<clinit>`, so they use the isolating emission — a one-instruction override scoped to their own
- * call, which leaves the siblings alone. `config_agentic_dictation` is not listed because Gboard
- * already ships it as 1.
+ * Only three of the six flags in this family are actually off. `config_agentic_dictation`,
+ * `enable_jetson_in_toolbar` and `filter_rambler_contributed_input_view_session` all resolve to 1
+ * on 18.0.3 — the last two by sharing a constant that holds 1, which is why "hoisted" is not a
+ * synonym for "off" and why the effective value has to be read rather than inferred from the
+ * sharing. The two that are hoisted *and* zero use the isolating emission.
  *
  * **Unverified on a device.** Off by default.
  */
@@ -75,18 +76,20 @@ val ramblerPatch = bytecodePatch(
     dependsOn(basePatch)
 
     execute {
+        // Only the flags Gboard actually ships off. Three of the six in this family already
+        // default to 1 on 18.0.3 -- config_agentic_dictation with a constant of its own, and
+        // enable_jetson_in_toolbar and filter_rambler_contributed_input_view_session by sharing
+        // one that holds 1. Forcing a flag that is already on is refused by forceFlagsOn, on the
+        // grounds that it claims credit for nothing and hides a real change, and it was right to.
         forceFlagsOn(
             "enable_agentic_dictation",
-            "enable_jetson_in_toolbar",
             "enable_rambler_al_toolbar",
             "enable_rambler_toolbar_at_cursor_position",
-            "filter_rambler_contributed_input_view_session",
-            // All but the first hoist their default; measured on 18.0.3.
+            // The two rambler toolbar flags take their default from a hoisted constant, so they
+            // get an override scoped to their own call. enable_agentic_dictation has its own.
             isolating = setOf(
-                "enable_jetson_in_toolbar",
                 "enable_rambler_al_toolbar",
                 "enable_rambler_toolbar_at_cursor_position",
-                "filter_rambler_contributed_input_view_session",
             ),
         )
 

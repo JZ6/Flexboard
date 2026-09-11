@@ -2410,11 +2410,17 @@ def run(dl, apk=None):
     # The five booleans the patch forces, and which of them hoist their default. A flag that stops
     # sharing its constant makes the isolating emission wrong, and vice versa; forceFlagsOn refuses
     # either mismatch, so this pins the shape it will refuse on.
-    for flag, shared in (('enable_agentic_dictation', False),
-                         ('enable_jetson_in_toolbar', True),
-                         ('enable_rambler_al_toolbar', True),
-                         ('enable_rambler_toolbar_at_cursor_position', True),
-                         ('filter_rambler_contributed_input_view_session', True)):
+    # (flag, hoisted, effective default). The third column is the one that matters and the one the
+    # first version of this omitted: "hoisted" was read as "off", and two of these share a constant
+    # that holds 1. The patch forces only the flags whose effective default is 0, and forceFlagsOn
+    # refuses any flag Gboard already ships on -- so a build that flips one of these turns a silent
+    # no-op into a failed patch, and this pin turns it into a named one.
+    for flag, shared, default in (('enable_agentic_dictation', False, 0),
+                                  ('config_agentic_dictation', False, 1),
+                                  ('enable_jetson_in_toolbar', True, 1),
+                                  ('enable_rambler_al_toolbar', True, 0),
+                                  ('enable_rambler_toolbar_at_cursor_position', True, 0),
+                                  ('filter_rambler_contributed_input_view_session', True, 1)):
         owner = find_string_holder(dl, flag)
         if not check(f'rambler: {flag} is declared', owner is not None, str(owner)):
             continue
@@ -2433,6 +2439,14 @@ def run(dl, apk=None):
                if ins_[j][1].startswith('const') and regs(ins_[j][2] or '')[:1] == [reg]]
         check(f'rambler: {flag} default is {"hoisted" if shared else "its own"}',
               (len(own) == 0) == shared, f'own consts between name and call: {len(own)}')
+
+        # The effective value: the last write of that register before the call, wherever it is.
+        src = own[-1] if own else next(
+            (j for j in range(i_ - 1, -1, -1)
+             if ins_[j][1].startswith('const') and regs(ins_[j][2] or '')[:1] == [reg]), None)
+        effective = literal_of(ins_[src][2]) if src is not None else None
+        check(f'rambler: {flag} effectively ships {default}',
+              effective == default, str(effective))
 
     # ---- toolbar capacity
     #
