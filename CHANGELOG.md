@@ -1,3 +1,7 @@
+# [2.3.1-dev.4](https://github.com/JZ6/Flexboard/compare/v2.3.1-dev.3...v2.3.1-dev.4) (2026-09-11)
+
+* **Gboard:** fix: Rambler forced three flags Gboard already ships on
+
 # [2.3.1-dev.3](https://github.com/JZ6/Flexboard/compare/v2.3.1-dev.2...v2.3.1-dev.3) (2026-09-10)
 
 * **Gboard:** feat: enable Rambler
