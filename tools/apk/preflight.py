@@ -2448,6 +2448,50 @@ def run(dl, apk=None):
         check(f'rambler: {flag} effectively ships {default}',
               effective == default, str(effective))
 
+    # ---- modern keypress haptics
+    #
+    # Gboard has both vibration paths compiled in and picks between them in Lpho;->k. The primitive
+    # arm is unreachable because a minimum-SDK flag ships as 1024, which is a disabled feature
+    # written as a number. Pinned in full: the fake ceiling, the real floor beside it, and the
+    # hardware check the patch deliberately leaves in place.
+    c_, ins_ = body(dl, 'Lpho;->k(Landroid/os/Vibrator;)Z')
+    if check('haptics: the primitive gate exists', ins_ is not None):
+        sdk = [i for i, (_pc, n_, a_) in enumerate(ins_)
+               if n_.startswith('sget') and 'Build$VERSION;->SDK_INT' in (a_ or '')]
+        check('haptics: it reads SDK_INT twice, for the real floor and the flag',
+              len(sdk) == 2, str(len(sdk)))
+        floor = [literal_of(a_) for _pc, n_, a_ in ins_
+                 if n_.startswith('const') and literal_of(a_) == 30]
+        check('haptics: the hard floor is still API 30, the level the primitive API needs',
+              len(floor) == 1, str(len(floor)))
+        check('haptics: a long flag is compared against it',
+              any('Long' in (a_ or '') for _pc, _n, a_ in ins_) and
+              any(n_.startswith('cmp-long') for _pc, n_, _a in ins_))
+        # areAllEffectsSupported. Left alone by the patch on purpose: it is the device saying no.
+        check('haptics: the hardware capability check is still in the gate',
+              any('Vibrator' in (a_ or '') and n_.startswith('invoke') for _pc, n_, a_ in ins_))
+
+    holder = find_string_holder(dl, 'vibration_effect_min_sdk')
+    if check('haptics: the minimum-SDK flag is declared', holder is not None, str(holder)):
+        c_, ins_ = body(dl, f'{holder}-><clinit>()V')
+        i_ = next((i for i, (_pc, n_, a_) in enumerate(ins_ or [])
+                   if n_.startswith('const-string') and "'vibration_effect_min_sdk'" in (a_ or '')),
+                  None)
+        if check('haptics: its declaration is locatable', i_ is not None):
+            wide = next((j for j in range(i_ + 1, min(i_ + 5, len(ins_)))
+                         if ins_[j][1].startswith('const-wide')), None)
+            if check('haptics: it is declared as a long', wide is not None):
+                check('haptics: it still ships the impossible 1024 the patch replaces',
+                      literal_of(ins_[wide][2]) == 1024, str(literal_of(ins_[wide][2])))
+
+    # Both arms of the vibrate call. If either disappears the patch is switching to something else.
+    c_, ins_ = body(dl, 'Lpho;->f(I)V')
+    if check('haptics: the vibrate call exists', ins_ is not None):
+        check('haptics: it still branches on the primitive gate',
+              any('Lpho;->k(' in (a_ or '') for _pc, _n, a_ in ins_))
+        check('haptics: the strength is scaled for the primitive arm',
+              any(n_.startswith('const') and literal_of(a_) == 0x3c23d70a for _pc, n_, a_ in ins_))
+
     # ---- toolbar capacity
     #
     # Bigger Toolbar rewrites two literals and inserts nothing: the flag's compiled-in default in
