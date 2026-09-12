@@ -1,3 +1,8 @@
+# [2.3.1-dev.6](https://github.com/JZ6/Flexboard/compare/v2.3.1-dev.5...v2.3.1-dev.6) (2026-09-12)
+
+* **Gboard:** test: catch the flag-layout mistakes in the gate
+* **Gboard:** fix: enable_agentic_dictation shares its constant forward
+
 # [2.3.1-dev.5](https://github.com/JZ6/Flexboard/compare/v2.3.1-dev.4...v2.3.1-dev.5) (2026-09-11)
 
 * **Gboard:** feat: modern keypress haptics
