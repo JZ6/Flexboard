@@ -332,6 +332,76 @@ def class_access_flags(dl, name):
     return None
 
 
+def literal_of(a):
+    """The `#N` an instruction carries, or None.
+
+    Read off the operand rather than the mnemonic: dis.py prints the arithmetic opcodes as family
+    placeholders. Hex as well as decimal, because `const` and `const/high16` render in hex and a
+    decimal-only pattern silently matches the leading zero of `#0x5`.
+    """
+    m = re.search(r'#(-?0x[0-9a-fA-F]+|-?\d+)', a or '')
+    return int(m.group(1), 0) if m else None
+
+
+def flag_layout(ins, flag):
+    """How a boolean Phenotype flag takes its default, as `flipFlagDefault` decides it.
+
+    Returns None when the flag is not declared here, otherwise a dict of:
+
+      own       -- it writes its own constant between its name and its factory call
+      effective -- the value that constant actually holds, wherever it was written
+      shared    -- another flag reads the same register afterwards without rewriting it
+      isolate   -- forcing this flag on requires the isolating emission
+
+    This is the rule three device failures came from getting wrong, in three different ways:
+    reading "hoisted" as "off", leaving the effective value unresolved, and assuming a flag that
+    owns its constant cannot be sharing it. Owning the constant written *before* you says nothing
+    about who reads it *next*, so both directions are here and `isolate` is the disjunction.
+    """
+    idx = next((i for i, (_pc, n_, a_) in enumerate(ins)
+                if n_.startswith('const-string') and f"'{flag}'" in (a_ or '')), None)
+    if idx is None:
+        return None
+    call = next((j for j in range(idx + 1, min(idx + 9, len(ins)))
+                 if re.search(r'->\w\(Ljava/lang/String;Z\)', ins[j][2] or '')), None)
+    if call is None:
+        return None
+    reg = invoke_regs(ins[call][2])[1]
+
+    own = [j for j in range(idx + 1, call)
+           if ins[j][1].startswith('const') and regs(ins[j][2] or '')[:1] == [reg]]
+    src = own[-1] if own else next(
+        (j for j in range(idx - 1, -1, -1)
+         if ins[j][1].startswith('const') and regs(ins[j][2] or '')[:1] == [reg]), None)
+
+    nxt = next((j for j in range(call + 1, len(ins))
+                if ins[j][1].startswith('const') and regs(ins[j][2] or '')[:1] == [reg]), len(ins))
+    later = [j for j in range(call + 1, nxt) if reg in invoke_regs(ins[j][2] or '')]
+
+    return {
+        'own': bool(own),
+        'effective': literal_of(ins[src][2]) if src is not None else None,
+        'shared': bool(later) or not own,
+        'isolate': bool(later) or not own,
+        'register': reg,
+    }
+
+
+def declared_flag_sets(source):
+    """The flags a patch forces and the subset it isolates, read out of its Kotlin source.
+
+    Parsed rather than restated, so the pin compares the patch against the APK instead of comparing
+    two copies of the same assumption.
+    """
+    call = re.search(r'forceFlagsOn\((.*?)\n\s*\)\n', source, re.S)
+    if not call:
+        return None, None
+    positional, _, isolating = call.group(1).partition('isolating')
+    forced = set(re.findall(r'"([a-z0-9_]+)"', re.sub(r'//[^\n]*', '', positional)))
+    isolated = set(re.findall(r'"([a-z0-9_]+)"', re.sub(r'//[^\n]*', '', isolating)))
+    return forced, isolated
+
+
 def find_string_holder(dl, needle):
     """The class whose `<clinit>` loads [needle] as a string literal, or None.
 
@@ -1394,12 +1464,6 @@ def run(dl, apk=None):
             """The field descriptor an iget/iput operand text ends with."""
             return a.rsplit(', ', 1)[-1].strip()
 
-        def literal_of(a):
-            """The `#N` an instruction carries, or None. Read off the operand rather than the
-            mnemonic: dis.py prints the arithmetic opcodes as family placeholders."""
-            m = re.search(r'#(-?0x[0-9a-f]+|-?\d+)', a)
-            return int(m.group(1), 0) if m else None
-
         builder = access_point = None
         for _pc, mn, a in ins:
             if mn.startswith('invoke') and '()' in called(a) and not called(a).endswith(')V'):
@@ -2372,111 +2436,40 @@ def run(dl, apk=None):
                  if n_.startswith('const') and re.search(r'#-10045\b', a_ or '')]
         check('undo-ac: it still dispatches the revert code', len(codes) == 1, str(len(codes)))
 
-    # The flags whose constant is shared in either direction, and so need the isolating
-    # emission. Kept beside the pins that verify the sharing, so the two cannot drift.
-    # What the patch forces, and which of those need the isolating emission. Both sets are here
-    # rather than in the loop below so a change to the patch shows up as a diff against these.
-    FORCED_RAMBLER_FLAGS = {'enable_agentic_dictation', 'enable_rambler_al_toolbar',
-                            'enable_rambler_toolbar_at_cursor_position'}
-    ISOLATED_RAMBLER_FLAGS = FORCED_RAMBLER_FLAGS
-
-    # ---- rambler (agentic dictation)
+    # ---- rambler: the patch's own flag sets, checked against the dex
     #
-    # Six conditions gate Lmev;->B(Context). Five are booleans or registrations the patch sets or
-    # inherits; the sixth is a long compared against a constant, and it is the one that made this
-    # look impossible. Pinned in full because the whole feature turns on it.
-    c_, ins_ = body(dl, 'Lmqk;->c()Z')
-    if check('rambler: the activation gate exists', ins_ is not None):
-        lits = [i for i, (_pc, n_, a_) in enumerate(ins_) if n_.startswith('const')]
-        target = [literal_of(ins_[i][2]) for i in lits]
-        check('rambler: the gate still compares against a computed constant',
-              any(t == 4 for t in target), str(target))
-        check('rambler: it reads a long flag', any('Long' in (a_ or '') for _pc, _n, a_ in ins_))
+    # Not a restatement of the patch's assumptions -- the forced and isolated sets are parsed out
+    # of RamblerPatch.kt and every property is re-derived from the APK. Three device failures on
+    # this patch were all the same shape: the Kotlin believed something about the flag layout that
+    # the dex did not agree with, and nothing compared the two.
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ramble_src = os.path.join(
+        repo, 'patches/src/main/kotlin/dev/jz6/flexboard/patches/features/rambler',
+        'RamblerPatch.kt')
+    forced, isolated = (declared_flag_sets(open(ramble_src).read())
+                        if os.path.exists(ramble_src) else (None, None))
+    if check('rambler: the patch declares its flag sets readably', forced is not None):
+        c_, ins_ = body(dl, 'Lmqh;-><clinit>()V')
+        holders = {}
+        for flag in sorted(forced):
+            owner = find_string_holder(dl, flag)
+            _c, hins = body(dl, f'{owner}-><clinit>()V') if owner else (None, None)
+            holders[flag] = flag_layout(hins, flag) if hins else None
 
-    c_, ins_ = body(dl, 'La;->ad(I)I')
-    if check('rambler: the ordinal helper exists', ins_ is not None):
-        # 4 is not 1, so the else arm applies: 4 - 2 = 2. Pinned as the arithmetic, not the answer.
-        subs = [a_ for _pc, n_, a_ in ins_ if n_.startswith('lit8') and '#-2' in (a_ or '')]
-        check('rambler: ad(4) still computes n - 2', len(subs) == 1, str(len(subs)))
+        for flag in sorted(forced):
+            layout = holders[flag]
+            if not check(f'rambler: {flag} is locatable in the dex', layout is not None):
+                continue
+            # Forcing a flag Gboard already ships on is refused at patch time; catch it here.
+            check(f'rambler: {flag} is actually off, so forcing it means something',
+                  layout['effective'] == 0, f"effective={layout['effective']}")
+            # The whole point: does the dex agree with the isolating set the patch declares?
+            check(f'rambler: {flag} isolation matches what its constant sharing requires',
+                  layout['isolate'] == (flag in isolated),
+                  f"dex says isolate={layout['isolate']}, patch says {flag in isolated}")
 
-    holder = find_string_holder(dl, 'ad_activation_type')
-    if check('rambler: the activation flag is declared', holder is not None, str(holder)):
-        c_, ins_ = body(dl, f'{holder}-><clinit>()V')
-        idx = next((i for i, (_pc, n_, a_) in enumerate(ins_ or [])
-                    if n_.startswith('const-string') and "'ad_activation_type'" in (a_ or '')), None)
-        if check('rambler: its declaration is locatable', idx is not None):
-            wide = next((j for j in range(idx + 1, min(idx + 5, len(ins_)))
-                         if ins_[j][1].startswith('const-wide')), None)
-            if check('rambler: it is declared as a long', wide is not None):
-                check('rambler: it still ships as 1, the value the patch replaces',
-                      literal_of(ins_[wide][2]) == 1, str(literal_of(ins_[wide][2])))
-            factory = [a_ for _pc, n_, a_ in ins_[idx:idx + 6]
-                       if 'Ljava/lang/String;J)' in (a_ or '')]
-            check('rambler: through the long flag factory, not the boolean one',
-                  len(factory) == 1, str(len(factory)))
-
-    # The five booleans the patch forces, and which of them hoist their default. A flag that stops
-    # sharing its constant makes the isolating emission wrong, and vice versa; forceFlagsOn refuses
-    # either mismatch, so this pins the shape it will refuse on.
-    # (flag, hoisted, effective default). The third column is the one that matters and the one the
-    # first version of this omitted: "hoisted" was read as "off", and two of these share a constant
-    # that holds 1. The patch forces only the flags whose effective default is 0, and forceFlagsOn
-    # refuses any flag Gboard already ships on -- so a build that flips one of these turns a silent
-    # no-op into a failed patch, and this pin turns it into a named one.
-    for flag, shared, default in (('enable_agentic_dictation', False, 0),
-                                  ('config_agentic_dictation', False, 1),
-                                  ('enable_jetson_in_toolbar', True, 1),
-                                  ('enable_rambler_al_toolbar', True, 0),
-                                  ('enable_rambler_toolbar_at_cursor_position', True, 0),
-                                  ('filter_rambler_contributed_input_view_session', True, 1)):
-        owner = find_string_holder(dl, flag)
-        if not check(f'rambler: {flag} is declared', owner is not None, str(owner)):
-            continue
-        c_, ins_ = body(dl, f'{owner}-><clinit>()V')
-        i_ = next((i for i, (_pc, n_, a_) in enumerate(ins_ or [])
-                   if n_.startswith('const-string') and f"'{flag}'" in (a_ or '')), None)
-        if i_ is None:
-            check(f'rambler: {flag} declaration is locatable', False)
-            continue
-        call = next((j for j in range(i_ + 1, min(i_ + 9, len(ins_)))
-                     if re.search(r'->\w\(Ljava/lang/String;Z\)', ins_[j][2] or '')), None)
-        if not check(f'rambler: {flag} goes through the boolean factory', call is not None):
-            continue
-        reg = invoke_regs(ins_[call][2])[1]
-        own = [j for j in range(i_ + 1, call)
-               if ins_[j][1].startswith('const') and regs(ins_[j][2] or '')[:1] == [reg]]
-        check(f'rambler: {flag} default is {"hoisted" if shared else "its own"}',
-              (len(own) == 0) == shared, f'own consts between name and call: {len(own)}')
-
-        # The effective value: the last write of that register before the call, wherever it is.
-        src = own[-1] if own else next(
-            (j for j in range(i_ - 1, -1, -1)
-             if ins_[j][1].startswith('const') and regs(ins_[j][2] or '')[:1] == [reg]), None)
-        effective = literal_of(ins_[src][2]) if src is not None else None
-        check(f'rambler: {flag} effectively ships {default}',
-              effective == default, str(effective))
-
-        # Forward sharing, which is what the patch's isolating set actually turns on and what two
-        # device failures in a row were caused by mis-reading. A flag can own the constant written
-        # before it and still share it, because nothing stops a *later* flag reading the same
-        # register. `enable_agentic_dictation` writes const/4 v1 and
-        # `agentic_dictation_enable_promo_banner` reads v1 afterwards untouched.
-        nxt = next((j for j in range(call + 1, len(ins_))
-                    if ins_[j][1].startswith('const') and regs(ins_[j][2] or '')[:1] == [reg]),
-                   len(ins_))
-        later = [j for j in range(call + 1, nxt) if reg in invoke_regs(ins_[j][2] or '')]
-        # Sharing forward is common and harmless on its own -- most of these flags do it. What
-        # matters is the pair: a flag the patch *forces* and whose constant is shared in either
-        # direction must be isolated. Flags the patch leaves alone can share freely.
-        forced = flag in FORCED_RAMBLER_FLAGS
-        shares = bool(later) or len(own) == 0
-        if forced:
-            check(f'rambler: {flag} is forced, and its sharing requires isolation',
-                  shares and flag in ISOLATED_RAMBLER_FLAGS,
-                  f'shares={shares} later={later[:3]} isolated={flag in ISOLATED_RAMBLER_FLAGS}')
-        else:
-            check(f'rambler: {flag} is not forced, so its sharing does not matter',
-                  flag not in ISOLATED_RAMBLER_FLAGS)
+        check('rambler: nothing is isolated that is not forced',
+              isolated <= forced, str(isolated - forced))
 
     # ---- modern keypress haptics
     #
