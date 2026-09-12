@@ -58,7 +58,13 @@ private fun activationTypeHolderFingerprint() = Fingerprint(
  * `enable_jetson_in_toolbar` and `filter_rambler_contributed_input_view_session` all resolve to 1
  * on 18.0.3 — the last two by sharing a constant that holds 1, which is why "hoisted" is not a
  * synonym for "off" and why the effective value has to be read rather than inferred from the
- * sharing. The two that are hoisted *and* zero use the isolating emission.
+ * sharing.
+ *
+ * All three that *are* off use the isolating emission, and the reason differs. The two rambler
+ * toolbar flags inherit a constant written earlier. `enable_agentic_dictation` writes its own —
+ * and is still shared, because `agentic_dictation_enable_promo_banner` reads the same register
+ * afterwards without rewriting it. Owning the constant that precedes you says nothing about who
+ * reads it next; both directions have to be checked, and both now are.
  *
  * **Unverified on a device.** Off by default.
  */
@@ -85,9 +91,13 @@ val ramblerPatch = bytecodePatch(
             "enable_agentic_dictation",
             "enable_rambler_al_toolbar",
             "enable_rambler_toolbar_at_cursor_position",
-            // The two rambler toolbar flags take their default from a hoisted constant, so they
-            // get an override scoped to their own call. enable_agentic_dictation has its own.
+            // All three are isolated. The two rambler toolbar flags read a constant hoisted from
+            // earlier in the <clinit>. enable_agentic_dictation writes its own `const/4 v1, #0` --
+            // but `agentic_dictation_enable_promo_banner` then reads v1 again at index 38 without
+            // rewriting it, so the constant is shared *forward* rather than inherited. Rewriting
+            // it in place would switch on a promo banner nobody asked for.
             isolating = setOf(
+                "enable_agentic_dictation",
                 "enable_rambler_al_toolbar",
                 "enable_rambler_toolbar_at_cursor_position",
             ),

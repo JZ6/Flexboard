@@ -2372,6 +2372,14 @@ def run(dl, apk=None):
                  if n_.startswith('const') and re.search(r'#-10045\b', a_ or '')]
         check('undo-ac: it still dispatches the revert code', len(codes) == 1, str(len(codes)))
 
+    # The flags whose constant is shared in either direction, and so need the isolating
+    # emission. Kept beside the pins that verify the sharing, so the two cannot drift.
+    # What the patch forces, and which of those need the isolating emission. Both sets are here
+    # rather than in the loop below so a change to the patch shows up as a diff against these.
+    FORCED_RAMBLER_FLAGS = {'enable_agentic_dictation', 'enable_rambler_al_toolbar',
+                            'enable_rambler_toolbar_at_cursor_position'}
+    ISOLATED_RAMBLER_FLAGS = FORCED_RAMBLER_FLAGS
+
     # ---- rambler (agentic dictation)
     #
     # Six conditions gate Lmev;->B(Context). Five are booleans or registrations the patch sets or
@@ -2447,6 +2455,28 @@ def run(dl, apk=None):
         effective = literal_of(ins_[src][2]) if src is not None else None
         check(f'rambler: {flag} effectively ships {default}',
               effective == default, str(effective))
+
+        # Forward sharing, which is what the patch's isolating set actually turns on and what two
+        # device failures in a row were caused by mis-reading. A flag can own the constant written
+        # before it and still share it, because nothing stops a *later* flag reading the same
+        # register. `enable_agentic_dictation` writes const/4 v1 and
+        # `agentic_dictation_enable_promo_banner` reads v1 afterwards untouched.
+        nxt = next((j for j in range(call + 1, len(ins_))
+                    if ins_[j][1].startswith('const') and regs(ins_[j][2] or '')[:1] == [reg]),
+                   len(ins_))
+        later = [j for j in range(call + 1, nxt) if reg in invoke_regs(ins_[j][2] or '')]
+        # Sharing forward is common and harmless on its own -- most of these flags do it. What
+        # matters is the pair: a flag the patch *forces* and whose constant is shared in either
+        # direction must be isolated. Flags the patch leaves alone can share freely.
+        forced = flag in FORCED_RAMBLER_FLAGS
+        shares = bool(later) or len(own) == 0
+        if forced:
+            check(f'rambler: {flag} is forced, and its sharing requires isolation',
+                  shares and flag in ISOLATED_RAMBLER_FLAGS,
+                  f'shares={shares} later={later[:3]} isolated={flag in ISOLATED_RAMBLER_FLAGS}')
+        else:
+            check(f'rambler: {flag} is not forced, so its sharing does not matter',
+                  flag not in ISOLATED_RAMBLER_FLAGS)
 
     # ---- modern keypress haptics
     #
