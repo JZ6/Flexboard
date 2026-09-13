@@ -224,3 +224,26 @@ private fun MutableMethod.isolateAndFlip(
     addInstruction(restoreIndex, "const/4 v$booleanRegister, 0x0")
     addInstruction(callIndex, "const/4 v$booleanRegister, 0x1")
 }
+
+/**
+ * The `<clinit>` that declares [flag], found by carrying the flag name rather than by being named.
+ *
+ * A `Fingerprint` with `accessFlags = listOf(STATIC)` does **not** match these: a static
+ * initialiser is `STATIC | CONSTRUCTOR` (0x10008), and asking for one flag of the two matched
+ * nothing and failed the patch on a device with "Failed to match the fingerprint" and no
+ * indication of which. `forceFlagsOn` never had the problem because it resolves holders this way,
+ * which is the approach both long-flag rewrites should have used from the start.
+ */
+internal fun BytecodePatchContext.flagHolderClinit(flag: String): MutableMethod {
+    val holder = methodsMatching { method ->
+        method.name == "<clinit>" &&
+            method.implementation?.instructions?.any { it.stringOrNull() == flag } == true
+    }.sole {
+        "Expected exactly one <clinit> declaring \"$flag\", found $it. The flag is either gone " +
+            "or now declared in more than one place, and rewriting the wrong one would be silent."
+    }
+    // The mutable counterpart, resolved by descriptor the same way forceFlagsOn does it: the
+    // immutable Method is what the search returns, and only the mutable one can be written to.
+    val descriptor = holder.toDescriptor()
+    return mutableClassDefBy(holder.definingClass).methods.single { it.toDescriptor() == descriptor }
+}

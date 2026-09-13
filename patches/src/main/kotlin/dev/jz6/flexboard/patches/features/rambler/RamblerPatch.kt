@@ -1,12 +1,12 @@
 package dev.jz6.flexboard.patches.features.rambler
 
-import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.basePatch
+import dev.jz6.flexboard.patches.shared.flagHolderClinit
 import dev.jz6.flexboard.patches.shared.forceFlagsOn
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.sole
@@ -26,14 +26,6 @@ private const val AGENTIC_ACTIVATION = 2L
 
 /** Ships as this. Asserted, so a build that already moved on fails loudly rather than being re-set. */
 private const val STOCK_ACTIVATION = 1L
-
-private fun activationTypeHolderFingerprint() = Fingerprint(
-    accessFlags = listOf(com.android.tools.smali.dexlib2.AccessFlags.STATIC),
-    name = "<clinit>",
-    returnType = "V",
-    parameters = emptyList(),
-    strings = listOf(AD_ACTIVATION_TYPE),
-)
 
 /**
  * Turns on Google Rambler — Gboard's agentic dictation, internally *jetson*.
@@ -115,7 +107,7 @@ val ramblerPatch = bytecodePatch(
  * `const-wide/16`, so the register pair is preserved.
  */
 private fun app.morphe.patcher.patch.BytecodePatchContext.raiseActivationType() {
-    val method = activationTypeHolderFingerprint().method
+    val method = flagHolderClinit(AD_ACTIVATION_TYPE)
     val body = method.instructions.toList()
 
     val nameIndex = body.withIndex()

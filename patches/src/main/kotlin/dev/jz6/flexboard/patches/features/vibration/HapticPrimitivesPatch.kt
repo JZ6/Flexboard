@@ -1,15 +1,14 @@
 package dev.jz6.flexboard.patches.features.vibration
 
-import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.bytecodePatch
-import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.basePatch
+import dev.jz6.flexboard.patches.shared.flagHolderClinit
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.stringOrNull
@@ -28,14 +27,6 @@ private const val STOCK_MIN_SDK = 1024L
  * check that precedes it — the patch is not lowering a real floor, it is removing a fake ceiling.
  */
 private const val COMPOSITION_MIN_SDK = 30L
-
-private fun hapticFlagHolderFingerprint() = Fingerprint(
-    accessFlags = listOf(AccessFlags.STATIC),
-    name = "<clinit>",
-    returnType = "V",
-    parameters = emptyList(),
-    strings = listOf(VIBRATION_EFFECT_MIN_SDK),
-)
 
 /**
  * Gives keypresses Android's modern haptic primitives instead of a plain buzz.
@@ -98,7 +89,7 @@ val hapticPrimitivesPatch = bytecodePatch(
 }
 
 private fun BytecodePatchContext.lowerHapticMinimumSdk() {
-    val method = hapticFlagHolderFingerprint().method
+    val method = flagHolderClinit(VIBRATION_EFFECT_MIN_SDK)
     val body = method.instructions.toList()
 
     val nameIndex = body.withIndex()

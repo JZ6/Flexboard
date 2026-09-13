@@ -2436,6 +2436,30 @@ def run(dl, apk=None):
                  if n_.startswith('const') and re.search(r'#-10045\b', a_ or '')]
         check('undo-ac: it still dispatches the revert code', len(codes) == 1, str(len(codes)))
 
+    # ---- long-flag holders: the shape that broke dev.6
+    #
+    # A static initialiser is STATIC | CONSTRUCTOR, 0x10008. A Morphe Fingerprint asking for
+    # accessFlags = [STATIC] matches none of them, and dev.6 failed on a device with "Failed to
+    # match the fingerprint" and no indication of which. Both long-flag rewrites now resolve their
+    # holder the way forceFlagsOn always has -- by carrying the flag name, with no access flags in
+    # the query at all -- and this pins the fact that made the fingerprint wrong.
+    for flag in ('ad_activation_type', 'vibration_effect_min_sdk'):
+        owner = find_string_holder(dl, flag)
+        if not check(f'longflag: {flag} has a declaring class', owner is not None, str(owner)):
+            continue
+        maf = method_access_flags(dl, f'{owner}-><clinit>()V')
+        check(f'longflag: {flag} sits in a STATIC|CONSTRUCTOR <clinit>, not a plain static',
+              maf is not None and bool(maf & 0x8) and bool(maf & 0x10000),
+              f'access flags = {hex(maf) if maf is not None else None}')
+        # The resolver refuses ambiguity rather than rewriting a guess, so one holder is required.
+        declaring = [cn for d_ in dl for cn, _af, cd_ in d_.classes()
+                     for m_, _m2, co_ in d_.class_methods(cd_)
+                     if m_.endswith('-><clinit>()V') and co_
+                     and any(n_.startswith('const-string') and f"'{flag}'" in (a_ or '')
+                             for _pc, n_, a_ in ddis.disasm(d_, d_.code(co_)))]
+        check(f'longflag: {flag} is declared in exactly one <clinit>',
+              len(declaring) == 1, str(declaring))
+
     # ---- rambler: the patch's own flag sets, checked against the dex
     #
     # Not a restatement of the patch's assumptions -- the forced and isolated sets are parsed out
