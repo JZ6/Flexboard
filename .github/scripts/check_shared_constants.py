@@ -128,9 +128,14 @@ EMITTED_CALL = re.compile(
 # Each entry maps a helper to the opcode it emits, which is the part that has to be known rather
 # than inferred: a helper hardcoding invoke-static against a member someone later made non-static
 # is exactly the failure this file exists to catch.
-HELPER_CALLS = {"callAtAppStart": "static"}
+# `emitUndoAutocorrectOnUpFlick(probe = GESTURE_PROBE)` is the second: the emitter writes
+# `invoke-static { }, $probe` for whatever descriptor the diagnostic patch hands it, so the same
+# blind spot applies and the same guard caught it.
+HELPER_CALLS = {"callAtAppStart": "static", "probe": "static"}
 
-HELPER_CALL = re.compile(rf"\b({'|'.join(HELPER_CALLS)})\(\s*([A-Z_][A-Z0-9_]*)\s*\)")
+# Either `helper(CONST)` or `helper(named = CONST)`, since the probe is passed by name.
+HELPER_CALL = re.compile(
+    rf"\b({'|'.join(HELPER_CALLS)})\s*=?\s*\(?\s*([A-Z_][A-Z0-9_]*)\s*\)?")
 
 # A second helper shape: `emitNativeToolbarButtons(builder, listOf(NativeToolbarButton(...)))`.
 # There is no single call-site descriptor to extract, because the button is a data-class spec —

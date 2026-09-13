@@ -11,6 +11,7 @@ import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.checkFieldExists
 import dev.jz6.flexboard.patches.shared.InvokeKind
 import dev.jz6.flexboard.patches.shared.checkInvokeKind
+import dev.jz6.flexboard.patches.shared.checkMethodExists
 import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
@@ -53,6 +54,12 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
     keycode: Int = REVERT_AUTOCORRECT,
     requireCorridor: Boolean = true,
     requireUnclaimedKey: Boolean = true,
+    /**
+     * Diagnostic only. When set, the guards run unchanged and this static is called instead of
+     * dispatching [keycode] — so a negative result means the gesture did not fire, rather than
+     * meaning the event was built wrong. Those are the two things the probe has to tell apart.
+     */
+    probe: String? = null,
 ) {
     val method = pointerReleaseFingerprint().method
     val what = "$POINTER_DELEGATE->t"
@@ -68,8 +75,14 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
     )
     // Both of these are spelled in the emission below and neither was checked, despite the comment
     // above claiming every member is.
-    checkInvokeKind(KEY_DATA_CTOR, InvokeKind.DIRECT, "the key-data constructor the revert builds")
-    checkInvokeKind(DISPATCH_EVENT, InvokeKind.INTERFACE, "the event sink the revert is raised on")
+    if (probe == null) {
+        checkInvokeKind(KEY_DATA_CTOR, InvokeKind.DIRECT, "the key-data constructor the revert builds")
+        checkInvokeKind(DISPATCH_EVENT, InvokeKind.INTERFACE, "the event sink the revert is raised on")
+    } else {
+        // The probe build calls the extension instead, so the event members are not spelled and
+        // asserting them would fail a build that is deliberately not using them.
+        checkMethodExists(probe, "the diagnostic probe in the extension")
+    }
     checkFieldExists(SLIDE_UP, "the SLIDE_UP action constant")
     checkFieldExists(POINTER_DELEGATE_FIELD, "the pointer's delegate back-reference")
     checkFieldExists(EVENT_SINK_FIELD, "the delegate's event sink")
@@ -155,12 +168,9 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
             if-gtz v$c, :$SKIP_LABEL
     """.trimIndent().prependIndent("            ")
 
-    method.addInstructionsWithLabels(
-        insertIndex,
-        """
-            sget-object v$a, $SLIDE_UP
-            if-ne v$directionRegister, v$a, :$SKIP_LABEL
-$unclaimed$corridor
+    // Either raise Gboard's own event, or -- for the probe build -- call straight into the
+    // extension. commitText through an InputConnection has no event vocabulary to get wrong.
+    val payload = if (probe != null) "            invoke-static { }, $probe" else """
             new-instance v$a, $KEY_DATA
             const/16 v$b, $keycode
             const v$c, $EVENT_PRIORITY
@@ -172,6 +182,15 @@ $unclaimed$corridor
             check-cast v$e, $POINTER_DELEGATE
             iget-object v$e, v$e, $EVENT_SINK_FIELD
             invoke-interface { v$e, v$a }, $DISPATCH_EVENT
+    """.trimIndent().prependIndent("            ")
+
+    method.addInstructionsWithLabels(
+        insertIndex,
+        """
+            sget-object v$a, $SLIDE_UP
+            if-ne v$directionRegister, v$a, :$SKIP_LABEL
+$unclaimed$corridor
+$payload
         """.trimIndent(),
         ExternalLabel(SKIP_LABEL, stockTest),
     )

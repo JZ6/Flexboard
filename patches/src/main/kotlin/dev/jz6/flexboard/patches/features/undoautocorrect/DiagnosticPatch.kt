@@ -5,11 +5,20 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.basePatch
 
 /**
- * Android's `KEYCODE_DEL`, and what Gboard's own edit tracker tests for on the backspace path
- * (`Lnur;->a() == 67`). Dispatching it through the same sink produces an ordinary delete, which is
- * the point: it is impossible to mistake for nothing happening.
+ * The extension call the emission makes instead of raising a Gboard event.
+ *
+ * Round one deleted a character, which was unmistakable and also ate text — and a deletion is a
+ * poor signal anyway, since it is what a mis-fired scrub looks like too. Typing a marker through
+ * `InputConnection.commitText` is clearer and non-destructive.
+ *
+ * Dispatching a printable character through Gboard's own event stream would have been the obvious
+ * change and is the wrong one: a printable key travels as a keycode plus a `String` payload whose
+ * convention I could not establish from the dex without guessing, and a wrong guess does not fail
+ * loudly. It dispatches an event nothing consumes, which is indistinguishable from the gesture
+ * never firing — a false negative in the one measurement this patch exists to take.
  */
-private const val KEYCODE_DEL = 67
+private const val GESTURE_PROBE =
+    "Ldev/jz6/flexboard/extension/diagnostic/GestureProbe;->fired()V"
 
 /**
  * **Temporary. Delete this file once the question it answers is answered.**
@@ -71,9 +80,9 @@ val undoAutocorrectDiagnosticPatch = bytecodePatch(
         // anything this patch controls: `Lpvi;->M()`, `Lpvj;->r()`, the `Lpvi;->t` branch, or the
         // per-key slide threshold in `Lpvf;->e`..`i`.
         emitUndoAutocorrectOnUpFlick(
-            keycode = KEYCODE_DEL,
             requireCorridor = false,
             requireUnclaimedKey = false,
+            probe = GESTURE_PROBE,
         )
     }
 }
