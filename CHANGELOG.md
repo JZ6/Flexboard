@@ -1,3 +1,7 @@
+# [2.3.1-dev.7](https://github.com/JZ6/Flexboard/compare/v2.3.1-dev.6...v2.3.1-dev.7) (2026-09-13)
+
+* **Gboard:** fix: both long-flag rewrites used a fingerprint that cannot match
+
 # [2.3.1-dev.6](https://github.com/JZ6/Flexboard/compare/v2.3.1-dev.5...v2.3.1-dev.6) (2026-09-12)
 
 * **Gboard:** test: catch the flag-layout mistakes in the gate
