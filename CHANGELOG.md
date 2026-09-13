@@ -1,3 +1,9 @@
+# [2.4.1](https://github.com/JZ6/Flexboard/compare/v2.4.0...v2.4.1) (2026-09-13)
+
+* **Gboard:** feat: Rambler on by default, confirmed on a device
+* **Gboard:** feat: modern keypress haptics on by default
+* **Gboard:** test: the gesture probe types a marker instead of deleting
+
 # [2.4.1-dev.0](https://github.com/JZ6/Flexboard/compare/v2.4.0...v2.4.1-dev.0) (2026-09-13)
 
 * **Gboard:** feat: Rambler on by default, confirmed on a device
