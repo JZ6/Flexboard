@@ -66,7 +66,20 @@ private const val COMPOSITION_MIN_SDK = 30L
  * milliseconds. Gboard's own design, not something this patch introduces, but it means
  * [vibrationPatch]'s slider will feel differently calibrated once this is on.
  *
- * **Unverified on a device.** Off by default.
+ * ## On by default
+ *
+ * The exception to "flags ship opt-in until watched working on a device", and it is worth saying
+ * why rather than just doing it. That rule exists because a forced flag can open a gate onto
+ * machinery a resigned build cannot supply — a downloaded model, a version allowlist, a server
+ * handshake — and the failure mode is a keyboard that will not start.
+ *
+ * None of that applies here. The code behind the flag is `android.os.VibrationEffect`, already on
+ * the device, and Gboard's own `areAllEffectsSupported` check is untouched by this patch, so
+ * hardware that cannot do primitives keeps the legacy path. The worst outcome is that keypresses
+ * feel the same as before.
+ *
+ * Still unverified on a device, which is a statement about the haptics feeling right, not about
+ * whether the keyboard starts.
  */
 @Suppress("unused")
 val hapticPrimitivesPatch = bytecodePatch(
@@ -75,9 +88,8 @@ val hapticPrimitivesPatch = bytecodePatch(
         "the system uses — instead of a plain buzz. Gboard has the code and disables it with an " +
         "impossible minimum Android version; this removes that. Devices whose vibrator cannot do " +
         "primitives are unaffected, because Gboard's own hardware check still runs. Note that it " +
-        "changes what the vibration strength slider means, from milliseconds to intensity. Off " +
-        "by default and not yet confirmed on a device.",
-    default = false,
+        "changes what the vibration strength slider means, from milliseconds to intensity.",
+    default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
