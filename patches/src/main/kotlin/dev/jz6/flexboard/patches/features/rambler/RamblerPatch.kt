@@ -58,7 +58,17 @@ private const val STOCK_ACTIVATION = 1L
  * afterwards without rewriting it. Owning the constant that precedes you says nothing about who
  * reads it next; both directions have to be checked, and both now are.
  *
- * **Unverified on a device.** Off by default.
+ * ## On by default
+ *
+ * Confirmed working on a device before this was flipped, which is the whole of the rule in
+ * `AGENTS.md`: flags ship opt-in until watched working, because a forced flag can open a gate onto
+ * machinery a resigned build cannot supply and the failure mode is a keyboard that will not start.
+ * A sibling flag in this same family — `enable_on_device_proofread`, the Writing Tools stack —
+ * did exactly that and cost a four-release bisect.
+ *
+ * What it enables is still the *option*, not the feature. Rambler appears in Voice settings and
+ * the user chooses it; that choice is what writes `enable_jetson` and records the consent. Nobody
+ * gets agentic dictation switched on without asking for it.
  */
 @Suppress("unused")
 val ramblerPatch = bytecodePatch(
@@ -66,8 +76,8 @@ val ramblerPatch = bytecodePatch(
     description = "Exposes Google Rambler — Gboard's agentic dictation, which rewrites what you " +
         "say into composed text — as a choice in Voice settings. It is not switched on for you: " +
         "the feature uses a Google server, has its own quota and asks for consent, so picking it " +
-        "is left to you. Off by default and not yet confirmed working on a device.",
-    default = false,
+        "is left to you.",
+    default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 

@@ -194,10 +194,20 @@ replaceInstruction(valueIndex, "const-wide/16 v$valueRegister, 0x2")
 ```
 
 The server-configured argument was overstated too. The quota, consent and compliance machinery is
-real, and a resigned build cannot obtain any of it — but a working implementation exists that routes
-the flag *reads* through a runtime policy rather than trying to supply the configuration, which
-sidesteps the problem entirely. "Cannot be configured" and "cannot be enabled" are different claims,
-and only the first was ever established.
+real, and a resigned build cannot obtain any of it — but "cannot be configured" and "cannot be
+enabled" are different claims, and only the first was ever established.
+
+**Settled on a device.** Rambler now works on a patched build: three booleans forced, the
+activation type rewritten from 1 to 2, and the feature offered as a choice in Voice settings. It
+took four attempts, each failing on a different misreading of how the flags take their defaults —
+hoisted mistaken for off, an unresolved value used anyway, a flag that owns its constant and shares
+it forward, and a fingerprint asking for `STATIC` where a `<clinit>` is `STATIC | CONSTRUCTOR`. The
+first three now reproduce in the gate; the fourth cannot, because the gate never executes a patch,
+so its precondition is pinned instead.
+
+The lasting correction is not about Rambler. It is that a long-valued flag was treated as
+unreachable for months because the helper reached for was boolean-only, while a literal rewrite sat
+in a sibling patch the whole time.
 
 Everything behind the gate is the server-configured pattern in its clearest form:
 `agentic_dictation_backend_type` (`..._BACKEND_TYPE_S3`), `..._max_server_retries`,

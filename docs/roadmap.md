@@ -11,7 +11,8 @@ some settings disabled like grammer check and ai writing tools, rambler mode etc
 > with its configuration group. **Rambler** is agentic dictation, gated on `ad_activation_type == 2`
 > where the flag ships as 1: a long, rewritten in place the same way `raiseFlagDefault` already
 > rewrites `config_max_access_points`. First investigated and wrongly refused; the mistake and its
-> cause are in [`docs/phenotype-flags.md`](phenotype-flags.md#a-worked-mistake-rambler). The
+> cause are in [`docs/phenotype-flags.md`](phenotype-flags.md#a-worked-mistake-rambler).
+> **Done — confirmed working on a device and on by default in 2.3.1-dev.8.** The
 > remaining "etc" is unenumerated — name a specific fourth setting and it can be checked the same
 > way.
 
