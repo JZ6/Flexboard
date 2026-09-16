@@ -1,3 +1,7 @@
+# [2.5.0-dev.0](https://github.com/JZ6/Flexboard/compare/v2.4.1...v2.5.0-dev.0) (2026-09-16)
+
+* **Gboard:** fix: swipe up consumes the gesture and lowers the slide threshold
+
 # [2.4.1](https://github.com/JZ6/Flexboard/compare/v2.4.0...v2.4.1) (2026-09-13)
 
 * **Gboard:** feat: Rambler on by default, confirmed on a device
