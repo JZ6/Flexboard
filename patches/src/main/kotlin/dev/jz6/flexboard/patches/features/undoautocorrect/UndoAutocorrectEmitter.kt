@@ -17,6 +17,7 @@ import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.assertNotReadBeforeWritten
+import dev.jz6.flexboard.patches.shared.registersRead
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
@@ -221,6 +222,13 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
 
     // Either raise Gboard's own event, or -- for the probe build -- call straight into the
     // extension. commitText through an InputConnection has no event vocabulary to get wrong.
+    // Every register the teardown reads must arrive holding what it expects. Branching into an
+    // existing block is not just a jump -- the verifier merges register *types* across every
+    // predecessor, and a register that is an Lpvi; on eight stock arms and something else on ours
+    // is a conflict. ART rejects the whole class at load, so the symptom is not a bad swipe, it is
+    // a keyboard that never appears.
+    val handover = handoverFor(body, convergence.key, insertIndex, pointerRegister, what)
+
     val payload = if (probe != null) "            invoke-static { }, $probe" else """
             new-instance v$a, $KEY_DATA
             const/16 v$b, $keycode
@@ -242,6 +250,7 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
             if-ne v$directionRegister, v$a, :$SKIP_LABEL
 $unclaimed$corridor
 $payload
+$handover
             goto/32 :$CONSUME_LABEL
         """.trimIndent(),
         ExternalLabel(SKIP_LABEL, stockTest),
@@ -251,4 +260,55 @@ $payload
         // the short form may not reach.
         ExternalLabel(CONSUME_LABEL, consumeTarget),
     )
+}
+
+/**
+ * The register moves a branch into [target] must make first, so the block receives what every stock
+ * predecessor gives it.
+ *
+ * This exists because omitting it shipped a keyboard that would not open. The consume branch jumped
+ * to Gboard's teardown, which reads `v3` as the pointer; every stock arm sets `v3` on the way, ours
+ * did not, and the resulting type conflict is a verify error at class load rather than anything
+ * visible at the seam.
+ *
+ * Only the pointer is handed over, and the function refuses rather than guesses if the target wants
+ * anything else live that the insertion point does not already carry. A silent partial handover is
+ * the same bug again.
+ */
+private fun handoverFor(
+    body: List<Instruction>,
+    target: Int,
+    insertIndex: Int,
+    pointerRegister: Int,
+    what: String,
+): String {
+    val neededAtTarget = liveIn(body, target)
+    val availableAtSeam = liveIn(body, insertIndex)
+    val shortfall = (neededAtTarget - availableAtSeam).toMutableSet()
+
+    // The pointer is the one the teardown wants and the one we hold.
+    val pointerSlot = shortfall.singleOrNull()
+        ?: if (shortfall.isEmpty()) {
+            return ""
+        } else {
+            error(
+                "Branching to the teardown in $what would leave ${shortfall.sorted()} unset, and " +
+                    "this emission only knows how to hand over the pointer. Supplying some of " +
+                    "what a block needs is the same failure as supplying none.",
+            )
+        }
+    return "            move-object v$pointerSlot, v$pointerRegister"
+}
+
+/** Registers read on some path out of [index] before being written — the block's live-in set. */
+private fun liveIn(body: List<Instruction>, index: Int): Set<Int> {
+    val live = mutableSetOf<Int>()
+    val written = mutableSetOf<Int>()
+    for (i in index until body.size) {
+        val instruction = body[i]
+        instruction.registersRead().filterTo(live) { it !in written }
+        written += instruction.destinationRegistersOrEmpty()
+        if (instruction.opcodeName().startsWith("RETURN")) break
+    }
+    return live
 }

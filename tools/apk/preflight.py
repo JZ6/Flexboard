@@ -2389,6 +2389,42 @@ def run(dl, apk=None):
                   not any('Lpvi;->u(' in (a_ or '') for pc_, _n, a_ in ins_ if pc_ >= best[0]),
                   str(tail[:3]))
 
+    # The register handover the consume branch has to make.
+    #
+    # Branching into an existing block is not just a jump: ART merges register *types* across every
+    # predecessor, so a register the block reads as an Lpvi; must be an Lpvi; on our arm too. It was
+    # not -- v3 is set by the stock path we skip -- and the result was a verify error at class load,
+    # which presents as a keyboard that never opens rather than as a bad swipe. Shipped in
+    # 2.5.0-dev.0.
+    c_, ins_ = body(dl, release)
+    if ins_ is not None:
+        pc2i = {pc_: i for i, (pc_, _n, _a) in enumerate(ins_)}
+        anchor_ = [i for i, (_pc, _n, a_) in enumerate(ins_) if lookup in (a_ or '')]
+        targets = {}
+        for _pc, n_, a_ in ins_:
+            m_ = re.search(r'-> (\d+)', a_ or '')
+            if m_ and n_.startswith(('goto', 'if-')):
+                targets[int(m_.group(1))] = targets.get(int(m_.group(1)), 0) + 1
+        if anchor_ and targets:
+            seam = next((i for i in range(anchor_[0] + 2, len(ins_))
+                         if ins_[i][1] == 'if-eqz'), None)
+            tgt_pc = max(targets.items(), key=lambda kv: kv[1])[0]
+            if seam is not None and tgt_pc in pc2i:
+                need = set(range(c_['registers'])) - set(live_free(ins_, c_['registers'], tgt_pc))
+                have = set(range(c_['registers'])) - set(
+                    live_free(ins_, c_['registers'], ins_[seam][0]))
+                shortfall = sorted(need - have)
+                # One, and it is the pointer. More than one means the emission's single move-object
+                # is no longer a complete handover and the patch must not assume it is.
+                check('undo-ac: the consume branch has exactly one register to hand over',
+                      len(shortfall) == 1, f'shortfall {shortfall}')
+                if len(shortfall) == 1:
+                    reads = [a_ for pc_, n_, a_ in ins_
+                             if pc_ >= tgt_pc and n_.startswith('iget')
+                             and re.search(rf'v\d+, v{shortfall[0]},', a_ or '')]
+                    check('undo-ac: and the teardown reads it as the pointer tracker',
+                          any(B['pointer_tracker'] in (r or '') for r in reads), str(reads[:1]))
+
     # The hover handler, pinned as the thing this is deliberately *not*. If a build ever moves the
     # finger path into it, this fails and the choice gets revisited rather than silently inherited.
     c_, ins_ = body(dl, 'Lcom/google/android/libraries/inputmethod/motioneventhandler/'
