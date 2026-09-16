@@ -5,6 +5,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
+import com.android.tools.smali.dexlib2.iface.instruction.OffsetInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.callsMethod
@@ -41,7 +42,20 @@ private val SCRATCH_REGISTERS = listOf(3, 5, 6, 7, 8)
 /** How far past the lookup the stock null test may sit. It is two `const/4`s away on this build. */
 private const val TEST_SEARCH_WINDOW = 8
 
+/**
+ * How many stock arms must already branch to the teardown before the emission will join them.
+ *
+ * Eight do on 18.0.3 -- every per-direction case that decides the pointer is finished without a key
+ * action. The number is a floor rather than the exact count so an added direction does not fail the
+ * patch, but it is high enough that a block reached by one or two branches is not mistaken for the
+ * convergence.
+ */
+private const val CONSUME_TARGET_MIN_ARMS = 5
+
 private const val SKIP_LABEL = "flexboard_not_undo_autocorrect"
+
+/** Where the emission goes once it has claimed the gesture: Gboard's own per-pointer teardown. */
+private const val CONSUME_LABEL = "flexboard_undo_autocorrect_consumed"
 
 /**
  * Emits the revert on an upward flick that no key claims.
@@ -134,6 +148,43 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
         )
     val stockTest = body[insertIndex]
 
+    // Where to go once the gesture is ours. Falling through leaves Gboard to run `Lpvi;->u(...)`
+    // and commit the key, which is why the first device build typed the letter *and* fired: the
+    // emission was additive when it needed to be exclusive.
+    //
+    // The destination is not invented. Eight stock arms already branch to the teardown that
+    // follows the per-direction dispatch -- the block that cancels the pending runnable, clears
+    // the tracker and ends the trace -- and that is exactly "this pointer is finished, no key
+    // action". Identifying it by what converges on it rather than by a pc, so a build that moves
+    // the block is followed rather than missed.
+    // codeOffset is relative to the branch, so resolve it against real code addresses the way
+    // VibrationPatch does. Treating it as absolute would pick an arbitrary instruction.
+    val addresses = IntArray(body.size)
+    var address = 0
+    body.forEachIndexed { index, instruction ->
+        addresses[index] = address
+        address += instruction.codeUnits
+    }
+    val addressToIndex = addresses.withIndex().associate { (index, at) -> at to index }
+
+    val convergence = body.withIndex()
+        .filter { (index, instruction) -> index > lookupIndex && instruction is OffsetInstruction }
+        .mapNotNull { (index, instruction) ->
+            addressToIndex[addresses[index] + (instruction as OffsetInstruction).codeOffset]
+        }
+        .filter { it > insertIndex }
+        .groupingBy { it }
+        .eachCount()
+        .maxByOrNull { it.value }
+        ?: error("No convergence point in $what — the per-direction dispatch no longer rejoins")
+
+    check(convergence.value >= CONSUME_TARGET_MIN_ARMS) {
+        "The teardown in $what is reached by ${convergence.value} arms, expected at least " +
+            "$CONSUME_TARGET_MIN_ARMS — this is no longer the convergence the emission can branch " +
+            "to in order to consume the gesture without running the key action"
+    }
+    val consumeTarget = body[convergence.key]
+
     validateScratchRegisters(
         scratch = SCRATCH_REGISTERS,
         avoid = listOf(pointerRegister, directionRegister, actionDefRegister),
@@ -191,7 +242,13 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
             if-ne v$directionRegister, v$a, :$SKIP_LABEL
 $unclaimed$corridor
 $payload
+            goto/32 :$CONSUME_LABEL
         """.trimIndent(),
         ExternalLabel(SKIP_LABEL, stockTest),
+        // Consume the gesture. Without this the emission is additive: it fires *and* lets Gboard
+        // run Lpvi;->u(...) and commit the key, which is what typed the letter alongside the
+        // marker on the first device build. goto/32 because the teardown is far enough away that
+        // the short form may not reach.
+        ExternalLabel(CONSUME_LABEL, consumeTarget),
     )
 }

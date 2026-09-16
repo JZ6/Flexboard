@@ -44,10 +44,14 @@ private const val GESTURE_PROBE =
  *
  * **Nothing happens** — the chain fails before dispatch.
  *
- * Round one ran with all three guards and nothing happened. This is round two, with only the
- * direction test left. Because the null-ActionDef guard is gone, a flick on a key that *does* define
- * an upward action now deletes a character instead of inserting that key's symbol — deliberate, and
- * another reason this file is temporary.
+ * Round two ran with only the direction test and answered the question: the gesture *is* detected,
+ * intermittently, and the key was still typed alongside the marker. Both findings were mine to fix
+ * — the emission fell through into Gboard's commit instead of consuming the gesture, and the slide
+ * threshold sits right at the length of a normal swipe.
+ *
+ * Round three is the same probe against both fixes. The marker should now appear **instead of** the
+ * letter, and on an ordinary upward swipe rather than an exaggerated one. A letter still appearing
+ * means the consume branch is wrong; intermittency means the sensitivity default did not take.
  *
  * Do not enable this alongside *Swipe up to undo autocorrect*. Both attach to the same instruction
  * in `Lpvf;->t`, and selecting both emits two guards at one anchor: a swipe would delete a

@@ -48,6 +48,17 @@ public final class GboardSettings {
     /** `pref_enable_flick_symbols`. */
     private static final int ENABLE_FLICK_SYMBOLS = 0x7f140a01;
 
+    /**
+     * `keyboard_slide_sensitivity_ratio`, which scales every slide threshold in
+     * {@code Lpvi;->h} — the function that decides whether a drag off a key is a SLIDE_UP or just
+     * a press.
+     *
+     * <p>Stored as a <b>String</b> and read with {@code Float.parseFloat}, not as a float
+     * preference. Writing a float here would throw {@code ClassCastException} on the next read,
+     * inside the keyboard.
+     */
+    private static final int SLIDE_SENSITIVITY_RATIO = 0x7f140ad3;
+
     /** `enable_secondary_digits` — "Touch & hold keys for numbers". Un-greys the flick row. */
     private static final int ENABLE_SECONDARY_DIGITS = 0x7f140a21;
 
@@ -181,6 +192,17 @@ public final class GboardSettings {
         String key = keyOrNull(context, ENABLE_FLICK_SYMBOLS);
  if (key != null && !preferences.contains(key)) {
             editor.putBoolean(key, true);
+            wrote = true;
+        }
+        // Gboard's stock ratio is 1.0, tuned for flick-to-symbol on keys that define a flick.
+        // Swipe up to undo is a flick on keys that do not, and at 1.0 it lands on the threshold:
+        // measured on a device as firing on some swipes and not others, with no difference the
+        // user could feel. 0.6 brings it within a normal upward swipe.
+        //
+        // A default rather than a forced value, so anyone who has set it keeps their setting.
+        key = keyOrNull(context, SLIDE_SENSITIVITY_RATIO);
+        if (key != null && !preferences.contains(key)) {
+            editor.putString(key, "0.6");
             wrote = true;
         }
         key = keyOrNull(context, ENABLE_SECONDARY_DIGITS);
