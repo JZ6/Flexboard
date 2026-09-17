@@ -33,18 +33,28 @@ ways to do that were tried:
 | `goto` to Gboard's teardown | Verify error at class load — keyboard never opens |
 | Same, plus handing over `v3` | Still a verify error |
 
-The third failed because the handover was built from a **liveness** check when the verifier does a
-**type** check. `iput-object v4, v3, Lpvi;->n:…` reads `v4`: null on every stock arm, an
-`ActionDef` on ours. `v4` is live in both, so "what is missing" found nothing — and ART still
-rejects the merge.
+### The cause is not known, and that is the most important line in this document
 
-Branching into an existing block means reproducing that block's entire incoming contract —
-`{v0, v1, v2, v3, v4, v14}` here, by type, as an internal detail Gboard is free to change. That is
-not a thing to get right once; it is a thing to get right on every Gboard release, with no local
-way to test it.
+Three causes have been proposed for the crash. The first — the teardown reads `v3` and our branch
+did not supply it — was real but not sufficient: supplying it still crashed. The second — `v4`
+carries an `ActionDef` where stock carries null — is **wrong**: the field is
+`Lpvi;->n:…/ActionDef;`, so an `ActionDef` is exactly what it wants. The third, that `goto/32` with
+an `ExternalLabel` is mishandled, is untested; no other patch in this repo uses `goto/32`.
 
-**The approach is wrong, not unfinished.** Intercepting late and suppressing is fighting the
-design.
+So: **0 for 3 on diagnosing this from the dex.** Every one of those was argued confidently from
+disassembly and at least two were wrong.
+
+What *is* established, from the symptom alone: the keyboard fails on **open**, with no swipe
+involved. So the emission's mere presence is rejected at class load. That rules out anything about
+values or timing and points at the shape of the emitted code — but it does not say which part.
+
+The lesson is not "try harder to read the dex". It is that this project has no way to look at what
+it actually produced, and the next section is about fixing that.
+
+Branching into an existing block also means reproducing that block's incoming contract by type, as
+an internal detail Gboard may change. Even with a correct diagnosis that is a thing to get right on
+every release. **The approach is wrong, not unfinished** — but the reason to abandon it is the
+contract, not the specific bug, because the specific bug is still unidentified.
 
 ## What Swipe Left to Delete actually does
 
@@ -128,33 +138,81 @@ Every piece of A already has a precedent here:
 
 ## The thing that has to be fixed first
 
-**Nothing here is verifiable locally.** The gate compiles patches and pins the stock APK; it never
-loads a patched class. A verify error is invisible to every lane, which is why two releases shipped
-broken and why each attempt costs a device round-trip.
+**Nothing here reads what the patcher produced.** `preflight.py` takes the *stock* dex tree and the
+*stock* APK. `tools/gate` compiles the patches and pins Gboard. No lane has ever looked at a patched
+class. That is why two broken releases got out, and why three diagnoses were guesses.
 
-Four device failures this session were all discoveries that a local apply-and-load would have made
-in seconds. Before more bytecode goes into this gesture:
+The fix does not need the Android SDK, a device, or adb. **The disassembler is dex-generic** —
+`dexlib.load()` takes any directory of `.dex`, and `dis.find`/`dis.show` work on whatever is loaded.
+Morphe Manager writes a patched APK. Point the existing tooling at that and the emission can be read
+directly: the actual instructions, the actual `goto` offset, the actual register state at the seam.
 
-- get `:driver:run` applying a built bundle locally (blocked on the Android SDK), **or**
-- get one logcat from a crashing build — `adb logcat` around the failure names the rejected class
-  and register, **or**
-- accept that each iteration costs a release, and plan the smallest possible steps accordingly
+Concretely, in order of cost:
 
-This is the highest-value item on the list. It is worth more than the feature.
+1. **`tools/apk/patched.py`** — take a patched APK, extract its dex, disassemble one method, and
+   print it beside the stock version. An afternoon, no new dependencies, and it would have answered
+   all three of the failed diagnoses in minutes. **This is the single highest-value item in the
+   document.**
+2. **A merge check over the patched method.** Once the patched dex is readable, the existing
+   `live_free` can run on it, and a register whose incoming type differs across predecessors can be
+   flagged. This is a real check rather than the liveness approximation that shipped.
+3. **`:driver:run`** applying a bundle locally — still the ideal, still blocked on the SDK. Worth
+   doing eventually; not worth blocking on now that (1) exists.
+4. **A logcat**, if adb ever becomes available. Names the rejected class and register outright.
+
+Note the ordering change from the first draft, which put the SDK first and described (1) nowhere.
+(1) is cheaper, needs nothing that is missing, and is strictly more informative for this class of
+bug.
+
+## Success criteria
+
+"Feels as natural as swipe left to delete" needs to be checkable, or the next iteration argues about
+taste instead of behaviour:
+
+- an upward swipe of ordinary length fires it, on **most attempts** rather than occasionally
+- **no character is inserted** — not one that is inserted and then deleted
+- the last autocorrection is reverted, and a swipe with nothing to revert does nothing visible
+- ordinary typing, the scrub, and flick-for-symbols are all unaffected
+- the keyboard opens
+
+The last one is not a joke. It is the one two releases failed, and it should be checked first every
+time.
+
+## Blast radius while this is in progress
+
+- The patch stays **default off** until it has been watched working, per `AGENTS.md`. Two releases
+  reached only people who ticked it, which was luck rather than design.
+- Every step ships as its own dev release, smallest first, so a failure identifies itself.
+- The currently shipped fall-through version works and types the key. That is a known, documented
+  limitation and is a better state than broken — it stays until the replacement is confirmed.
 
 ## Phases
 
-1. **Verification first.** Establish a local or on-device way to see a verify error. Everything
-   below is cheaper and safer once this exists.
-2. **Confirm the handler attachment point.** Decode the Latin layout, find the handler list, and
-   confirm an added `<motion_event_handler>` with a `preference_key` is honoured. Pin it.
-3. **Stub the base class**, mirroring how `CommonPreferenceFragment` is stubbed. Compile-only.
-4. **Write the handler**, claiming the pointer on an upward flick and dispatching `-10045`.
-   Thresholds reuse `keyboard_slide_sensitivity_ratio`, already defaulted to 0.6.
-5. **Splice the handler into the layout** behind a Flexboard preference, so it can be switched off
-   without rebuilding.
-6. **Delete the old emission** and the diagnostic patch, and fold what was learned into
-   `undo-autocorrect.md`.
+Each is a release on its own, smallest first, so a failure names itself.
+
+**0. Read what we ship.** Build `tools/apk/patched.py`; disassemble the *currently broken* dev.1
+emission and find out what actually went wrong. This is worth doing even though the code is being
+replaced, because "we never found out" is how the same mistake returns in the handler.
+
+**1. Can a handler attach at all?** The cheapest possible probe: a handler that does nothing but
+type a marker on any touch, spliced into the Latin layout behind a preference. If Gboard does not
+instantiate it — R8, manifest, reflection — the whole approach dies here for the price of one
+release, before any gesture logic exists.
+
+**2. Stub the base class.** Mirroring `stubs/…/CommonPreferenceFragment.java`. Compile-only, no
+behaviour.
+
+**3. Claim the pointer.** Extend the probe to recognise an upward flick and consume it, still with
+no revert. Success is *the key stops typing* — which is goal 2, tested in isolation.
+
+**4. Dispatch the revert.** Only once 3 holds. Thresholds reuse `keyboard_slide_sensitivity_ratio`,
+already defaulted to 0.6.
+
+**5. Retire the old path.** Delete the `handleActionUp` emission, the diagnostic patch and the
+gesture probe; fold the findings into `undo-autocorrect.md`.
+
+Phases 1 and 3 are the ones that can fail cheaply and informatively. Phase 0 is the one that makes
+all the others debuggable.
 
 ## Open questions
 
@@ -165,6 +223,10 @@ This is the highest-value item on the list. It is worth more than the feature.
   both are attached?
 - Is `-10045` still the right payload from a handler context, or does the handler have a more
   direct route to the edit tracker?
+- Does a handler see the pointer *before* the key machinery, or alongside it? The scrub's behaviour
+  implies before, but that is inference from how it feels, not something read out of the dex.
+- What actually broke dev.0 and dev.1? Still unknown. Phase 0 answers it.
 
-None of these are answerable from the dex alone with confidence, which is the same reason phase 1
-comes first.
+None of these are answerable from the dex alone with confidence — which is the argument for phase 0
+rather than more reading. The first draft of this plan put the SDK first and left the cheap,
+available option out entirely.
