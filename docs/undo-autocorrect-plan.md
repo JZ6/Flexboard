@@ -149,10 +149,15 @@ directly: the actual instructions, the actual `goto` offset, the actual register
 
 Concretely, in order of cost:
 
-1. **`tools/apk/patched.py`** — take a patched APK, extract its dex, disassemble one method, and
-   print it beside the stock version. An afternoon, no new dependencies, and it would have answered
-   all three of the failed diagnoses in minutes. **This is the single highest-value item in the
-   document.**
+1. ~~**`tools/apk/patched.py`**~~ — **done.** Takes a patched APK, extracts its dex, disassembles a
+   method and diffs it against the stock one. No new dependencies. Run it as:
+
+   ```
+   tools/apk/patched.py flexboard.apk 'Lpvf;->t(Lpvi;Landroid/view/MotionEvent;I)V' --stock gboard-apk
+   ```
+
+   It is deliberately not a `tools/gate` lane: the gate has no way to produce a patched APK, and a
+   lane that can only ever skip is worse than a documented command.
 2. **A merge check over the patched method.** Once the patched dex is readable, the existing
    `live_free` can run on it, and a register whose incoming type differs across predecessors can be
    flagged. This is a real check rather than the liveness approximation that shipped.
