@@ -21,9 +21,19 @@ goes unseen. That is exactly how the toolbar broke.
 **Parse your own inputs by their own name.** An assertion that fires on merged output names the
 wrong file and sends the reader into someone else's five thousand lines.
 
-**There is no Android SDK here.** `:patches:buildAndroid`, `generatePatchesList` and `:driver:run`
-against a locally built bundle cannot run. Static verification is not device verification — say
-which one you did.
+**There is no Android SDK here**, so `:patches:buildAndroid` and `generatePatchesList` cannot run.
+**`:driver:run` can.** The SDK was only ever needed to *build* a bundle, and CI attaches one to
+every release:
+
+```
+gh release download <tag> --dir /tmp/mpp
+FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate
+```
+
+That turns the `driver` lane on, which is the only lane that executes the patches rather than
+inspecting them from the outside. It found a real shipped bug within minutes of first being run.
+Combined with `tools/apk/patched.py`, the whole loop — apply, then read what was emitted — is local.
+Static verification is still not device verification, so say which one you did.
 
 ## Reading what the patcher produced
 

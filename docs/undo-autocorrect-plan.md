@@ -190,8 +190,16 @@ Concretely, in order of cost:
 2. **A merge check over the patched method.** Once the patched dex is readable, the existing
    `live_free` can run on it, and a register whose incoming type differs across predecessors can be
    flagged. This is a real check rather than the liveness approximation that shipped.
-3. **`:driver:run`** applying a bundle locally — still the ideal, still blocked on the SDK. Worth
-   doing eventually; not worth blocking on now that (1) exists.
+3. ~~**`:driver:run`**~~ — **done, and it was never blocked.** The SDK is needed to *build* a
+   bundle, not to apply one, and CI attaches a built `.mpp` to every release:
+
+   ```
+   gh release download <tag> --dir /tmp/mpp
+   FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate
+   ```
+
+   This is now a gate lane, opt-in on that variable. "Blocked on the SDK" was asserted in three
+   places in this repo and never tested; it cost every device round-trip this session.
 4. **A logcat**, if adb ever becomes available. Names the rejected class and register outright.
 
 Note the ordering change from the first draft, which put the SDK first and described (1) nowhere.

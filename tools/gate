@@ -72,6 +72,21 @@ else
     skip "preflight" "gboard.apk and/or gboard-apk/ absent — every dex and resource pin is unverified"
 fi
 
+# The only lane that executes the patches. Everything above inspects sources or the stock APK from
+# the outside; this applies a real bundle to the real APK the way Morphe Manager does, so a
+# patch-time failure surfaces here in a minute instead of after CI, an install and a phone.
+#
+# It needs a built .mpp, which needs the Android SDK, which is not here -- but CI attaches one to
+# every release, so `gh release download` is enough. Point FLEXBOARD_BUNDLE at it. Deliberately
+# opt-in rather than auto-downloading: a gate lane that reaches the network is a gate lane that
+# fails for reasons unrelated to the code.
+if [ -n "${FLEXBOARD_BUNDLE:-}" ] && [ -e "$FLEXBOARD_BUNDLE" ] && have_apk; then
+    lane "driver" ./gradlew :driver:run -q \
+        --args="$(python3 -c "import os;print(os.path.realpath('gboard.apk'))") $FLEXBOARD_BUNDLE $(mktemp -d)/patched.apk"
+else
+    skip "driver" "set FLEXBOARD_BUNDLE to a built .mpp to execute the patches (gh release download <tag>)"
+fi
+
 if [ "$run_resources" -eq 0 ]; then
     skip "resources" "--no-resources given — nothing checked what the bundle actually writes"
 elif have_apk; then

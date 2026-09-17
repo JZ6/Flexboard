@@ -15,6 +15,7 @@ import dev.jz6.flexboard.patches.shared.checkInvokeKind
 import dev.jz6.flexboard.patches.shared.checkMethodExists
 import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
+import dev.jz6.flexboard.patches.shared.methodDescriptorOrNull
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.assertNotReadBeforeWritten
 import dev.jz6.flexboard.patches.shared.registersRead
@@ -43,6 +44,9 @@ private val SCRATCH_REGISTERS = listOf(3, 5, 6, 7, 8)
 /** How far past the lookup the stock null test may sit. It is two `const/4`s away on this build. */
 private const val TEST_SEARCH_WINDOW = 8
 
+
+/** Anything this project emits a call to lives under here, whatever the payload happens to be. */
+private const val EXTENSION = "Ldev/jz6/flexboard/extension/"
 
 private const val SKIP_LABEL = "flexboard_not_undo_autocorrect"
 
@@ -104,7 +108,13 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
     //
     // Stock `Lpvf;->t` contains no call to the event sink at all, pinned in preflight, so finding
     // one means this method has already been emitted into.
-    val alreadyEmitted = body.count { it.callsMethod(DISPATCH_EVENT) }
+    // Any prior emission, not just one that raises a Gboard event. The first version of this
+    // counted DISPATCH_EVENT only; the diagnostic was later changed to call the extension probe
+    // instead, which left nothing for the guard to find and silently defeated it. `:driver:run`
+    // then applied both patches and stacked two guards in one method with no complaint.
+    val alreadyEmitted = body.count {
+        it.callsMethod(DISPATCH_EVENT) || it.methodDescriptorOrNull()?.startsWith(EXTENSION) == true
+    }
     check(alreadyEmitted == 0) {
         "$what already carries a Flexboard emission. \"Swipe up to undo autocorrect\" and " +
             "\"Swipe up diagnostic (temporary)\" both attach to the same instruction — enable one " +

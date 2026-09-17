@@ -59,6 +59,15 @@ internal fun Instruction.fieldReferenceOrNull(): FieldReference? =
 internal fun Instruction.stringOrNull(): String? =
     ((this as? ReferenceInstruction)?.reference as? StringReference)?.string
 
+/**
+ * The descriptor this instruction invokes, or `null` when it invokes none.
+ *
+ * The nullable counterpart to [callsMethod], for asking *what* is called rather than whether one
+ * particular thing is — a guard that has to notice any emission, not a named one.
+ */
+internal fun Instruction.methodDescriptorOrNull(): String? =
+    ((this as? ReferenceInstruction)?.reference as? MethodReference)?.toString()
+
 /** True when this instruction invokes exactly the given method descriptor. */
 internal fun Instruction.callsMethod(descriptor: String): Boolean =
     ((this as? ReferenceInstruction)?.reference as? MethodReference)?.toString() == descriptor
