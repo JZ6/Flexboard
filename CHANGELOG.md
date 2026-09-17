@@ -1,3 +1,8 @@
+# [2.5.0-dev.2](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.1...v2.5.0-dev.2) (2026-09-17)
+
+* **Gboard:** docs: replan swipe up to undo autocorrect
+* **Gboard:** revert: drop the consume branch, it ships a keyboard that will not open
+
 # [2.5.0-dev.1](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.0...v2.5.0-dev.1) (2026-09-16)
 
 * **Gboard:** fix: the consume branch shipped a keyboard that would not open
