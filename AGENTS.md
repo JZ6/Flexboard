@@ -25,6 +25,28 @@ wrong file and sends the reader into someone else's five thousand lines.
 against a locally built bundle cannot run. Static verification is not device verification — say
 which one you did.
 
+## Reading what the patcher produced
+
+**`tools/apk/patched.py` reads a patched APK.** Everything else here reads the APK Gboard ships, so
+until this existed nothing had ever looked at a class the patcher wrote.
+
+```
+tools/apk/patched.py flexboard.apk 'Lpvf;->t(Lpvi;Landroid/view/MotionEvent;I)V' --stock gboard-apk
+```
+
+**An emission that produces nothing looks exactly like one that worked.** A helper returning `""`
+for its empty case, a `str.replace` that matched nothing, a guard whose condition is never true —
+the patch applies, every lane passes, and the build ships unchanged. `2.5.0-dev.1` was a fix for
+`dev.0` that emitted zero instructions and was byte-identical to it; three further diagnoses were
+argued from the stock dex before anyone looked at the output. **If an emission is supposed to change
+something, read the patched method and confirm it did.**
+
+**Never write a fresh liveness walk.** `preflight.live_free` does backward liveness over the real
+control-flow graph. A linear scan from an index is wrong in both directions and has now shipped
+twice from this repo: once in `assertNotReadBeforeWritten`, once in `handoverFor`, days apart, in
+the same file. The second reported every register as available and silently disabled the fix it was
+part of.
+
 ## Reading Gboard's dex
 
 **Use `dis.show(descriptor, dexes)` from `tools/apk/dis.py`.** It is a complete disassembler.

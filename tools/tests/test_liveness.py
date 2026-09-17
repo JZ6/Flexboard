@@ -228,6 +228,39 @@ class LiveFree(unittest.TestCase):
         )
         self.assertNotIn(6, self.free(ins, 8, 0))
 
+    def test_a_linear_walk_from_the_seam_would_claim_everything_is_available(self):
+        """Why `live_free` exists, stated as a test rather than as a comment.
+
+        A linear walk forward from an index eventually touches almost every register, so asking it
+        "what is available here" answers "everything". That is how a register handover computed an
+        empty shortfall, emitted nothing, and shipped a fix byte-identical to the bug it fixed.
+
+        The same linear-scan error has now been written twice in this project. The test is here so
+        the third time fails in milliseconds instead of on a phone.
+        """
+        ins = stream(
+            ("nop", ""),                                 # pc 0 -- the seam
+            if_eqz(1, 4),
+            ("const/4", "v7, #1"),                       # only reachable one way
+            goto(5),
+            ("invoke-static", "{v7}, Lfoo;->bar(I)V"),   # reads v7 without a write on this path
+            ("return-void", ""),
+        )
+        # Backward CFG liveness: v7 is read on a path that does not write it, so it is live.
+        self.assertNotIn(7, self.free(ins, 8, 0))
+
+        # A linear walk would have seen the `const/4 v7` at pc 2 first and called v7 available.
+        linear_available = set()
+        written = set()
+        for _pc, mnemonic, args in ins:
+            for r in P.invoke_regs(args or ""):
+                if r not in written:
+                    linear_available.add(r)
+            if not mnemonic.startswith(P.READS_FIRST_OPERAND):
+                first = P.regs(args or "")[:1]
+                written.update(first)
+        self.assertIn(7, written, "the linear walk sees a write and stops worrying about v7")
+
     def test_a_switch_is_refused_rather_than_guessed(self):
         # The case targets live in a payload live_free does not read, so every register the cases
         # read would look dead. Refusing is the only safe answer available.

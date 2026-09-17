@@ -33,28 +33,57 @@ ways to do that were tried:
 | `goto` to Gboard's teardown | Verify error at class load — keyboard never opens |
 | Same, plus handing over `v3` | Still a verify error |
 
-### The cause is not known, and that is the most important line in this document
+### The cause, finally established by looking at the output
 
-Three causes have been proposed for the crash. The first — the teardown reads `v3` and our branch
-did not supply it — was real but not sufficient: supplying it still crashed. The second — `v4`
-carries an `ActionDef` where stock carries null — is **wrong**: the field is
-`Lpvi;->n:…/ActionDef;`, so an `ActionDef` is exactly what it wants. The third, that `goto/32` with
-an `ExternalLabel` is mishandled, is untested; no other patch in this repo uses `goto/32`.
+Three causes were proposed from the stock disassembly and none was right. The actual one came from
+`tools/apk/patched.py` in a single run, and it is not a subtle verifier question at all.
 
-So: **0 for 3 on diagnosing this from the dex.** Every one of those was argued confidently from
-disassembly and at least two were wrong.
+This is what dev.1 shipped, read out of the installed APK:
 
-What *is* established, from the symptom alone: the keyboard fails on **open**, with no swipe
-involved. So the emission's mere presence is rejected at class load. That rules out anything about
-values or timing and points at the shape of the emitted code — but it does not say which part.
+```
+sget-object v3, Lpmy;->c:Lpmy;      # v3 is now a Lpmy;
+if-ne v2, v3, -> 92
+invoke-static {}, …GestureProbe;->fired()V
+goto/32 -> 238                      # the teardown, which reads v3 as a Lpvi;
+```
 
-The lesson is not "try harder to read the dex". It is that this project has no way to look at what
-it actually produced, and the next section is about fixing that.
+**There is no `move-object v3, v13`.** The handover added in dev.1 emitted nothing, so dev.1 was
+byte-identical to dev.0 in the only part that mattered.
 
-Branching into an existing block also means reproducing that block's incoming contract by type, as
-an internal detail Gboard may change. Even with a correct diagnosis that is a thing to get right on
-every release. **The approach is wrong, not unfinished** — but the reason to abandon it is the
-contract, not the specific bug, because the specific bug is still unidentified.
+`handoverFor` computed its shortfall with a *linear* `liveIn` walk. Walking forward from the seam
+touches nearly every register eventually, so "available at the seam" came back as all sixteen, the
+shortfall was empty, and the function returned `""`:
+
+```kotlin
+?: if (shortfall.isEmpty()) { return "" }
+```
+
+The CFG-correct answer, from `live_free`, is `[3]`.
+
+So the original diagnosis was **right**: the emission makes v3 a `Lpmy;` and branches to a block
+that reads it as a `Lpvi;`. A plain type conflict. Seeing "the fix didn't work", concluding the
+diagnosis was incomplete, and hunting for a second cause was the error — there was no second cause,
+only an absent fix.
+
+Two things follow, and the second matters more than this feature:
+
+- **Linear liveness, again.** The same mistake was fixed in `assertNotReadBeforeWritten` earlier in
+  the same file, days before. A fresh linear scan was written instead of calling `live_free`, which
+  is correct and already in the repo. When a correct implementation exists, reaching for a new one
+  is the smell.
+- **An emitter can emit nothing, silently.** `handoverFor` had a legitimate-looking empty-case
+  return. Nothing compiles differently, no lane fails, and the patch applies. Until
+  `tools/apk/patched.py` there was no way to notice.
+
+### What this does and does not say about the architecture
+
+It weakens the case against branching. The plan below argues that reproducing a block's register
+contract by type is a bad bet on every Gboard release, and that stands. But the crash was **not**
+evidence for it: the branch approach was never actually tested, because the build that implemented
+it properly never shipped.
+
+The recommendation is unchanged, on the original grounds. It should not be justified by a failure
+that turned out to be a no-op.
 
 ## What Swipe Left to Delete actually does
 
