@@ -43,20 +43,9 @@ private val SCRATCH_REGISTERS = listOf(3, 5, 6, 7, 8)
 /** How far past the lookup the stock null test may sit. It is two `const/4`s away on this build. */
 private const val TEST_SEARCH_WINDOW = 8
 
-/**
- * How many stock arms must already branch to the teardown before the emission will join them.
- *
- * Eight do on 18.0.3 -- every per-direction case that decides the pointer is finished without a key
- * action. The number is a floor rather than the exact count so an added direction does not fail the
- * patch, but it is high enough that a block reached by one or two branches is not mistaken for the
- * convergence.
- */
-private const val CONSUME_TARGET_MIN_ARMS = 5
 
 private const val SKIP_LABEL = "flexboard_not_undo_autocorrect"
 
-/** Where the emission goes once it has claimed the gesture: Gboard's own per-pointer teardown. */
-private const val CONSUME_LABEL = "flexboard_undo_autocorrect_consumed"
 
 /**
  * Emits the revert on an upward flick that no key claims.
@@ -158,33 +147,6 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
     // the tracker and ends the trace -- and that is exactly "this pointer is finished, no key
     // action". Identifying it by what converges on it rather than by a pc, so a build that moves
     // the block is followed rather than missed.
-    // codeOffset is relative to the branch, so resolve it against real code addresses the way
-    // VibrationPatch does. Treating it as absolute would pick an arbitrary instruction.
-    val addresses = IntArray(body.size)
-    var address = 0
-    body.forEachIndexed { index, instruction ->
-        addresses[index] = address
-        address += instruction.codeUnits
-    }
-    val addressToIndex = addresses.withIndex().associate { (index, at) -> at to index }
-
-    val convergence = body.withIndex()
-        .filter { (index, instruction) -> index > lookupIndex && instruction is OffsetInstruction }
-        .mapNotNull { (index, instruction) ->
-            addressToIndex[addresses[index] + (instruction as OffsetInstruction).codeOffset]
-        }
-        .filter { it > insertIndex }
-        .groupingBy { it }
-        .eachCount()
-        .maxByOrNull { it.value }
-        ?: error("No convergence point in $what — the per-direction dispatch no longer rejoins")
-
-    check(convergence.value >= CONSUME_TARGET_MIN_ARMS) {
-        "The teardown in $what is reached by ${convergence.value} arms, expected at least " +
-            "$CONSUME_TARGET_MIN_ARMS — this is no longer the convergence the emission can branch " +
-            "to in order to consume the gesture without running the key action"
-    }
-    val consumeTarget = body[convergence.key]
 
     validateScratchRegisters(
         scratch = SCRATCH_REGISTERS,
@@ -222,12 +184,6 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
 
     // Either raise Gboard's own event, or -- for the probe build -- call straight into the
     // extension. commitText through an InputConnection has no event vocabulary to get wrong.
-    // Every register the teardown reads must arrive holding what it expects. Branching into an
-    // existing block is not just a jump -- the verifier merges register *types* across every
-    // predecessor, and a register that is an Lpvi; on eight stock arms and something else on ours
-    // is a conflict. ART rejects the whole class at load, so the symptom is not a bad swipe, it is
-    // a keyboard that never appears.
-    val handover = handoverFor(body, convergence.key, insertIndex, pointerRegister, what)
 
     val payload = if (probe != null) "            invoke-static { }, $probe" else """
             new-instance v$a, $KEY_DATA
@@ -250,65 +206,9 @@ internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
             if-ne v$directionRegister, v$a, :$SKIP_LABEL
 $unclaimed$corridor
 $payload
-$handover
-            goto/32 :$CONSUME_LABEL
         """.trimIndent(),
         ExternalLabel(SKIP_LABEL, stockTest),
-        // Consume the gesture. Without this the emission is additive: it fires *and* lets Gboard
-        // run Lpvi;->u(...) and commit the key, which is what typed the letter alongside the
-        // marker on the first device build. goto/32 because the teardown is far enough away that
-        // the short form may not reach.
-        ExternalLabel(CONSUME_LABEL, consumeTarget),
     )
 }
 
-/**
- * The register moves a branch into [target] must make first, so the block receives what every stock
- * predecessor gives it.
- *
- * This exists because omitting it shipped a keyboard that would not open. The consume branch jumped
- * to Gboard's teardown, which reads `v3` as the pointer; every stock arm sets `v3` on the way, ours
- * did not, and the resulting type conflict is a verify error at class load rather than anything
- * visible at the seam.
- *
- * Only the pointer is handed over, and the function refuses rather than guesses if the target wants
- * anything else live that the insertion point does not already carry. A silent partial handover is
- * the same bug again.
- */
-private fun handoverFor(
-    body: List<Instruction>,
-    target: Int,
-    insertIndex: Int,
-    pointerRegister: Int,
-    what: String,
-): String {
-    val neededAtTarget = liveIn(body, target)
-    val availableAtSeam = liveIn(body, insertIndex)
-    val shortfall = (neededAtTarget - availableAtSeam).toMutableSet()
 
-    // The pointer is the one the teardown wants and the one we hold.
-    val pointerSlot = shortfall.singleOrNull()
-        ?: if (shortfall.isEmpty()) {
-            return ""
-        } else {
-            error(
-                "Branching to the teardown in $what would leave ${shortfall.sorted()} unset, and " +
-                    "this emission only knows how to hand over the pointer. Supplying some of " +
-                    "what a block needs is the same failure as supplying none.",
-            )
-        }
-    return "            move-object v$pointerSlot, v$pointerRegister"
-}
-
-/** Registers read on some path out of [index] before being written — the block's live-in set. */
-private fun liveIn(body: List<Instruction>, index: Int): Set<Int> {
-    val live = mutableSetOf<Int>()
-    val written = mutableSetOf<Int>()
-    for (i in index until body.size) {
-        val instruction = body[i]
-        instruction.registersRead().filterTo(live) { it !in written }
-        written += instruction.destinationRegistersOrEmpty()
-        if (instruction.opcodeName().startsWith("RETURN")) break
-    }
-    return live
-}
