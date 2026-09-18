@@ -32,8 +32,21 @@ FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate
 
 That turns the `driver` lane on, which is the only lane that executes the patches rather than
 inspecting them from the outside. It found a real shipped bug within minutes of first being run.
-Combined with `tools/apk/patched.py`, the whole loop — apply, then read what was emitted — is local.
-Static verification is still not device verification, so say which one you did.
+
+**Know what it covers.** It writes a dex; it does not load one, so ART's verifier never runs:
+
+| Failure | Caught by the driver |
+|---|---|
+| A fingerprint that matches nothing | yes |
+| A patch-time `check`/`require` firing | yes |
+| An exception inside a patch | yes |
+| Resource splicing that breaks the table | yes |
+| **A method rejected at class load** | **no** |
+| **Wrong behaviour on a device** | **no** |
+
+The `dev.0`/`dev.1` crash applies cleanly here. Reading the output with `tools/apk/patched.py` is
+what catches that class, and it is a manual read rather than a lane. Static verification is still
+not device verification, so say which one you did.
 
 ## Reading what the patcher produced
 

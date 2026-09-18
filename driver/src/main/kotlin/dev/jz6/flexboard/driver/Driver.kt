@@ -25,8 +25,15 @@ import kotlin.system.exitProcess
  *   ./gradlew :driver:run --args="gboard.apk patches-1.4.0-dev.1.mpp /tmp/patched.apk"
  *
  * Exit 0 means every patch executed, dexes compiled, and arsclib rebuilt the full resource
- * table — the entire pipeline that failed on-device for dev.3 through dev.5. The output APK is
- * unsigned and lacks the merged extension dex; proving the pipeline is the point.
+ * table — the entire pipeline that failed on-device for dev.3 through dev.5.
+ *
+ * **What this does not prove.** It writes a dex; it does not load one. ART's verifier never runs,
+ * so a method that is rejected at class load — the 2.5.0-dev.0 and dev.1 crash — applies here
+ * without complaint. Use `tools/apk/patched.py` on the output to read what was actually emitted;
+ * that is what found the missing register handover after two releases of guessing.
+ *
+ * The output is unsigned. It *does* carry the merged extension dex, despite what this comment said
+ * for a long time — 17 `dev.jz6.flexboard.extension.*` classes are present in the result.
  */
 private fun main0(args: Array<String>): Int {
     if (args.size < 2) {
