@@ -69,6 +69,9 @@ lane "extension"      ./gradlew :extension-check:extensionTests -q
 lane "constants"      python3 .github/scripts/check_shared_constants.py
 lane "dex pins"       python3 .github/scripts/check_dex_pins.py
 lane "emission lint"  python3 .github/scripts/check_emission_lint.py
+# patches-list.json and the README table are generated, and only during a release -- so between
+# releases the source can gain a patch or flip a default while both go on describing the old state.
+lane "artifacts"      python3 .github/scripts/check_generated_artifacts.py
 
 if have_apk; then
     lane "preflight" python3 tools/apk/preflight.py gboard-apk gboard.apk

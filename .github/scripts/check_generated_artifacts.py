@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""`patches-list.json` and the README's patch table agree with the Kotlin that produced them.
+
+## Why
+
+Both files are generated, and both are generated **only during a release**. Between releases the
+source can gain a patch, rename one, or flip a default, and the committed artifacts go on
+describing the previous state. `patches-list.json` says in its own first key that third-party tools
+read it, and the README table is what anyone evaluating the project sees first.
+
+This has drifted in practice. A feature commit once rewrote the generated README block by hand,
+changing the channel label and the patch count, and nothing objected.
+
+## What it can and cannot check
+
+Regenerating `patches-list.json` needs `generatePatchesList`, which needs the Android SDK, which
+is not here. So this does not regenerate — it reads the **Kotlin declarations** and compares. That
+catches a patch added, removed, renamed, or given a different default without the artifact being
+rebuilt, which is the whole of the drift that actually happens.
+
+It does not check the description text, because `bytecodePatch` builds those by string
+concatenation across lines and comparing a reassembled approximation against the real thing would
+fail on whitespace rather than on meaning. Names and defaults are exact.
+"""
+
+import json
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+PATCHES = ROOT / "patches/src/main/kotlin"
+
+# `name = "..."` and `default = ...` inside a bytecodePatch(...) call. Patches with no name are
+# internal and never appear in the inventory -- that, not `internal`, is what hides one.
+# Both kinds. Matching only bytecodePatch reported the one resourcePatch as "no longer declared",
+# which reads as drift and is a parser gap.
+PATCH_CALL = re.compile(r"(?:bytecode|resource|raw)Patch\((.*?)\n\)", re.S)
+NAME = re.compile(r'name\s*=\s*"([^"]+)"')
+DEFAULT = re.compile(r"default\s*=\s*(true|false)")
+LINE_COMMENT = re.compile(r"//[^\n]*")
+BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+
+
+def declared_patches():
+    """{name: default} from the Kotlin sources."""
+    found = {}
+    for path in sorted(PATCHES.rglob("*.kt")):
+        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        for call in PATCH_CALL.findall(text):
+            name = NAME.search(call)
+            if not name:
+                continue  # unnamed: internal, and never listed
+            default = DEFAULT.search(call)
+            # Morphe's own default when the argument is omitted is *true*, not false. Assuming
+            # false reported a patch that ships on as though the inventory were wrong.
+            found[name.group(1)] = default.group(1) == "true" if default else True
+    return found
+
+
+def published_patches(problems):
+    path = ROOT / "patches-list.json"
+    if not path.exists():
+        problems.append("  patches-list.json is missing")
+        return {}
+    data = json.loads(path.read_text())
+    entries = data if isinstance(data, list) else data.get("patches", [])
+    return {e["name"]: bool(e.get("default")) for e in entries if isinstance(e, dict) and "name" in e}
+
+
+def check_inventory(problems):
+    declared = declared_patches()
+    published = published_patches(problems)
+    if not declared:
+        problems.append("  no bytecodePatch declarations were parsed — this check has stopped "
+                        "checking anything")
+        return
+    if not published:
+        return
+
+    for name in sorted(set(declared) - set(published)):
+        problems.append(f"  {name!r} is declared in Kotlin but absent from patches-list.json — "
+                        f"regenerate it, or the published inventory omits a patch that ships")
+    for name in sorted(set(published) - set(declared)):
+        problems.append(f"  {name!r} is in patches-list.json but no longer declared — a rename "
+                        f"leaves the old entry behind, and Morphe keys selection by name")
+    for name in sorted(set(declared) & set(published)):
+        if declared[name] != published[name]:
+            problems.append(f"  {name!r} defaults to {declared[name]} in Kotlin but "
+                            f"{published[name]} in patches-list.json")
+
+
+def check_readme(problems):
+    """Every published patch has a row, and the table's own count is right."""
+    readme = (ROOT / "README.md").read_text()
+    start, end = readme.find("<!-- PATCHES_START"), readme.find("<!-- PATCHES_END")
+    if start < 0 or end < 0:
+        problems.append("  README.md has no PATCHES_START/PATCHES_END block")
+        return
+    block = readme[start:end]
+
+    published = published_patches(problems)
+    # The row, not the substring. A plain `name in block` passes when a row is renamed to something
+    # that merely contains the old name -- "Enable Rambler" inside "Enable Rambler Renamed" -- which
+    # is exactly the hand-edit this exists to catch, and it slipped through the first version.
+    # A row's name is a markdown link when the patch has a prose section and bare text when it
+    # does not -- `[Bigger Toolbar](#bigger-toolbar)` versus `Enable Rambler`. Reading only the
+    # bare form found three of fifteen and reported the rest as missing.
+    rows = set()
+    for row in block.splitlines():
+        if not row.startswith("|") or row.count("|") < 3:
+            continue
+        cell = row.split("|")[1].strip()
+        link = re.match(r"\[([^\]]+)\]\([^)]*\)$", cell)
+        rows.add(link.group(1) if link else cell)
+    for name in sorted(published):
+        if name not in rows:
+            problems.append(f"  {name!r} is in patches-list.json but has no README row — "
+                            f"the block was not regenerated")
+    for name in sorted(rows - set(published)):
+        # The header and separator rows are not patches.
+        if set(name) <= set("-: ") or "&nbsp;" in name or name.startswith("18."):
+            continue
+        problems.append(f"  the README table has a row for {name!r}, which is not in "
+                        f"patches-list.json")
+
+    stated = re.search(r"(\d+)\s+patches total", block)
+    if stated and int(stated.group(1)) != len(published):
+        problems.append(f"  the README says {stated.group(1)} patches, patches-list.json has "
+                        f"{len(published)}")
+
+
+def main():
+    problems = []
+    check_inventory(problems)
+    check_readme(problems)
+    if problems:
+        print("::error::The generated artifacts disagree with the source:")
+        for problem in problems:
+            print(problem)
+        return 1
+    count = len(declared_patches())
+    print(f"patches-list.json and the README table match the {count} declared patches.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
