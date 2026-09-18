@@ -1,3 +1,20 @@
+# [2.5.0-dev.3](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.2...v2.5.0-dev.3) (2026-09-18)
+
+* **Gboard:** test: cover the patch helpers, document the output tools, assert the Python floor
+* **Gboard:** ci: catch drift in the generated inventory and README table
+* **Gboard:** feat: check extension references, and admit the general case needs the SDK
+* **Gboard:** test: run the extension's logic, not just compile it
+* **Gboard:** feat: verify invoke arguments and catch-handler merges
+* **Gboard:** docs: correct development.md, which was three beliefs out of date
+* **Gboard:** feat: verify every method the patch changed, automatically
+* **Gboard:** ci: upload the bundle on every push, so a patch can be tested before it ships
+* **Gboard:** feat: a type-merge check for the bug ART rejects at class load
+* **Gboard:** docs: what the driver covers, and what it does not
+* **Gboard:** feat: run the patches locally — :driver:run was never blocked
+* **Gboard:** docs: the dev.1 crash, diagnosed by reading the output
+* **Gboard:** feat: read the patched APK, not just the stock one
+* **Gboard:** docs: improve the replan — the cause is unknown and the tooling is the gap
+
 # [2.5.0-dev.2](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.1...v2.5.0-dev.2) (2026-09-17)
 
 * **Gboard:** docs: replan swipe up to undo autocorrect
