@@ -12,6 +12,7 @@ import com.android.tools.smali.dexlib2.immutable.reference.ImmutableFieldReferen
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableStringReference
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
+import dev.jz6.flexboard.patches.shared.booleanFlagCallIndex
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.destinationRegisterOrNull
 import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
@@ -59,6 +60,60 @@ internal fun instructionTests() {
     readsAndWrites()
     references()
     soleCall()
+    flagSites()
+}
+
+// ------------------------------------------------------------------ flag declaration sites
+
+private val FLAG_FACTORY = ImmutableMethodReference("Lnxs;", "a", listOf("Ljava/lang/String;", "Z"), "Lnxp;")
+
+private fun name(s: String): Instruction =
+    ImmutableInstruction21c(Opcode.CONST_STRING, 0, ImmutableStringReference(s))
+
+private fun factoryCall(): Instruction =
+    ImmutableInstruction35c(Opcode.INVOKE_STATIC, 2, 0, 1, 0, 0, 0, FLAG_FACTORY)
+
+private fun filler(): Instruction = ImmutableInstruction11x(Opcode.MOVE_RESULT_OBJECT, 2)
+
+/**
+ * Reproduces the install that broke: two `<clinit>`s naming the same flag, one of them another
+ * project's merged extension.
+ *
+ * Morphe merges every selected bundle's extension into the dex before patches run, so a scan for
+ * "every `<clinit>` mentioning this flag" is a scan over other people's code too. A user running
+ * Flexboard 2.4.1 beside two other Gboard bundles hit
+ * `Ldev/jason/gboardpatches/…/GboardRambler1803StockPolicy;-><clinit>`, which names
+ * `enable_rambler_toolbar_at_cursor_position` and never calls the factory, and the entire patch run
+ * failed on a class that was none of Flexboard's business.
+ */
+private fun flagSites() {
+    // Gboard's real shape: the name, a constant, then the factory.
+    val declaration = listOf(name("enable_x"), filler(), factoryCall())
+    equal("a declaration site resolves to its factory call", "2",
+        booleanFlagCallIndex(declaration, 0).toString())
+
+    // The foreign one: the name is there, the factory is not. It calls *something* -- another
+    // project's class is code, not padding -- because a predicate that accepts any invoke at all
+    // passes a test built out of inert filler and fails on the install that prompted this.
+    val otherCall = ImmutableInstruction35c(
+        Opcode.INVOKE_STATIC, 1, 0, 0, 0, 0, 0,
+        ImmutableMethodReference("Ljava/util/Set;", "of", listOf("Ljava/lang/Object;"), "Ljava/util/Set;"),
+    )
+    val foreign = listOf(name("enable_x"), otherCall, filler(), otherCall)
+    equal("a mention that calls something else is not a site", "null",
+        booleanFlagCallIndex(foreign, 0).toString())
+
+    // The window is five, and it is a real boundary rather than decoration.
+    val justInside = listOf(name("enable_x")) + List(4) { filler() } + listOf(factoryCall())
+    equal("a factory call at the edge of the window counts", "5",
+        booleanFlagCallIndex(justInside, 0).toString())
+    val justOutside = listOf(name("enable_x")) + List(5) { otherCall } + listOf(factoryCall())
+    equal("one instruction beyond the window does not", "null",
+        booleanFlagCallIndex(justOutside, 0).toString())
+
+    // A name at the very end cannot be a declaration, and must not read off the end either.
+    equal("a trailing name is not a site", "null",
+        booleanFlagCallIndex(listOf(filler(), name("enable_x")), 1).toString())
 }
 
 // ------------------------------------------------------------------ both invoke encodings

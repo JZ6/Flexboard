@@ -85,6 +85,8 @@ internal fun BytecodePatchContext.forceFlagsOn(
     }
 
     val flipped = mutableSetOf<String>()
+    val mentioned = mutableSetOf<String>()
+    val elsewhere = mutableMapOf<String, MutableList<String>>()
     // Without this, a moved factory makes every flag fail with "it is no longer a boolean flag",
     // which sends the reader to the flags instead of to the one descriptor that actually moved.
     checkMethodExists(BOOLEAN_FLAG_FACTORY, "the Phenotype boolean flag factory")
@@ -101,9 +103,30 @@ internal fun BytecodePatchContext.forceFlagsOn(
             .sortedByDescending { it.index }
         for ((nameIndex, instruction) in sites) {
             val name = instruction.stringOrNull()!!
+            // Only where the name actually declares a boolean flag. Elsewhere it is another
+            // project's extension, or our own, mentioning the same string -- see
+            // [booleanFlagCallIndex]. Recorded either way so the diagnostics below can tell
+            // "nobody declares this" apart from "it is declared but no longer a boolean".
+            mentioned += name
+            if (booleanFlagCallIndex(body, nameIndex) == null) {
+                elsewhere.getOrPut(name) { mutableListOf() } += descriptor
+                continue
+            }
             mutable.flipFlagDefault(name, nameIndex, body, name in isolating)
             flipped += name
         }
+    }
+
+    // Three outcomes, and they used to be two. A flag mentioned only in places that never call the
+    // factory is not missing -- it is present and has stopped being a boolean, which is the case the
+    // old message described and the old control flow could not reach without also failing on
+    // unrelated classes.
+    val notBoolean = (mentioned - flipped).filter { it in elsewhere }
+    check(notBoolean.isEmpty()) {
+        notBoolean.sorted().joinToString("; ") { name ->
+            "\"$name\" is named in ${elsewhere[name]?.sorted()} but none of those is followed by " +
+                "$BOOLEAN_FLAG_FACTORY within $FACTORY_WINDOW instructions"
+        } + " — the flag exists and is no longer a boolean, and writing one into it would corrupt it"
     }
 
     val missing = wanted - flipped
@@ -114,14 +137,32 @@ internal fun BytecodePatchContext.forceFlagsOn(
     }
 }
 
+/**
+ * Index of the boolean-flag factory call this flag name feeds, or `null` when it feeds none.
+ *
+ * Separated out and made pure because it is doing two jobs that used to be one. A site where the
+ * name is followed by the factory is a flag *declaration*; a site where it is not is simply some
+ * other code that mentions the same string, and the difference decides whether the emission belongs
+ * there at all.
+ *
+ * Conflating them broke a real install. Morphe merges every selected bundle's extension into the dex
+ * before patches run, so a scan over "every `<clinit>` mentioning this flag name" sees other
+ * projects' classes as well as Gboard's. A user running Flexboard 2.4.1 alongside two other Gboard
+ * bundles hit `Ldev/jason/gboardpatches/extension/rambler/GboardRambler1803StockPolicy;-><clinit>`,
+ * which names `enable_rambler_toolbar_at_cursor_position` for its own reasons and never calls the
+ * factory — and the whole patch run failed on a class that was none of our business.
+ */
+internal fun booleanFlagCallIndex(body: List<Instruction>, nameIndex: Int): Int? =
+    (nameIndex + 1 until minOf(nameIndex + 1 + FACTORY_WINDOW, body.size))
+        .firstOrNull { body[it].callsMethod(BOOLEAN_FLAG_FACTORY) }
+
 private fun MutableMethod.flipFlagDefault(
     name: String,
     nameIndex: Int,
     body: List<Instruction>,
     isolating: Boolean,
 ) {
-    val callIndex = (nameIndex + 1 until minOf(nameIndex + 1 + FACTORY_WINDOW, body.size))
-        .firstOrNull { body[it].callsMethod(BOOLEAN_FLAG_FACTORY) }
+    val callIndex = booleanFlagCallIndex(body, nameIndex)
         ?: error(
             "\"$name\" in ${toDescriptor()} is not followed by $BOOLEAN_FLAG_FACTORY within " +
                 "$FACTORY_WINDOW instructions — it is no longer a boolean flag, and whatever it " +

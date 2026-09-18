@@ -30,7 +30,7 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
  * suite prints a smaller number, exits zero, and the gate lane goes green. A count that silently
  * fell is the same failure as a dex-derived list that came back empty.
  */
-private const val MINIMUM_CHECKS = 84
+private const val MINIMUM_CHECKS = 89
 
 internal var checks = 0
 internal var failures = 0
