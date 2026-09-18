@@ -211,6 +211,24 @@ FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate
 That turns on the `driver` and `verify` lanes. The only thing the SDK adds is building a bundle from
 *uncommitted* work, rather than from what CI built for your last push.
 
+Which is the catch, and the gate now enforces it: **a bundle is a build artifact, so it tests the
+code it was built from.** If its version does not match `gradle.properties`, the driver and verify
+lanes skip rather than pass, because a stale bundle passing looks exactly like a current one
+passing. That is not hypothetical — these lanes ran green for a session against the dev.2 bundle
+while the tree held a tightened guard the bundle knew nothing about, and the guard's first contact
+with a matching bundle failed immediately.
+
+The driver applies the **default selection**, plus any patch named with a leading `+`:
+
+```bash
+./gradlew :driver:run --args="<abs>/gboard.apk bundle.mpp out.apk +Swipe up to undo autocorrect"
+```
+
+Applying all of them sounds more thorough and is impossible. The two swipe-up patches ship
+default-off and both attach to `Lpvf;->t`, so they refuse to coexist; an apply-everything run tests
+a combination no install can produce and fails on a guard doing its job. The gate therefore runs the
+driver three times: the defaults, and the defaults plus each swipe-up patch.
+
 ### What each check can and cannot see
 
 | | catches | blind to |
@@ -222,7 +240,7 @@ That turns on the `driver` and `verify` lanes. The only thing the SDK adds is bu
 | `.github/scripts/check_emission_lint.py` | smali block structure (trailing/dangling labels, const width) | interpolated values — those are computed at patch time |
 | `tools/apk/preflight.py` | bindings that moved or changed shape | Kotlin that does not compile; behaviour |
 | `tools/apk/check_patch_resources.py` | resource write/merge/encode failures, with arsclib itself | dex; needs the target APK, so it is local-only |
-| `./gradlew :driver:run --args="<abs>/gboard.apk <bundle>.mpp out.apk"` | the whole pipeline, executed for real — patch-time crashes, failing assertions, resource encode | **class loading** (it writes a dex, never loads one) and behaviour. Needs no SDK; paths must be absolute |
+| `./gradlew :driver:run --args="<abs>/gboard.apk <bundle>.mpp out.apk [+Patch Name]"` | the whole pipeline, executed for real — patch-time crashes, failing assertions, resource encode | **class loading** (it writes a dex, never loads one) and behaviour. Needs no SDK; paths must be absolute |
 | `tools/apk/verify.py <out.apk> --changed-from gboard-apk` | a register holding conflicting types where an instruction requires one — what ART rejects at class load | anything a type cannot express; unknown types are never reported |
 | `tools/apk/patched.py <out.apk> '<descriptor>' --stock gboard-apk` | what an emission *actually* produced, diffed against stock | nothing automatically — it is a read, not a check — the only gate that *runs* the patches. Needs a built bundle (any released/CI one); with an SDK installed, `patches/build/libs/*.mpp` works too | the artifact is unsigned and lacks the merged extension dex — it proves the pipeline, it is not for installing |
 | Morphe + a device | everything else | nothing — but it is the slowest loop |

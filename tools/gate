@@ -107,10 +107,37 @@ fi
 # every release, so `gh release download` is enough. Point FLEXBOARD_BUNDLE at it. Deliberately
 # opt-in rather than auto-downloading: a gate lane that reaches the network is a gate lane that
 # fails for reasons unrelated to the code.
+#
+# The bundle is a *build artifact*, so a stale one tests the code it was built from rather than the
+# code in front of you. That is not a theoretical failure: this lane passed all session against the
+# dev.2 bundle while the tree held a tightened guard the bundle knew nothing about, and only the
+# real dev.3 bundle revealed it. The version is checked against gradle.properties for that reason.
 if [ -n "${FLEXBOARD_BUNDLE:-}" ] && [ -e "$FLEXBOARD_BUNDLE" ] && have_apk; then
     patched_out="$(mktemp -d)/patched.apk"
+    apk_path="$(python3 -c "import os;print(os.path.realpath('gboard.apk'))")"
+
+    bundle_version="$(basename "$FLEXBOARD_BUNDLE" | sed -E 's/^patches-(.*)\.mpp$/\1/')"
+    tree_version="$(sed -nE 's/^version *= *(.+)$/\1/p' gradle.properties | tr -d ' ')"
+    if [ "$bundle_version" != "$tree_version" ]; then
+        printf '  bundle is %s but gradle.properties says %s\n' "$bundle_version" "$tree_version"
+        printf '  a stale bundle tests the code it was built from, not this tree\n'
+        stale_reason="bundle $bundle_version does not match the tree's $tree_version"
+    else
+        bundle_ready=1
+    fi
+fi
+
+if [ "${bundle_ready:-0}" = 1 ]; then
+    # Three runs, because one is a lie. The driver applies the default selection; the two swipe-up
+    # patches ship default-off and are mutually exclusive, so they get a run each alongside the
+    # defaults. Applying all fifteen at once -- what this did until dev.3 -- is a combination no
+    # install can produce, and it fails on a guard behaving correctly.
     lane "driver" ./gradlew :driver:run -q \
-        --args="$(python3 -c "import os;print(os.path.realpath('gboard.apk'))") $FLEXBOARD_BUNDLE $patched_out"
+        --args="$apk_path $FLEXBOARD_BUNDLE $patched_out"
+    lane "driver +undo" ./gradlew :driver:run -q \
+        --args="$apk_path $FLEXBOARD_BUNDLE $(mktemp -d)/undo.apk +Swipe up to undo autocorrect"
+    lane "driver +probe" ./gradlew :driver:run -q \
+        --args="$apk_path $FLEXBOARD_BUNDLE $(mktemp -d)/probe.apk +Swipe up diagnostic (temporary)"
 
     # The driver proves the patches *apply*. It writes a dex and never loads one, so a method ART
     # would reject at class load passes it without complaint -- that is exactly what shipped twice.
@@ -121,6 +148,9 @@ if [ -n "${FLEXBOARD_BUNDLE:-}" ] && [ -e "$FLEXBOARD_BUNDLE" ] && have_apk; the
     else
         skip "verify" "the driver produced no APK, so there is nothing to check"
     fi
+elif [ -n "${stale_reason:-}" ]; then
+    skip "driver" "$stale_reason"
+    skip "verify" "needs a bundle built from this tree"
 else
     skip "driver" "set FLEXBOARD_BUNDLE to a built .mpp to execute the patches (gh run download --name patches-bundle)"
     skip "verify" "needs the driver's output; set FLEXBOARD_BUNDLE"

@@ -23,6 +23,15 @@ import kotlin.system.exitProcess
  *
  * Usage:
  *   ./gradlew :driver:run --args="gboard.apk patches-1.4.0-dev.1.mpp /tmp/patched.apk"
+ *   ./gradlew :driver:run --args="gboard.apk bundle.mpp /tmp/p.apk +Swipe up to undo autocorrect"
+ *
+ * **It applies the patches a user would get, not all of them.** Only those declaring
+ * `default = true`, plus any named with a leading `+`. Applying everything sounds more thorough and
+ * is in fact impossible: "Swipe up to undo autocorrect" and "Swipe up diagnostic (temporary)" both
+ * attach to `Lpvf;->t` and refuse to coexist, so an apply-everything run tests a combination no
+ * install can produce and fails on a guard doing its job. That is not hypothetical -- it is exactly
+ * how this lane greeted the 2.5.0-dev.3 bundle, having passed all session against a stale one built
+ * before the guard was tightened.
  *
  * Exit 0 means every patch executed, dexes compiled, and arsclib rebuilt the full resource
  * table — the entire pipeline that failed on-device for dev.3 through dev.5.
@@ -43,6 +52,16 @@ private fun main0(args: Array<String>): Int {
     val base = File(args[0])
     val bundle = File(args[1])
     val out = File(args.getOrElse(2) { "patched.apk" })
+    // Anything after the output path, prefixed with '+', is a non-default patch to add.
+    //
+    // Rejoined before splitting because Gradle's `--args` tokenises on whitespace with no way to
+    // quote through it, so `+Swipe up to undo autocorrect` arrives as five arguments. Splitting on
+    // the '+' instead of on the spaces recovers the name, and still allows several.
+    val extras = args.drop(3).joinToString(" ")
+        .split(Regex("(^|\\s)\\+"))
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .toSet()
     if (!base.isFile) return fail("base apk not found: $base")
     if (!bundle.isFile) return fail("bundle not found: $bundle")
 
@@ -62,8 +81,19 @@ private fun main0(args: Array<String>): Int {
 
     Patcher(config).use { patcher ->
         val patches = PatchLoader.Jar(setOf(bundle))
-        System.err.println("driver: ${patches.size} patches in $bundle")
-        patcher += patches
+
+        val unknown = extras - patches.map { it.name }.toSet()
+        if (unknown.isNotEmpty()) {
+            return fail("no such patch: ${unknown.joinToString(", ")}")
+        }
+
+        // What a phone would install: the default selection, plus whatever was asked for.
+        val selected = patches.filter { it.use || it.name in extras }.toSet()
+        System.err.println(
+            "driver: ${selected.size} of ${patches.size} patches in $bundle" +
+                if (extras.isEmpty()) " (defaults)" else " (defaults + ${extras.joinToString(", ")})",
+        )
+        patcher += selected
 
         val results = runBlocking { patcher().toList() }
         val failures = results.filter { it.exception != null }
