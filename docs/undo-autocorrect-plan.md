@@ -270,6 +270,93 @@ Every piece of A already has a precedent here:
 | Binary XML handling | `tools/apk/axml.py`, and the resource replay lane |
 | Gating on a preference | every handler in the layout already does it |
 
+## Option B, drafted against the dex
+
+Everything below was read out of 18.0.3 rather than assumed, because the last three diagnoses in
+this document were assumptions and all three were wrong.
+
+### The call site does the handover for us
+
+```
+Lpvf;->t  (TouchActionBundle.handleActionUp)
+  54: if-eqz  v1, -> 16                      # no SoftKeyDef -> exit
+  56: invoke-virtual {v13,v14,v1,v0,v15}, Lpvi;->G(…)Z
+  59: move-result v2
+  60: if-nez  v2, -> 16                      # G said "handled"
+  …
+ 116: invoke-virtual/range {v3..v12}, Lpvi;->u(…)   # the keypress commit
+  …
+  16: move-object v3, v13                    # ← the handover
+  17: goto/16 -> 256
+ 256: invoke-static Trace;->endSection()V    # clean exit
+```
+
+Returning true skips pc 62 through 255, **including the commit at 116**, and lands on a block that
+sets `v3` to the pointer itself. That is the same `v3` the teardown reads as a `Lpvi;`, and it is
+written by Gboard rather than by us. dev.0 and dev.1 crashed jumping into that block with `v3`
+holding a `Lpmy;`; here the merge does not arise, because we never jump — we return, and Gboard
+branches.
+
+### The prepend is register-free
+
+`Lpvi;->G` is `registers=20, ins=5`, so `this` is v15 and the parameters are v16–v19. **At pc 0
+every one of v0–v14 is uninitialised**, so an insertion at the top needs no scratch analysis, no
+`live_free` call and no handover. This is the entire reason to prefer a prepend.
+
+### Every signal the guard needs is on `this`
+
+`G` is an instance method on `Lpvi;` — which is `POINTER`, the class the existing corridor test
+already reads. So:
+
+| Needed | Available as |
+|---|---|
+| start x, start y | `this.b:F`, `this.c:F` |
+| current x, current y | `this.d:F`, `this.e:F` |
+| "does this key bind an upward flick?" | `this.j(Lpmy;)ActionDef;` — the existing `ACTION_DEF_LOOKUP` |
+
+That last row is what keeps goal 4. The current patch gets "no slide action on this key" for free by
+anchoring where the lookup returns null; a prepend has to ask the question itself, and it can, on
+the same object, through the same method already pinned in `Fingerprints.kt`.
+
+### Sketch
+
+```
+# pc 0 of Lpvi;->G — v0..v14 all dead, v15 = this
+  sget-object   v0, Lpmy;->c:Lpmy;            # SLIDE_UP
+  invoke-virtual {v15, v0}, Lpvi;->j(Lpmy;)…ActionDef;
+  move-result-object v0
+  if-nez        v0, :stock                    # key owns the flick — leave it entirely alone
+
+  iget v0, v15, Lpvi;->d:F                    # dx = x - startX
+  iget v1, v15, Lpvi;->b:F
+  sub-float/2addr v0, v1
+  iget v1, v15, Lpvi;->e:F                    # dy = y - startY, negative is upward
+  iget v2, v15, Lpvi;->c:F
+  sub-float/2addr v1, v2
+  …corridor: dy <= -threshold and 2*|dx| <= |dy|…
+  if-…          :stock
+
+  <dispatch the revert — unchanged from today's emission>
+  const/4       v0, 1
+  return        v0
+:stock
+  <original pc 0 onwards>
+```
+
+### What this does and does not settle
+
+Settled, by reading: the keypress is skipped, the handover is Gboard's, no merge arises, the
+registers are free, and all three guard inputs are reachable. Goals 1, 2 and 4.
+
+Not settled: **goal 3**, the threshold. Round two found the gesture detected only intermittently at
+ordinary swipe length, and nothing above changes that — it is the same geometry, just evaluated
+earlier. The threshold has to be tuned and then watched on a device, and that is the only part of
+this feature that a local check cannot answer.
+
+Also unverified: whether `G` is reached on any path other than `handleActionUp`. The guard is
+geometric, so a call with no movement cannot fire it, but "cannot fire" is reasoning and not a
+measurement.
+
 ## The thing that has to be fixed first
 
 **Nothing here reads what the patcher produced.** `preflight.py` takes the *stock* dex tree and the
