@@ -74,6 +74,37 @@ def _strip(text):
     return re.sub(r"L[\w/$;]+;", "", text)
 
 
+def _parameter_slots(descriptor_list):
+    """One entry per *register* a parameter list occupies, `None` where a type is not a reference.
+
+    A long or double takes two registers, so a naive one-per-parameter walk misaligns every
+    argument after the first wide one — and would then report conflicts that are only an off-by-one
+    in this function. Primitives yield `None` rather than a type, because the lattice here models
+    references and claiming otherwise would invent findings.
+    """
+    slots, i = [], 0
+    while i < len(descriptor_list):
+        ch = descriptor_list[i]
+        if ch == "L":
+            j = descriptor_list.index(";", i)
+            slots.append(descriptor_list[i:j + 1])
+            i = j + 1
+        elif ch == "[":
+            j = i
+            while descriptor_list[j] == "[":
+                j += 1
+            if descriptor_list[j] == "L":
+                j = descriptor_list.index(";", j)
+            slots.append(descriptor_list[i:j + 1])
+            i = j + 1
+        else:
+            slots.append(None)
+            if ch in "JD":
+                slots.append(None)  # the high half
+            i += 1
+    return slots
+
+
 def _invoke_registers(text):
     m = _INVOKE.match((text or "").strip())
     if not m:
@@ -151,7 +182,25 @@ def join(a, b, hierarchy):
     return CONFLICT
 
 
-def successors(ins, index, pc_index):
+def handler_entries(ins):
+    """Indices of every `move-exception`, which is where a catch handler begins.
+
+    The try/catch tables are not read. Instead every instruction is treated as able to reach
+    every handler in the method, which over-approximates: some of those instructions are outside
+    the try range. Over-approximating *edges* makes merges happen that ART would not perform, so
+    it can only produce findings ART would not, which is the wrong direction for a checker meant
+    to stay quiet.
+
+    It is accepted because the alternative is worse. Modelling no handler edges means a register
+    that conflicts only at a handler is invisible, and `Lpvf;->t` -- the method this whole
+    exercise is about -- has a try block. A false positive gets argued about; a false negative
+    ships.
+    """
+    return [i for i, (_pc, mnemonic, _a) in enumerate(ins)
+            if mnemonic.startswith('move-exception')]
+
+
+def successors(ins, index, pc_index, handlers=()):
     _pc, mnemonic, args = ins[index]
     out = []
     m = re.search(r"-> (\d+)", args or "")
@@ -160,17 +209,21 @@ def successors(ins, index, pc_index):
         if target is not None:
             out.append(target)
     if mnemonic.startswith("goto"):
-        return out
-    if mnemonic.startswith(("return", "throw")):
-        return []
-    if index + 1 < len(ins):
+        pass
+    elif mnemonic.startswith(("return", "throw")):
+        out = []
+    elif index + 1 < len(ins):
         out.append(index + 1)
-    return out
+    # An exception can be raised almost anywhere, so every handler is a successor of everything
+    # else. A handler's own move-exception overwrites its register, so this does not make the
+    # exception slot conflict with itself.
+    return out + [h for h in handlers if h != index]
 
 
 def check_method(ins, register_count, parameters, hierarchy):
     """Findings as (index, register, incoming types, what the use site required)."""
     pc_index = {pc: i for i, (pc, _n, _a) in enumerate(ins)}
+    handlers = handler_entries(ins)
 
     entry = [UNKNOWN] * register_count
     for slot, descriptor in enumerate(parameters):
@@ -234,7 +287,7 @@ def check_method(ins, register_count, parameters, hierarchy):
             if r:
                 after[r[0]] = UNKNOWN
 
-        for s in successors(ins, i, pc_index):
+        for s in successors(ins, i, pc_index, handlers):
             merged = state.get(s)
             if merged is None:
                 state[s] = list(after)
@@ -259,11 +312,21 @@ def check_method(ins, register_count, parameters, hierarchy):
                 demands.append((int(m.group(2)), m.group(3)))
                 if mnemonic.startswith("iput-object"):
                     demands.append((int(m.group(1)), m.group(4)))
-        elif mnemonic.startswith(("invoke-virtual", "invoke-direct", "invoke-interface")):
+        elif mnemonic.startswith("invoke"):
             m = _INVOKE.match(text)
             regs = _invoke_registers(text)
             if m and regs:
-                demands.append((regs[0], m.group(2)))
+                instance = not mnemonic.startswith("invoke-static")
+                if instance:
+                    demands.append((regs[0], m.group(2)))
+                # Arguments, which the first version of this ignored entirely. Emissions here
+                # hardcode invoke shapes, and this project has shipped four wrong ones; handing a
+                # Lpmy; to a parameter declared Landroid/content/Context; is the same class of
+                # load-time rejection as the receiver case and was invisible.
+                for register, declared in zip(regs[1:] if instance else regs,
+                                              _parameter_slots(m.group(4))):
+                    if declared is not None:
+                        demands.append((register, declared))
         for register, required in demands:
             if register < len(here) and here[register] == CONFLICT:
                 findings.append((i, register, required, mnemonic))

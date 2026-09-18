@@ -234,9 +234,15 @@ installs a pre-push hook that runs them, and warns loudly rather than passing qu
 is not present. A green CI run means the Kotlin and the constants agree; it does not mean the pins
 still hold.
 
-`driver` and `verify` skip in CI for the same reason and one more: they need `FLEXBOARD_BUNDLE`
-pointing at a built bundle. CI *has* one — it just built it — so wiring those two lanes up there is
-available work, and would mean the crash class is caught before a human downloads anything.
+`driver` and `verify` skip in CI for the same reason, and they always will. CI has the bundle — it
+just built it — but the driver applies a bundle *to the Gboard APK*, and that APK is gitignored and
+not redistributable. No bundle can substitute for it. The class-load check is a local gate, like
+the pins, and the artifact upload exists so that running it locally does not require cutting a
+release.
+
+(An earlier version of this paragraph said wiring those lanes into CI was available work. It is not,
+and the reason is the same missing APK that keeps preflight local — which is stated three paragraphs
+up. Worth recording as one more limitation asserted without checking.)
 
 They are three different axes, and no two of them substitute for each other. `0.0.1-dev.1`
 compiled and had correct bindings and still bricked the keyboard; `0.0.3-dev.1` compiled, had

@@ -183,6 +183,84 @@ class MergeDetection(unittest.TestCase):
         self.assertTrue(V.check_method(ins, 8, ["Lpvi;"], self.h))
 
 
+class InvokeArguments(unittest.TestCase):
+    """Arguments, not just the receiver — the bug class this project keeps writing."""
+
+    def setUp(self):
+        self.h = FakeHierarchy({"Lpvi;": None, "Lpmy;": None, "Landroid/content/Context;": None})
+
+    def test_a_conflicting_argument_is_reported(self):
+        ins = stream(
+            if_eqz(0, 3),
+            ("sget-object", "v3, Lpmy;->c:Lpmy;"),
+            goto(4),
+            ("move-object", "v3, v7"),
+            ("invoke-static", "{v3}, Lfoo;->bar(Landroid/content/Context;)V"),
+            ("return-void", ""),
+        )
+        findings = V.check_method(ins, 8, ["Landroid/content/Context;"], self.h)
+        self.assertTrue(findings, "an argument is as much a use site as a receiver")
+        self.assertEqual(findings[0][2], "Landroid/content/Context;")
+
+    def test_a_primitive_parameter_demands_nothing(self):
+        # The lattice models references; claiming a type for an int would invent findings.
+        ins = stream(
+            if_eqz(0, 3),
+            ("sget-object", "v3, Lpmy;->c:Lpmy;"),
+            goto(4),
+            ("move-object", "v3, v7"),
+            ("invoke-static", "{v3}, Lfoo;->bar(I)V"),
+            ("return-void", ""),
+        )
+        self.assertEqual(V.check_method(ins, 8, ["Lpvi;"], self.h), [])
+
+    def test_a_wide_parameter_does_not_shift_the_ones_after_it(self):
+        # A long occupies two registers. Miscounting here would misalign every later argument and
+        # report conflicts that are only an off-by-one in the checker.
+        self.assertEqual(V._parameter_slots("JLbar;"), [None, None, "Lbar;"])
+        self.assertEqual(V._parameter_slots("Lfoo;DLbar;"), ["Lfoo;", None, None, "Lbar;"])
+
+    def test_invoke_static_has_no_receiver_slot(self):
+        # Treating arg0 as a receiver on a static call shifts every argument by one.
+        ins = stream(
+            ("invoke-static", "{v7}, Lfoo;->bar(Lpvi;)V"),
+            ("return-void", ""),
+        )
+        self.assertEqual(V.check_method(ins, 8, ["Lpvi;"], self.h), [])
+
+
+class CatchHandlers(unittest.TestCase):
+    """ART merges register state at handler entries too."""
+
+    def setUp(self):
+        self.h = FakeHierarchy({"Lpvi;": None, "Lpmy;": None})
+
+    def test_handlers_are_successors_of_everything(self):
+        ins = stream(
+            ("nop", ""),
+            ("move-exception", "v0"),
+            ("return-void", ""),
+        )
+        self.assertEqual(V.handler_entries(ins), [1])
+        self.assertIn(1, V.successors(ins, 0, {0: 0, 1: 1, 2: 2}, [1]))
+
+    def test_a_handler_does_not_loop_to_itself(self):
+        ins = stream(("move-exception", "v0"), ("return-void", ""))
+        self.assertNotIn(0, V.successors(ins, 0, {0: 0, 1: 1}, [0]))
+
+    def test_a_conflict_reaching_a_handler_is_visible(self):
+        ins = stream(
+            ("sget-object", "v3, Lpmy;->c:Lpmy;"),   # one path types v3 as an enum
+            ("move-object", "v3, v7"),               # the other as the pointer
+            ("return-void", ""),
+            ("move-exception", "v0"),
+            ("iget-object", "v1, v3, Lpvi;->B:Lwzc;"),
+            ("throw", "v0"),
+        )
+        self.assertTrue(V.check_method(ins, 8, ["Lpvi;"], self.h),
+                        "the handler is reachable from both, so v3 conflicts there")
+
+
 class Parameters(unittest.TestCase):
     def test_instance_method_gets_its_receiver(self):
         self.assertEqual(V.parameters_of("Lfoo;->m(Lbar;)V", False), ["Lfoo;", "Lbar;"])
