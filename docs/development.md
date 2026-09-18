@@ -160,7 +160,7 @@ alone once a few months have passed.
 |---|---|---|
 | **JDK 21** | everything Gradle | `JAVA_HOME=$(/usr/libexec/java_home -v 21)` |
 | **GitHub Packages credentials** | Gradle cannot *configure* without them | below |
-| **Python 3** | five of the nine gate lanes, the unit tests, every tool in `tools/apk/` | 3.9 works; nothing pins a version, and CI runs whatever `ubuntu-latest` ships |
+| **Python 3.9+** | seven of the twelve gate lanes, the unit tests, every tool in `tools/apk/` | `tools/gate` asserts the floor and prints the version. Not pinned exactly: CI runs whatever `ubuntu-latest` ships, so the floor is the only thing both sides can agree on |
 | **`gh`, authenticated** | downloading the bundle artifact, watching CI | `gh auth status` |
 | **The pinned APK** as `gboard.apk`, and its dex extracted to `gboard-apk/` | every dex and resource pin, the driver, the verifier | gitignored; not redistributable |
 | **Android SDK** | `buildAndroid` and `generatePatchesList` **only** | not needed for anything else, including applying a bundle |

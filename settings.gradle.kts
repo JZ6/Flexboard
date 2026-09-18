@@ -32,6 +32,11 @@ include(":stubs")
 // extension-check/build.gradle.kts.
 include(":extension-check")
 
+// Unit tests for the patch helpers. Separate from :patches because that module depends on
+// :extensions:extension, whose dex task needs the Android SDK — which would make even
+// compileTestKotlin unrunnable here. See patches-check/build.gradle.kts.
+include(":patches-check")
+
 // Applies a built bundle to the stock APK on the desk — Morphe Manager's patch pipeline, run
 // locally. See driver/ and docs/development.md's check matrix.
 include(":driver")

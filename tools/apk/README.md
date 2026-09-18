@@ -15,6 +15,8 @@ Everything the `docs/` findings rest on was produced with these three files.
 | `glyphs.py` | Matches the APK's stripped vector drawables against published Material Icons SVGs, by geometry rather than by name. |
 | `preflight.py` | Runs every patch-time assertion against a dex, so a moved binding fails here instead of on a phone |
 | `check_patch_resources.py` | Dress rehearsal of the resource half of a release: decodes the APK with arsclib (once, cached), replays the bundle's resource writes onto the tree, DOM-parses every touched file, then rebuilds the whole resource table. Fails on the desk exactly where Morphe would fail on the phone (bad type names, malformed XML). Cache: `~/.cache/flexboard`. |
+| `patched.py` | Reads a *patched* APK and diffs one method against the stock one. The only thing here that looks at what the patcher produced rather than at what Gboard ships |
+| `verify.py` | Type-merge and extension-reference check over every method a patch changed — the class of bug ART rejects at class load |
 | `ArsclibRoundTrip.java` | 60-line java shim used by `check_patch_resources.py` (`decode`/`encode` modes); compiles on demand, needs only the pinned arsclib jar |
 
 ## Setup
@@ -196,6 +198,37 @@ Most names come back as `0_resource_name_obfuscated` — Gboard is built with aa
 `--collapse-resource-names`, and only 619 of 33,287 entries keep a real name. Which ones survive,
 and why it matters for resource patches, is in
 [`../../docs/gboard-bindings.md`](../../docs/gboard-bindings.md).
+
+## Read what the patcher produced
+
+Everything above reads the APK Gboard ships. These two read the output, which until recently
+nothing did — and that gap let two releases of a keyboard that would not open get out, followed by
+three confident diagnoses from the stock disassembly, at least two of them wrong.
+
+Get a bundle without cutting a release, apply it, and read the result:
+
+```bash
+gh run download --name patches-bundle --dir /tmp/mpp        # any push
+FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate          # driver + verify lanes
+```
+
+Or by hand, against an APK Morphe Manager built:
+
+```bash
+tools/apk/patched.py flexboard.apk 'Lpvf;->t(Lpvi;Landroid/view/MotionEvent;I)V' --stock gboard-apk
+tools/apk/verify.py  flexboard.apk --changed-from gboard-apk
+```
+
+`patched.py` diffs the instruction sequence, not the pcs — inserting instructions renumbers every
+pc after the seam, and aligning on pc reports the whole tail as changed. It flags a frame that
+changed size, and removed instructions, because these emissions insert and none should excise.
+
+`verify.py` propagates register types over the real control-flow graph and reports a conflict that
+reaches an instruction requiring a type. `--changed-from` finds every method the patch touched by
+diffing against stock, so nothing has to be named. It is deliberately quiet: types come only from
+instructions that state one, unknowns are never reported, and a conflict in a register nobody reads
+is legal and ignored. On the APK that crashed it names one method; across 3,001 untouched Gboard
+methods it finds nothing.
 
 ## What these deliberately do not do
 
