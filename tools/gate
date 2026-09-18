@@ -81,10 +81,22 @@ fi
 # opt-in rather than auto-downloading: a gate lane that reaches the network is a gate lane that
 # fails for reasons unrelated to the code.
 if [ -n "${FLEXBOARD_BUNDLE:-}" ] && [ -e "$FLEXBOARD_BUNDLE" ] && have_apk; then
+    patched_out="$(mktemp -d)/patched.apk"
     lane "driver" ./gradlew :driver:run -q \
-        --args="$(python3 -c "import os;print(os.path.realpath('gboard.apk'))") $FLEXBOARD_BUNDLE $(mktemp -d)/patched.apk"
+        --args="$(python3 -c "import os;print(os.path.realpath('gboard.apk'))") $FLEXBOARD_BUNDLE $patched_out"
+
+    # The driver proves the patches *apply*. It writes a dex and never loads one, so a method ART
+    # would reject at class load passes it without complaint -- that is exactly what shipped twice.
+    # This reads the output and checks every method the patch changed, which on this bundle is
+    # seventeen and takes a couple of seconds.
+    if [ -e "$patched_out" ]; then
+        lane "verify" python3 tools/apk/verify.py "$patched_out" --changed-from gboard-apk
+    else
+        skip "verify" "the driver produced no APK, so there is nothing to check"
+    fi
 else
-    skip "driver" "set FLEXBOARD_BUNDLE to a built .mpp to execute the patches (gh release download <tag>)"
+    skip "driver" "set FLEXBOARD_BUNDLE to a built .mpp to execute the patches (gh run download --name patches-bundle)"
+    skip "verify" "needs the driver's output; set FLEXBOARD_BUNDLE"
 fi
 
 if [ "$run_resources" -eq 0 ]; then

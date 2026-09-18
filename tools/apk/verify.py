@@ -304,8 +304,76 @@ def parameters_of(descriptor, is_static):
     return out if is_static else [owner] + out
 
 
+def method_bodies(dexes):
+    """(registers, size) per method descriptor — enough to tell changed from untouched."""
+    out = {}
+    for d in dexes:
+        for _cname, _af, cd in d.classes():
+            for m, _maf, co in d.class_methods(cd):
+                if not co:
+                    continue
+                c = d.code(co)
+                if c is not None:
+                    out[m] = (c["registers"], c["insns_size"])
+    return out
+
+
+def changed_methods(stock_tree, patched_dexes):
+    """Descriptors present in both builds whose body differs.
+
+    Methods the patch *added* are excluded: an extension class has no stock counterpart, and a
+    method that exists only in the patched build cannot have a merge conflict with a path that
+    does not exist.
+    """
+    stock = method_bodies(dexlib.load(stock_tree))
+    patched = method_bodies(patched_dexes)
+    return sorted(m for m, body in patched.items() if m in stock and stock[m] != body)
+
+
+def check_all(apk, stock_tree):
+    """Verify every method the patch changed. Returns the number with findings."""
+    with tempfile.TemporaryDirectory() as tmp:
+        extract(apk, tmp)
+        dl = dexlib.load(tmp)
+        hierarchy = Hierarchy(dl)
+        targets = changed_methods(stock_tree, dl)
+
+        print(f"  {len(targets)} method(s) changed by the patch")
+        bad = 0
+        for descriptor in targets:
+            d, c, maf = ddis.find(descriptor, dl)
+            if not c:
+                continue
+            ins = ddis.disasm(d, c)
+            findings = check_method(ins, c["registers"],
+                                    parameters_of(descriptor, bool(maf & 0x8)), hierarchy)
+            mark = "FAIL" if findings else "ok  "
+            print(f"    {mark} {descriptor[:92]}")
+            for index, register, required, _nm in findings:
+                pc, nm, a = ins[index]
+                print(f"         pc {pc}: v{register} conflicts, `{nm}` requires {required}")
+                print(f"         {nm} {a}")
+            bad += 1 if findings else 0
+    return bad
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
+
+    if "--changed-from" in sys.argv:
+        stock_tree = sys.argv[sys.argv.index("--changed-from") + 1]
+        args = [a for a in args if a != stock_tree]
+        if len(args) != 1:
+            print(__doc__.strip().split("## Use")[1].strip(), file=sys.stderr)
+            return 2
+        bad = check_all(args[0], stock_tree)
+        print()
+        if bad:
+            print(f"  {bad} method(s) would be rejected at class load")
+            return 1
+        print("  no changed method has a conflicting register reaching a typed use")
+        return 0
+
     if len(args) != 2:
         print(__doc__.strip().split("## Use")[1].strip(), file=sys.stderr)
         return 2

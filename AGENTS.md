@@ -27,9 +27,12 @@ JVM, and CI uploads a bundle on **every push**, not only on releases:
 
 ```
 gh run download --name patches-bundle --dir /tmp/mpp      # any push
-FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate        # applies it
-tools/apk/verify.py <out.apk> '<descriptor>'              # then read the result
+FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate        # applies it, then verifies it
 ```
+
+That turns on two lanes. `driver` applies the bundle; `verify` reads the result and type-checks
+**every method the patch changed** — seventeen on the current bundle, found by diffing against
+stock rather than by anyone naming them. Nothing has to be remembered.
 
 **Test a patch change before shipping it, not by shipping it.** Until the artifact step existed the
 only way to get a bundle was to cut a release, which is how two builds of a keyboard that would not
