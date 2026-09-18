@@ -154,6 +154,17 @@ alone once a few months have passed.
 
 ## Building
 
+### Prerequisites
+
+| | For | Notes |
+|---|---|---|
+| **JDK 21** | everything Gradle | `JAVA_HOME=$(/usr/libexec/java_home -v 21)` |
+| **GitHub Packages credentials** | Gradle cannot *configure* without them | below |
+| **Python 3** | five of the nine gate lanes, the unit tests, every tool in `tools/apk/` | 3.9 works; nothing pins a version, and CI runs whatever `ubuntu-latest` ships |
+| **`gh`, authenticated** | downloading the bundle artifact, watching CI | `gh auth status` |
+| **The pinned APK** as `gboard.apk`, and its dex extracted to `gboard-apk/` | every dex and resource pin, the driver, the verifier | gitignored; not redistributable |
+| **Android SDK** | `buildAndroid` and `generatePatchesList` **only** | not needed for anything else, including applying a bundle |
+
 Credentials for the Morphe package registry are needed for anything at all — the
 `app.morphe.patches` plugin resolves from GitHub Packages, so without them Gradle cannot even
 configure the build:
@@ -185,12 +196,20 @@ release cycle to discover.
 JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew buildAndroid
 ```
 
-The bundle lands at `patches/build/libs/patches-*.mpp`, and can be applied with
-[Morphe Desktop](https://github.com/MorpheApp/morphe-desktop) like any other patch bundle. The
-extension is an Android library, so this half does need an SDK — but note that the SDK buys
-*packaging*, not verification: it still never applies the bundle to an APK. If you cannot install
-one, `:patches:compileKotlin` plus [`../tools/apk/preflight.py`](../tools/apk/README.md) covers
-everything CI would have told you, and CI builds the bundle anyway.
+The bundle lands at `patches/build/libs/patches-*.mpp`. The extension is an Android library, so
+this half does need an SDK.
+
+**You almost certainly do not need to do this.** The SDK buys *packaging*, and CI packages on every
+push — including non-release pushes, as a downloadable artifact. Everything downstream of a bundle,
+including applying one to an APK, runs here without it:
+
+```bash
+gh run download --name patches-bundle --dir /tmp/mpp
+FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate
+```
+
+That turns on the `driver` and `verify` lanes. The only thing the SDK adds is building a bundle from
+*uncommitted* work, rather than from what CI built for your last push.
 
 ### What each check can and cannot see
 
@@ -203,21 +222,46 @@ everything CI would have told you, and CI builds the bundle anyway.
 | `.github/scripts/check_emission_lint.py` | smali block structure (trailing/dangling labels, const width) | interpolated values — those are computed at patch time |
 | `tools/apk/preflight.py` | bindings that moved or changed shape | Kotlin that does not compile; behaviour |
 | `tools/apk/check_patch_resources.py` | resource write/merge/encode failures, with arsclib itself | dex; needs the target APK, so it is local-only |
-| `./gradlew :driver:run --args="gboard.apk <bundle>.mpp out.apk"` | the whole pipeline, executed for real — the only gate that *runs* the patches. Needs a built bundle (any released/CI one); with an SDK installed, `patches/build/libs/*.mpp` works too | the artifact is unsigned and lacks the merged extension dex — it proves the pipeline, it is not for installing |
+| `./gradlew :driver:run --args="<abs>/gboard.apk <bundle>.mpp out.apk"` | the whole pipeline, executed for real — patch-time crashes, failing assertions, resource encode | **class loading** (it writes a dex, never loads one) and behaviour. Needs no SDK; paths must be absolute |
+| `tools/apk/verify.py <out.apk> --changed-from gboard-apk` | a register holding conflicting types where an instruction requires one — what ART rejects at class load | anything a type cannot express; unknown types are never reported |
+| `tools/apk/patched.py <out.apk> '<descriptor>' --stock gboard-apk` | what an emission *actually* produced, diffed against stock | nothing automatically — it is a read, not a check — the only gate that *runs* the patches. Needs a built bundle (any released/CI one); with an SDK installed, `patches/build/libs/*.mpp` works too | the artifact is unsigned and lacks the merged extension dex — it proves the pipeline, it is not for installing |
 | Morphe + a device | everything else | nothing — but it is the slowest loop |
 
-**Only the first five run in CI.** `preflight.py` and `check_patch_resources.py` both need the
+**CI runs `tools/gate`, and five of its nine lanes do anything there.** `preflight.py` and `check_patch_resources.py` both need the
 Gboard APK, which is gitignored and cannot be redistributed, so the ~260 dex and resource pins —
 the whole defence against a Gboard bump — are a local gate. `git config core.hooksPath tools/hooks`
 installs a pre-push hook that runs them, and warns loudly rather than passing quietly when the APK
 is not present. A green CI run means the Kotlin and the constants agree; it does not mean the pins
 still hold.
 
+`driver` and `verify` skip in CI for the same reason and one more: they need `FLEXBOARD_BUNDLE`
+pointing at a built bundle. CI *has* one — it just built it — so wiring those two lanes up there is
+available work, and would mean the crash class is caught before a human downloads anything.
+
 They are three different axes, and no two of them substitute for each other. `0.0.1-dev.1`
 compiled and had correct bindings and still bricked the keyboard; `0.0.3-dev.1` compiled, had
 correct bindings, applied cleanly, and silently called the wrong method.
 
 `2.1.1-dev.0` added a fourth to that list, and it is the one to read before trusting a green run.
+
+### Three beliefs that were wrong, and what they cost
+
+Each of these was written down here once, believed for months, and shaped how the work was done.
+None was ever tested.
+
+**"`:driver:run` needs the Android SDK."** It does not. The SDK builds a bundle; the driver takes one
+as an argument. This was in `AGENTS.md`, in the driver's own build file, and in this document, while
+the driver sat unused — so every patch-time failure was discovered by installing on a phone. Four
+device round-trips in one session, all avoidable.
+
+**"A bundle only exists if you cut a release."** It did, until CI started uploading one on every
+push. Until then, the only way to test a patch change was to publish it — which is how two builds of
+a keyboard that would not open reached everyone who had selected the patch.
+
+**"The driver's output lacks the merged extension dex."** It carries all seventeen extension classes.
+
+The pattern is the same each time: a limitation asserted once, never re-checked, and treated as
+fact. When something here says you cannot do a thing locally, try it before believing it.
 
 ### A green gate that was not a gate
 
