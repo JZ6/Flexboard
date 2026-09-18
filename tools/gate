@@ -62,6 +62,10 @@ have_apk() { [ -e gboard.apk ] && [ -d gboard-apk ]; }
 # shipped while the lanes built on them reported PASS.
 lane "unit tests"     python3 -m unittest discover -s tools/tests -t tools/tests -q
 lane "compile"        ./gradlew :patches:compileKotlin :extension-check:compileJava -q
+# The extension's own logic -- the blob parser, the label clamp, the icon resolution -- run on a
+# desktop JVM. Everything above compiles it; nothing else has ever executed it, and the one bug we
+# know shipped in that file was pure logic.
+lane "extension"      ./gradlew :extension-check:extensionTests -q
 lane "constants"      python3 .github/scripts/check_shared_constants.py
 lane "dex pins"       python3 .github/scripts/check_dex_pins.py
 lane "emission lint"  python3 .github/scripts/check_emission_lint.py

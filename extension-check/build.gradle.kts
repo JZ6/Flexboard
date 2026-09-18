@@ -27,3 +27,22 @@ sourceSets {
 dependencies {
     compileOnly(project(":stubs"))
 }
+
+// Running the extension's own logic, not just compiling it.
+//
+// `src/test/java` here is a plain source set on the same classpath as main, not a JUnit suite:
+// this module exists to prove the extension builds without the Android SDK, and adding a test
+// framework to it to prove that would undercut the point. The tests are assertions and a main(),
+// the same trade the Python suite makes with stdlib unittest.
+sourceSets {
+    named("main") {
+        java.srcDir("src/test/java")
+    }
+}
+
+tasks.register<JavaExec>("extensionTests") {
+    description = "Runs the extension's blob, label and icon logic on a desktop JVM."
+    group = "verification"
+    mainClass.set("dev.jz6.flexboard.extension.ExtensionTests")
+    classpath = sourceSets["main"].runtimeClasspath
+}
