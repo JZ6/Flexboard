@@ -762,12 +762,20 @@ def live_free(ins, register_count, at_pc):
 
 # The floor for the check count. Not the exact number: adding a pin should not require editing
 # two places. It exists to catch a *collapse*, which is what an empty dex-derived list causes.
-MINIMUM_CHECKS = 290
+MINIMUM_CHECKS = 314
+
+# And the floor when an APK is supplied too, which is how the gate runs it. Two numbers because the
+# resource pins only exist in that mode: a single floor either has to sit below the dex-only count,
+# which leaves twenty-odd resource pins free to vanish unnoticed, or above it, which breaks the
+# dex-only run. The whole point of a floor is that it sits just under the real number.
+MINIMUM_CHECKS_WITH_APK = 334
 
 
 class Report:
     def __init__(self):
         self.rows = []
+        # Set once an APK is opened, which unlocks the resource pins and so a higher floor.
+        self.saw_apk = False
 
     def __call__(self, name, ok, detail=''):
         self.rows.append((bool(ok), name, detail))
@@ -805,9 +813,10 @@ class Report:
         # appear, and the run still prints N/N passed. That is the concrete mechanism behind
         # AGENTS.md's "a pin count is a statement about Gboard, not about the build", and the only
         # defence is to notice that the count fell. Raise it when the real count rises.
-        if len(self.rows) < MINIMUM_CHECKS:
+        floor = MINIMUM_CHECKS_WITH_APK if self.saw_apk else MINIMUM_CHECKS
+        if len(self.rows) < floor:
             print(f'\nFAIL  preflight produced {len(self.rows)} checks, fewer than the '
-                  f'{MINIMUM_CHECKS} it is expected to run. Rows are emitted inside loops over '
+                  f'{floor} it is expected to run. Rows are emitted inside loops over '
                   f'dex-derived lists; a list that came back empty removes its checks silently '
                   f'and leaves the total looking clean.')
             failed += 1
@@ -873,6 +882,7 @@ def run(dl, apk=None):
     B, E = BINDINGS, EXPECTED
     store, config, delegate = B['store'], B['config'], B['delegate']
     check = Report()
+    check.saw_apk = apk is not None
 
     # ---- preference store
     #

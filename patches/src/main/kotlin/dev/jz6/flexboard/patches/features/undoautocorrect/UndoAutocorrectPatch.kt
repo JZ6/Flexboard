@@ -50,8 +50,9 @@ val undoAutocorrectPatch = bytecodePatch(
     name = "Swipe up to undo autocorrect",
     description = "Swipe up on the keyboard to put back the word an autocorrect replaced. Gboard " +
         "has the same undo on backspace, behind a setting; this adds a gesture for it and works " +
-        "whether or not that setting is on. A swipe with nothing to undo does nothing. Off by " +
-        "default until it has been confirmed on a device.",
+        "whether or not that setting is on. A swipe with nothing to undo does nothing. Cannot be " +
+        "used alongside \"Swipe up diagnostic (temporary)\", which attaches to the same " +
+        "instruction. Off by default until it has been confirmed on a device.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)

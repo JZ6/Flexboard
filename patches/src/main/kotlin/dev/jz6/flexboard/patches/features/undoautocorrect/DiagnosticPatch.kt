@@ -54,18 +54,20 @@ private const val GESTURE_PROBE =
  * means the consume branch is wrong; intermittency means the sensitivity default did not take.
  *
  * Do not enable this alongside *Swipe up to undo autocorrect*. Both attach to the same instruction
- * in `Lpvf;->t`, and selecting both emits two guards at one anchor: a swipe would delete a
- * character *and* dispatch a revert. Morphe has no way to declare that two patches are mutually
- * exclusive, so this paragraph is the only thing preventing it.
+ * in `Lpvf;->t`. Morphe has no way to declare that two patches are mutually exclusive, so for a
+ * while this paragraph was the only thing preventing it; the emitter's guard now refuses any prior
+ * Flexboard emission at the anchor, so selecting both fails the patch instead of stacking two
+ * guards. `tools/gate` asserts that failure, because a guard nobody tests is a guard that regresses
+ * to a comment.
  */
 @Suppress("unused")
 val undoAutocorrectDiagnosticPatch = bytecodePatch(
     name = "Swipe up diagnostic (temporary)",
-    description = "Diagnostic build only. Swipe up on a key to delete a character, which proves " +
-        "whether the swipe gesture is being detected at all. Do not enable this at the same time " +
-        "as \"Swipe up to undo autocorrect\" — they attach to the same place and you would get " +
-        "both effects. Off by default, and this patch will be removed once it has answered its " +
-        "question.",
+    description = "Diagnostic build only. Swipe up on a key to type a marker character, which " +
+        "proves whether the swipe gesture is being detected at all without eating any text. " +
+        "Cannot be used alongside \"Swipe up to undo autocorrect\" — they attach to the same " +
+        "instruction, and selecting both fails the patch rather than giving you both effects. Off " +
+        "by default, and this patch will be removed once it has answered its question.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)

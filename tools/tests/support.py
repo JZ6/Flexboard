@@ -15,7 +15,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
-for _path in (ROOT / "tools" / "apk", ROOT / ".github" / "scripts"):
+for _path in (ROOT / "tools" / "apk", ROOT / "tools", ROOT / ".github" / "scripts"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 

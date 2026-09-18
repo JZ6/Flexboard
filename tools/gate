@@ -48,6 +48,34 @@ lane() {
     fi
 }
 
+# A lane that passes when the command *fails*. For checks whose whole point is that something is
+# refused: a guard that is never seen to fire is indistinguishable from a guard that has quietly
+# stopped firing, which is exactly how the mutual exclusion below decayed into a comment.
+# The message is required, not just the failure. Any command can fail -- a typo in a patch name, a
+# missing bundle, a Gradle hiccup -- and all of those would light this lane green while the thing it
+# guards quietly stopped working. It has to fail *for the stated reason*.
+lane_must_fail() {
+    name=$1
+    expected=$2
+    shift 2
+    printf '\n=== %s ===\n' "$name"
+    # Guarded by `if`, because a bare `out=$(...)` of a failing command exits the whole gate under
+    # `set -e` -- which this lane runs into by construction, since it only ever runs failing things.
+    if out=$("$@" 2>&1); then status=0; else status=$?; fi
+    printf '%s\n' "$out" | tail -20
+    if [ "$status" -eq 0 ]; then
+        printf '  the command succeeded, and this lane exists because it must not\n'
+        record "$name" FAIL
+        failed=$((failed + 1))
+    elif ! printf '%s' "$out" | grep -qF "$expected"; then
+        printf '  it failed, but not for the stated reason: expected %s\n' "$expected"
+        record "$name" FAIL
+        failed=$((failed + 1))
+    else
+        record "$name" PASS
+    fi
+}
+
 skip() {
     printf '\n=== %s ===\n  SKIPPED: %s\n' "$1" "$2"
     record "$1" "SKIP"
@@ -116,14 +144,15 @@ if [ -n "${FLEXBOARD_BUNDLE:-}" ] && [ -e "$FLEXBOARD_BUNDLE" ] && have_apk; the
     patched_out="$(mktemp -d)/patched.apk"
     apk_path="$(python3 -c "import os;print(os.path.realpath('gboard.apk'))")"
 
-    bundle_version="$(basename "$FLEXBOARD_BUNDLE" | sed -E 's/^patches-(.*)\.mpp$/\1/')"
-    tree_version="$(sed -nE 's/^version *= *(.+)$/\1/p' gradle.properties | tr -d ' ')"
-    if [ "$bundle_version" != "$tree_version" ]; then
-        printf '  bundle is %s but gradle.properties says %s\n' "$bundle_version" "$tree_version"
-        printf '  a stale bundle tests the code it was built from, not this tree\n'
-        stale_reason="bundle $bundle_version does not match the tree's $tree_version"
-    else
+    # Version, build time against the last commit touching the patch sources, and whether those
+    # sources are even committed. The filename was the first attempt and was not enough: two
+    # bundles can both be called 2.5.0-dev.3 and differ by every commit in between.
+    if freshness=$(python3 tools/bundle_freshness.py "$FLEXBOARD_BUNDLE" 2>&1); then
+        printf '%s\n' "$freshness"
         bundle_ready=1
+    else
+        printf '%s\n' "$freshness"
+        stale_reason="$(printf '%s' "$freshness" | sed -n '1s/^ *//p')"
     fi
 fi
 
@@ -139,6 +168,13 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     lane "driver +probe" ./gradlew :driver:run -q \
         --args="$apk_path $FLEXBOARD_BUNDLE $(mktemp -d)/probe.apk +Swipe up diagnostic (temporary)"
 
+    # And the pair must be refused. Morphe cannot declare two patches mutually exclusive, so the
+    # only thing enforcing it is a guard in the emitter -- one that counted a single descriptor,
+    # stopped matching when the diagnostic moved to an extension probe, and went unnoticed because
+    # nothing ever asked to see it fire.
+    lane_must_fail "driver +both" "already carries a Flexboard emission" ./gradlew :driver:run -q \
+        --args="$apk_path $FLEXBOARD_BUNDLE $(mktemp -d)/both.apk +Swipe up to undo autocorrect +Swipe up diagnostic (temporary)"
+
     # The driver proves the patches *apply*. It writes a dex and never loads one, so a method ART
     # would reject at class load passes it without complaint -- that is exactly what shipped twice.
     # This reads the output and checks every method the patch changed, which on this bundle is
@@ -150,9 +186,15 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     fi
 elif [ -n "${stale_reason:-}" ]; then
     skip "driver" "$stale_reason"
+    skip "driver +undo" "$stale_reason"
+    skip "driver +probe" "$stale_reason"
+    skip "driver +both" "$stale_reason"
     skip "verify" "needs a bundle built from this tree"
 else
     skip "driver" "set FLEXBOARD_BUNDLE to a built .mpp to execute the patches (gh run download --name patches-bundle)"
+    skip "driver +undo" "set FLEXBOARD_BUNDLE to a built .mpp"
+    skip "driver +probe" "set FLEXBOARD_BUNDLE to a built .mpp"
+    skip "driver +both" "set FLEXBOARD_BUNDLE to a built .mpp"
     skip "verify" "needs the driver's output; set FLEXBOARD_BUNDLE"
 fi
 
