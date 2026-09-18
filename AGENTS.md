@@ -22,13 +22,18 @@ goes unseen. That is exactly how the toolbar broke.
 wrong file and sends the reader into someone else's five thousand lines.
 
 **There is no Android SDK here**, so `:patches:buildAndroid` and `generatePatchesList` cannot run.
-**`:driver:run` can.** The SDK was only ever needed to *build* a bundle, and CI attaches one to
-every release:
+**`:driver:run` can.** The SDK is only needed to *build* a bundle; applying one needs nothing but a
+JVM, and CI uploads a bundle on **every push**, not only on releases:
 
 ```
-gh release download <tag> --dir /tmp/mpp
-FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate
+gh run download --name patches-bundle --dir /tmp/mpp      # any push
+FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate        # applies it
+tools/apk/verify.py <out.apk> '<descriptor>'              # then read the result
 ```
+
+**Test a patch change before shipping it, not by shipping it.** Until the artifact step existed the
+only way to get a bundle was to cut a release, which is how two builds of a keyboard that would not
+open reached people who had selected the patch.
 
 That turns the `driver` lane on, which is the only lane that executes the patches rather than
 inspecting them from the outside. It found a real shipped bug within minutes of first being run.

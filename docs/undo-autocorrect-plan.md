@@ -187,9 +187,10 @@ Concretely, in order of cost:
 
    It is deliberately not a `tools/gate` lane: the gate has no way to produce a patched APK, and a
    lane that can only ever skip is worse than a documented command.
-2. **A merge check over the patched method.** Once the patched dex is readable, the existing
-   `live_free` can run on it, and a register whose incoming type differs across predecessors can be
-   flagged. This is a real check rather than the liveness approximation that shipped.
+2. ~~**A merge check over the patched method.**~~ — **done.** `tools/apk/verify.py` propagates
+   register types over the real control-flow graph and reports a conflict that reaches an
+   instruction requiring a type. On the installed dev.1 APK it names `v3` at pc 238; on dev.2 it is
+   silent; across 3,001 untouched Gboard methods it finds nothing.
 3. ~~**`:driver:run`**~~ — **done, and it was never blocked.** The SDK is needed to *build* a
    bundle, not to apply one, and CI attaches a built `.mpp` to every release:
 
@@ -232,9 +233,14 @@ time.
 
 Each is a release on its own, smallest first, so a failure names itself.
 
-**0. Read what we ship.** Build `tools/apk/patched.py`; disassemble the *currently broken* dev.1
-emission and find out what actually went wrong. This is worth doing even though the code is being
-replaced, because "we never found out" is how the same mistake returns in the handler.
+**0. ~~Read what we ship.~~ Done, and it changed the plan.** `tools/apk/patched.py` showed the
+dev.1 emission had no handover in it at all. `:driver:run` turned out never to have been blocked by
+the missing SDK, `tools/apk/verify.py` now catches the crash class automatically, and CI uploads a
+bundle on every push. The loop is: push, download the artifact, apply, verify — no release, nothing
+published.
+
+That also reopens the branch approach. It was abandoned on the strength of a failure that was a
+no-op, and it can now be tried with the failure mode caught locally instead of on a phone.
 
 **1. Can a handler attach at all?** The cheapest possible probe: a handler that does nothing but
 type a marker on any touch, spliced into the Latin layout behind a preference. If Gboard does not

@@ -35,7 +35,6 @@ the obvious next tool and belongs on top of this one.
 
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import zipfile

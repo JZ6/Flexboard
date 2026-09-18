@@ -151,6 +151,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew buildAndroid --no-daemon
 
+      # The bundle, on every push, whether or not this is a release.
+      #
+      # Building one needs the Android SDK, which no desk here has; applying one does not. Until
+      # this step existed the only way to obtain a bundle was to cut a release, so testing a patch
+      # change meant shipping it first -- which is how two builds of a keyboard that would not open
+      # reached people who had selected the patch.
+      #
+      # With this, the loop is: push, download the artifact, `FLEXBOARD_BUNDLE=... tools/gate` to
+      # apply it, then `tools/apk/verify.py` on the result. No release, no version bump, nothing
+      # published.
+      - name: Upload the bundle for local testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: patches-bundle
+          path: patches/build/libs/*.mpp
+          if-no-files-found: error
+          # Long enough to be useful while iterating, short enough not to accumulate.
+          retention-days: 14
+
       # download_url is built from the version, so a filename that disagrees would publish a bundle
       # nobody can download. Asserted rather than assumed.
       - name: Check the bundle filename
