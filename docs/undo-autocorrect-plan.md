@@ -126,9 +126,57 @@ This is a real option and it is strictly better than what shipped. It is still a
 though: it requires our code to run inside `handleActionUp` and persuade Gboard it already did
 something. The handler approach means never being in that method at all.
 
+## Answered: Gboard does not instantiate handlers by reflection
+
+This was the first open question at the bottom of this document, and the one Option A rests on. It
+is answerable from the dex, and the answer is **no**, which makes Option A materially bigger than
+this plan claimed.
+
+The handler class names are unobfuscated — `ScrubDeleteMotionEventHandler` survives in a build where
+everything else is `Lpvf;` — which looks like reflection and is not. What actually happens:
+
+```
+Leqt;->ba()Llhl;                       # a 44-entry map, built in code
+  const-string  '…motioneventhandler.scrubmove.ScrubDeleteMotionEventHandler'
+  sget-object   Lmlt;->a:Liwp;         # → a provider singleton
+  invoke-virtual Lvvz;->a(Object, Object)V
+  const-string  '.motioneventhandler.scrubmove.ScrubDeleteMotionEventHandler'   # short form too
+  …
+```
+
+and the provider hands off to a factory that is a plain switch:
+
+```
+Lhxr;->a(Landroid/content/Context;Lpvo;)Lpvn;
+   0: iget          v0, v0, Lhxr;->a:I
+   2: packed-switch v0, -> 54
+   5: new-instance  v0, …scrubmove/ScrubDeleteMotionEventHandler;
+   7: invoke-direct {v0, v1, v2}, …-><init>(Context, Lpvo;)V
+  10: return-object v0
+  …
+```
+
+`Class.forName` appears 96 times in the APK and **not once** anywhere near a motion event handler.
+The names survive R8 because they are string keys in a table, not because anything reflects on them.
+
+So the handler set is closed at compile time. Naming `dev.jz6.flexboard.extension.UndoMotionEventHandler`
+in the layout XML would resolve against a 44-entry map, miss, and do nothing — or crash, depending on
+how the miss is handled. **The XML splice alone cannot work.**
+
+Option A therefore needs, beyond what is listed below: a provider object of the shape the map values
+have (`<init>(I)V`, `b()`, `iM()Ljava/lang/Object;` — a tag plus a supplier), and a bytecode insert
+adding our name and provider into `Leqt;->ba()`. That insert is at least a *friendly* shape — a
+linear run of `const-string` / `sget-object` / `invoke-virtual` with no branch and no merge, so it is
+not the register-contract problem that broke dev.0 and dev.1. But it is a fifth piece of work on a
+plan that listed four, and it puts a Flexboard object inside a Gboard lookup table.
+
+Not yet established: exactly which interface a custom provider must implement. `Liwp;` and `Lpun;`
+are both used as values in the same map, so the consumer casts to something they share; that common
+type has not been read out yet, and it decides whether the extension can supply one at all.
+
 ## Options
 
-**A. Motion event handler in the extension** *(recommended)*
+**A. Motion event handler in the extension** *(recommended — but see above; the cost is understated)*
 Write a handler, attach it in the layout XML beside the scrub's, claim the pointer on an upward
 flick, dispatch the revert.
 *For:* the mechanism the goal describes; no register contracts; no merge; keypress never starts;
@@ -264,8 +312,10 @@ all the others debuggable.
 
 ## Open questions
 
-- Does Gboard instantiate handlers by reflection from the class name? If so, does R8 shrinking or
-  the manifest affect a class that only the XML references?
+- ~~Does Gboard instantiate handlers by reflection from the class name?~~ **Answered: no.** A
+  44-entry compile-time map from name to provider, and a switch that constructs. See above. The
+  follow-on question is which interface a provider must implement for the map's consumer to accept
+  it.
 - Which layouts need it — Latin only, or every alphabet layout?
 - Does a handler claiming the pointer suppress the keypress **and** leave the scrub unaffected when
   both are attached?
