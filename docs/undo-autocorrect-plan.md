@@ -170,9 +170,50 @@ linear run of `const-string` / `sget-object` / `invoke-virtual` with no branch a
 not the register-contract problem that broke dev.0 and dev.1. But it is a fifth piece of work on a
 plan that listed four, and it puts a Flexboard object inside a Gboard lookup table.
 
-Not yet established: exactly which interface a custom provider must implement. `Liwp;` and `Lpun;`
-are both used as values in the same map, so the consumer casts to something they share; that common
-type has not been read out yet, and it decides whether the extension can supply one at all.
+### The consumer, read out in full
+
+`Lozj;->i(I)Lpvn;` is `MotionEventHandlerManager.newHandlerInstance` — the file and method names are
+in the log strings three instructions later, so this is not inference:
+
+```
+ 25: iget-object   v4, v0, KeyboardViewDef$MotionEventHandlerInfo;->…   # the class name from the XML
+ 43: invoke-virtual {v5, v4}, Lvwd;->get(Object)Object                  # the 44-entry map
+ 47: check-cast    v4, Labjb;                                           # ← the provider
+ 49: if-eqz        v4, -> 61                                            # ← a miss is null, not a throw
+ 51: invoke-interface {v4}, Labjb;->iM()Object                          # → the factory
+ 55: check-cast    v4, Lpvm;
+ 57: invoke-interface {v4, v3, v2}, Lpvm;->a(Context, Lpvo;)Lpvn;       # → the handler
+```
+
+Two things follow.
+
+**A name that is not in the map is a silent no-op.** `if-eqz v4, -> 61` falls into the logging block
+and returns null; nothing throws. So phase 1 as written — splice the XML, install, see what happens
+— would have produced "the handler did not attach" with no way to tell *why* from the device. It
+would have cost a release to learn nothing.
+
+**What the extension would have to implement**, minimally:
+
+| Type | Kind | Contract |
+|---|---|---|
+| `Labjb;` | interface | `iM()Ljava/lang/Object;` — the provider |
+| `Lpvm;` | interface | `a(Context, Lpvo;)Lpvn;` — the factory |
+| `Lpvo;` | interface | passed in; 10+ methods, only consumed |
+| `Lpvn;` | interface | the handler itself — **free**, `AbstractMotionEventHandler` already implements it |
+
+One class can be both provider and factory, returning itself from `iM()`. So the real cost is **two
+obfuscated interfaces stubbed and implemented in the extension**, plus `Lpvo;` as a parameter type.
+
+That is the part worth pausing on. Every obfuscated name this project pins today — `Lpvf;->t`,
+`Lpnu;`, the flag holders — is pinned at *patch time*, checked by `preflight.py` and re-resolved when
+Gboard bumps. An extension implementing `Labjb;` and `Lpvm;` bakes those names into a dex that is
+compiled before the APK is ever seen. A bump that renames them is then a **class-load failure on a
+device**, which is exactly the failure this project has shipped twice and has spent this whole
+session learning to catch earlier.
+
+It is recoverable — patch-time pins on `Labjb;->iM()` and `Lpvm;->a(…)` would refuse the build rather
+than ship it, which is the right shape. But it means Option A permanently owns two obfuscated
+compile-time dependencies, and no other patch here has one.
 
 ## Options
 
@@ -201,7 +242,23 @@ Rejected earlier for this reason and the reason still holds.
 
 ## Recommendation
 
-**A**, with **B** as the fallback if the handler cannot be attached.
+**Revised: B first, A only if B cannot claim the gesture.**
+
+The original recommendation was A on the grounds that it avoids interception, with B as a fallback.
+That reasoning assumed A's cost was a stub, an XML splice and a new class. It is not: it is those
+plus a provider, plus a factory, plus a map insert, plus two obfuscated interfaces compiled into the
+extension. The gap between A and B narrowed from "architecture versus hack" to "five pieces and a
+compile-time coupling versus one prepend".
+
+B also sits better with what this session built. It is a prepend into `Lpvi;->G` — no branch, no
+merge, no register contract, which is the entire class of failure that produced dev.0 and dev.1 —
+and `verify.py` plus the `driver +undo` lane can check it locally before anything is installed.
+
+A is not dead. If B cannot make the keypress not happen, A is the way that genuinely can, and the
+research above is what it needs. But it should be reached for second, and with its real cost in view.
+
+**Original recommendation, kept for the record:** A, with B as the fallback if the handler cannot be
+attached.
 
 Every piece of A already has a precedent here:
 
