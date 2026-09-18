@@ -1,3 +1,15 @@
+# [2.5.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.3...v2.5.0-dev.4) (2026-09-18)
+
+* **Gboard:** fix: a flag scan that failed on another bundle's merged extension
+* **Gboard:** docs: draft option B against the dex, and verify the claim it rests on
+* **Gboard:** docs: read out the handler registry's consumer, and reverse the recommendation
+* **Gboard:** docs: Gboard does not instantiate motion event handlers by reflection
+* **Gboard:** fix: act on an independent review of the four unpushed commits
+* **Gboard:** refactor: the resolution helpers take a class lookup, not the patcher
+* **Gboard:** test: cover the register helpers, which is where the crashes came from
+* **Gboard:** test: lock in the mutual exclusion, and ask whether the bundle is current
+* **Gboard:** fix: the driver applied a combination no install can produce
+
 # [2.5.0-dev.3](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.2...v2.5.0-dev.3) (2026-09-18)
 
 * **Gboard:** test: cover the patch helpers, document the output tools, assert the Python floor
