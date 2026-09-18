@@ -3,6 +3,7 @@ package dev.jz6.flexboard.patches.shared
 import com.android.tools.smali.dexlib2.AccessFlags
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
+import com.android.tools.smali.dexlib2.iface.ClassDef
 import com.android.tools.smali.dexlib2.iface.Field
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -79,17 +80,37 @@ internal data class TypedRegister(val register: Int, val type: String) {
  *
  * `null` means "cannot tell from here", and is deliberately different from an empty chain.
  */
-internal fun BytecodePatchContext.superclassChain(type: String): List<String>? {
+internal fun superclassChain(lookup: ClassLookup, type: String): List<String>? {
     val chain = mutableListOf<String>()
     var current = type
     while (true) {
         chain += current
         if (current == OBJECT_TYPE) return chain
         // Not in the dex: a framework class, so the rest of the chain is unknowable.
-        val definition = classDefByOrNull(current) ?: return null
+        val definition = lookup(current) ?: return null
         current = definition.superclass ?: return null
     }
 }
+
+internal fun BytecodePatchContext.superclassChain(type: String): List<String>? =
+    superclassChain(classLookup, type)
+
+/**
+ * A class descriptor to its definition, or `null` when the APK does not contain it.
+ *
+ * The one thing the resolution helpers below need from the patcher. They used to take the whole
+ * `BytecodePatchContext`, which is a final class wanting a `PatcherConfig` and an APK to exist at
+ * all, and that single parameter was the reason none of them had a test: to ask "does this find an
+ * inherited static field" you first had to produce sixty thousand decoded Gboard classes.
+ *
+ * Narrowing the dependency to a function makes the answer a caller's to supply. Production passes
+ * [classLookup]; a test passes a map. Nothing else about them changes.
+ */
+internal typealias ClassLookup = (String) -> ClassDef?
+
+/** The patcher's own class lookup, for the delegating overloads below. */
+internal val BytecodePatchContext.classLookup: ClassLookup
+    get() = { classDefByOrNull(it) }
 
 /**
  * Fails the patch when [type] provably cannot be a [target].
@@ -98,11 +119,11 @@ internal fun BytecodePatchContext.superclassChain(type: String): List<String>? {
  * thing being checked and is quoted straight into the failure, so make it read as a diagnosis: a
  * patch author reading it should not have to open the APK to understand what went wrong.
  */
-internal fun BytecodePatchContext.checkAssignable(type: String, target: String, what: String) {
+internal fun checkAssignable(lookup: ClassLookup, type: String, target: String, what: String) {
     // The rule was stated in this file's own header as prose and never enforced. An interface
     // target makes the superclass walk below meaningless -- implementing a type does not put it in
     // the chain -- so the check would produce a confident, wrong failure.
-    classDefByOrNull(target)?.let {
+    lookup(target)?.let {
         check(!AccessFlags.INTERFACE.isSet(it.accessFlags)) {
             "$what checks assignability to $target, which is an interface. A superclass walk " +
                 "cannot answer that; assert the cast at its use instead."
@@ -120,7 +141,7 @@ internal fun BytecodePatchContext.checkAssignable(type: String, target: String, 
     if (type == target) return
     // Unknowable rather than wrong. Saying nothing beats failing a patch on a framework subclass
     // this cannot see, which would make the check worse than useless.
-    val chain = superclassChain(type) ?: return
+    val chain = superclassChain(lookup, type) ?: return
     if (target in chain) return
     error(
         "$what is $type, which is not a $target. Its full chain is " +
@@ -128,6 +149,9 @@ internal fun BytecodePatchContext.checkAssignable(type: String, target: String, 
             "of it can be one either.",
     )
 }
+
+internal fun BytecodePatchContext.checkAssignable(type: String, target: String, what: String) =
+    checkAssignable(classLookup, type, target, what)
 
 /**
  * As [checkAssignable], for a register carrying its own proven type.
@@ -249,10 +273,10 @@ internal sealed interface FieldLookup {
  * throws before writing an instruction, which Morphe catches and continues past, shipping a build
  * with the feature quietly missing.
  */
-internal fun BytecodePatchContext.findField(type: String, name: String): FieldLookup {
+internal fun findField(lookup: ClassLookup, type: String, name: String): FieldLookup {
     var current: String? = type
     while (current != null) {
-        val definition = classDefByOrNull(current) ?: return FieldLookup.Unknowable(current)
+        val definition = lookup(current) ?: return FieldLookup.Unknowable(current)
         (definition.staticFields + definition.instanceFields)
             .firstOrNull { it.name == name }
             ?.let { return FieldLookup.Found(it) }
@@ -261,15 +285,21 @@ internal fun BytecodePatchContext.findField(type: String, name: String): FieldLo
     return FieldLookup.Absent
 }
 
-internal fun BytecodePatchContext.findInstanceField(type: String, name: String): Field? {
+internal fun BytecodePatchContext.findField(type: String, name: String): FieldLookup =
+    findField(classLookup, type, name)
+
+internal fun findInstanceField(lookup: ClassLookup, type: String, name: String): Field? {
     var current: String? = type
     while (current != null) {
-        val definition = classDefByOrNull(current) ?: return null
+        val definition = lookup(current) ?: return null
         definition.instanceFields.firstOrNull { it.name == name }?.let { return it }
         current = definition.superclass
     }
     return null
 }
+
+internal fun BytecodePatchContext.findInstanceField(type: String, name: String): Field? =
+    findInstanceField(classLookup, type, name)
 
 /**
  * The class an `iget`/`iput` reads its field from.

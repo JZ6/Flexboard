@@ -29,6 +29,7 @@ fun main() {
     scratchRegisters()
     soleHelper()
     instructionTests()
+    resolveTests()
 
     println("$checks checks, $failures failed")
     if (failures > 0) {
