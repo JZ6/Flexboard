@@ -22,12 +22,13 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
  * this module's `build.gradle.kts`.
  */
 
-private var checks = 0
-private var failures = 0
+internal var checks = 0
+internal var failures = 0
 
 fun main() {
     scratchRegisters()
     soleHelper()
+    instructionTests()
 
     println("$checks checks, $failures failed")
     if (failures > 0) {
@@ -92,7 +93,7 @@ private fun soleHelper() {
 
 // ------------------------------------------------------------------ harness
 
-private fun accepts(what: String, body: () -> Unit) {
+internal fun accepts(what: String, body: () -> Unit) {
     checks++
     runCatching(body).onFailure {
         failures++
@@ -100,7 +101,7 @@ private fun accepts(what: String, body: () -> Unit) {
     }
 }
 
-private fun rejects(what: String, expectedFragment: String, body: () -> Unit) {
+internal fun rejects(what: String, expectedFragment: String, body: () -> Unit) {
     checks++
     val outcome = runCatching(body)
     val message = outcome.exceptionOrNull()?.message
@@ -119,7 +120,7 @@ private fun rejects(what: String, expectedFragment: String, body: () -> Unit) {
     }
 }
 
-private fun equal(what: String, expected: String, actual: String) {
+internal fun equal(what: String, expected: String, actual: String) {
     checks++
     if (expected != actual) {
         failures++

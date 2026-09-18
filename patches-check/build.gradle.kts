@@ -51,7 +51,9 @@ sourceSets {
         // nothing outside the patcher and dexlib2.
         kotlin.include(
             "dev/jz6/flexboard/patches/shared/**",
-            "dev/jz6/flexboard/patches/PatchTests.kt",
+            // Every test file in this module's own root, rather than naming them one at a time --
+            // adding a test should not require editing the build.
+            "dev/jz6/flexboard/patches/*Tests.kt",
         )
     }
 }
