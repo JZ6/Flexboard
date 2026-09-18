@@ -128,3 +128,21 @@ releases. See `docs/phenotype-flags.md`.
 
 **Morphe keys patch selection by name.** Renaming a user-facing patch resets anyone who had
 deselected it back to the default.
+
+**The resolution helpers take a `ClassLookup`, not a `BytecodePatchContext`, and that is on
+purpose.** `ClassLookup` is `(String) -> ClassDef?` — the one thing `findField`, `checkAssignable`,
+`checkInvokeKind` and the rest ever needed from the patcher. They used to take the context, and that
+single parameter is why none of them had a test for a year: `BytecodePatchContext` is a final class
+whose constructor wants a `PatcherConfig` and an APK, so asking "does this find an inherited static
+field" first meant producing sixty thousand decoded Gboard classes. Two bugs shipped from that blind
+spot — a field lookup that could not see a static, and one that reported "absent" when it had really
+left the APK and could not tell.
+
+Do not tidy them back into extension functions. Production reaches them through one-line delegating
+overloads on `BytecodePatchContext` at the bottom of `Types.kt` and `Resolve.kt`; a test passes a
+map. The delegates are the only uncovered part and `.github/scripts/check_delegates.py` checks their
+argument forwarding structurally, because swapping `type` and `target` in one of them compiles, type
+checks, and produces a confident wrong failure.
+
+The emitters are a different matter: they need `mutableClassDefBy`, mutable proxies and a dex a
+fingerprint can match, which is what `:driver:run` exists for instead.

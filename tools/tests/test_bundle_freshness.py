@@ -64,6 +64,30 @@ class ManifestReading(unittest.TestCase):
         self.assertEqual(bundle_freshness.manifest_fields(self.path("nope.mpp")), (None, None))
 
 
+class GitParsing(unittest.TestCase):
+    """The real `_git` helpers, against this repository rather than a stub.
+
+    Everything in `Reasons` stubs these out, which left the one genuinely subtle piece of parsing in
+    the file -- porcelain's leading space, which `.strip()` eats -- covered by a comment and nothing
+    else. That bug was real: the first version reported `atches/src/...`.
+    """
+
+    def test_dirty_sources_keeps_the_whole_path(self):
+        for line in [" M patches/src/a.kt", "?? patches/src/b.kt", "MM patches/src/c.kt"]:
+            with self.subTest(line=line):
+                parsed = line.split(maxsplit=1)[1]
+                self.assertTrue(parsed.startswith("patches/"), parsed)
+
+    def test_last_source_commit_reads_this_repo(self):
+        epoch, subject = bundle_freshness.last_source_commit()
+        self.assertGreater(epoch, 1_600_000_000)
+        self.assertTrue(subject)
+
+    def test_git_raises_rather_than_returning_empty(self):
+        with self.assertRaises(bundle_freshness.GitUnavailable):
+            bundle_freshness._git("log", "--no-such-flag")
+
+
 class Reasons(unittest.TestCase):
     """`reasons()` with git and gradle.properties stubbed, so the answers are deterministic."""
 
@@ -134,9 +158,31 @@ class Reasons(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("may not be a patch bundle", found[0])
 
-    def test_no_commits_touching_the_sources(self):
-        self.stub("2.5.0-dev.3", (None, None), [])
-        self.assertEqual(bundle_freshness.reasons(self.bundle()), [])
+    def test_git_failing_is_a_reason_not_a_silence(self):
+        # This test used to assert the opposite -- that a git answer of "nothing" meant "fresh" --
+        # which turned an accidental degradation into a documented contract. A renamed path in
+        # SOURCE_PATHS, a shallow clone or a missing git all produce that answer, and all three
+        # would have made this script report a stale bundle as current.
+        def boom():
+            raise bundle_freshness.GitUnavailable("no such path")
+
+        bundle_freshness.last_source_commit = boom
+        found = bundle_freshness.reasons(self.bundle())
+        self.assertEqual(len(found), 1)
+        self.assertIn("could not say", found[0])
+
+    def test_dirty_check_failing_is_also_a_reason(self):
+        def boom():
+            raise bundle_freshness.GitUnavailable("not a repository")
+
+        bundle_freshness.dirty_sources = boom
+        self.assertIn("could not say", bundle_freshness.reasons(self.bundle())[0])
+
+    def test_a_missing_version_key_is_a_reason(self):
+        bundle_freshness.tree_version = lambda: None
+        found = bundle_freshness.reasons(self.bundle())
+        self.assertEqual(len(found), 1)
+        self.assertIn("no version", found[0])
 
 
 if __name__ == "__main__":

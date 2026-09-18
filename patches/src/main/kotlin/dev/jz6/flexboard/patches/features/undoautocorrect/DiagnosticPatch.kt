@@ -34,15 +34,19 @@ private const val GESTURE_PROBE =
  * Nothing in the gate can tell those apart. There is no Android SDK here, so no patch is ever
  * executed locally, and the emission has no way to report anything from a phone.
  *
- * So this is the same patch with one operand changed: identical anchor, identical guards, and a
- * backspace where the revert keycode was. Install it instead of the real patch and swipe up over a
- * letter.
+ * So this is the same patch with the payload changed: identical anchor, identical guards, and a
+ * call into the extension where the revert dispatch was. Install it instead of the real patch and
+ * swipe up over a letter.
  *
- * **A character disappears** — the whole chain works: gesture, guards, event construction and
- * dispatch. The fault is downstream, in the revert being unarmed, and the fix is the one-slot
+ * **A marker character appears** — the whole chain works: gesture, guards, and the emission being
+ * reached. The fault is downstream, in the revert being unarmed, and the fix is the one-slot
  * capture-and-restore rather than anything about the gesture.
  *
- * **Nothing happens** — the chain fails before dispatch.
+ * **Nothing happens** — the chain fails before the emission is reached.
+ *
+ * Round one deleted a character instead, which was unmistakable and also ate text; worse, a
+ * deletion is what a mis-fired scrub looks like, so it could not distinguish the two. This
+ * paragraph described that build for two rounds after it stopped existing.
  *
  * Round two ran with only the direction test and answered the question: the gesture *is* detected,
  * intermittently, and the key was still typed alongside the marker. Both findings were mine to fix
@@ -80,7 +84,7 @@ val undoAutocorrectDiagnosticPatch = bytecodePatch(
         // test, so it answers the one question the rest depend on: does `Lpvi;->h` ever come back
         // SLIDE_UP for a flick on an ordinary key?
         //
-        // A character deletes -> the direction works, and the fault is the null-ActionDef guard or
+        // A marker types -> the direction works, and the fault is the null-ActionDef guard or
         // the corridor; those come back one at a time.
         // Nothing happens -> the direction is never SLIDE_UP, and the cause is upstream of
         // anything this patch controls: `Lpvi;->M()`, `Lpvj;->r()`, the `Lpvi;->t` branch, or the

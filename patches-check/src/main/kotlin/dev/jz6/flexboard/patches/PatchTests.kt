@@ -22,6 +22,16 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
  * this module's `build.gradle.kts`.
  */
 
+/**
+ * The floor for the check count, for the same reason `preflight.py` has one.
+ *
+ * Adding a test file to this module compiles it, but its entry function still has to be called from
+ * [main] by hand -- and nothing notices if you forget. Drop `resolveTests()` from the list and the
+ * suite prints a smaller number, exits zero, and the gate lane goes green. A count that silently
+ * fell is the same failure as a dex-derived list that came back empty.
+ */
+private const val MINIMUM_CHECKS = 84
+
 internal var checks = 0
 internal var failures = 0
 
@@ -32,7 +42,13 @@ fun main() {
     resolveTests()
 
     println("$checks checks, $failures failed")
-    if (failures > 0) {
+    if (checks < MINIMUM_CHECKS) {
+        println(
+            "  only $checks checks ran, fewer than the $MINIMUM_CHECKS expected — a test file is " +
+                "compiled but never called, or a group was dropped from main()",
+        )
+    }
+    if (failures > 0 || checks < MINIMUM_CHECKS) {
         kotlin.system.exitProcess(1)
     }
 }

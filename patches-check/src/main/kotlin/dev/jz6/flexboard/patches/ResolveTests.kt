@@ -86,13 +86,18 @@ private fun method(
     )
 }
 
+// The ninth argument is `directMethods` and the tenth is `virtualMethods`, which is worth spelling
+// out because the first version of this helper passed everything to the ninth. A method called
+// "virtual" was then a direct method, and `accepts("invoke-virtual on a virtual method")` asserted
+// the opposite of its own name -- a test that passed for a reason unrelated to what it claimed.
 private fun clazz(
     type: String,
     superclass: String? = OBJECT,
     isInterface: Boolean = false,
     statics: List<ImmutableField> = emptyList(),
     instances: List<ImmutableField> = emptyList(),
-    methods: List<ImmutableMethod> = emptyList(),
+    direct: List<ImmutableMethod> = emptyList(),
+    virtual: List<ImmutableMethod> = emptyList(),
 ): ClassDef = ImmutableClassDef(
     type,
     if (isInterface) AccessFlags.INTERFACE.value else 0,
@@ -102,8 +107,8 @@ private fun clazz(
     null,
     statics,
     instances,
-    methods,
-    emptyList(),
+    direct,
+    virtual,
 )
 
 /** A lookup over exactly these classes; anything else is "not in the APK". */
@@ -207,15 +212,13 @@ private fun assignability() {
 
 // ------------------------------------------------------------------ methods and call kinds
 
-private val CALLEE = clazz("Lcallee;", methods = listOf(method("Lcallee;", "go")))
+private val CALLEE = clazz("Lcallee;", virtual = listOf(method("Lcallee;", "go")))
 private val HOST = clazz(
     "Lhost;",
-    methods = listOf(
-        method("Lhost;", "virtual"),
-        method("Lhost;", "static", static = true),
-    ),
+    direct = listOf(method("Lhost;", "static", static = true), method("Lhost;", "hidden")),
+    virtual = listOf(method("Lhost;", "virtual")),
 )
-private val IFACE = clazz("Liface;", isInterface = true, methods = listOf(method("Liface;", "go")))
+private val IFACE = clazz("Liface;", isInterface = true, virtual = listOf(method("Liface;", "go")))
 private val KINDS = lookupOf(HOST, IFACE, CALLEE, OBJ)
 
 private fun methodsAndInvokes() {
@@ -249,6 +252,18 @@ private fun methodsAndInvokes() {
         checkInvokeKind(KINDS, "Lhost;->virtual()V", InvokeKind.INTERFACE, "T")
     }
 
+    // Direct versus virtual. The only production invoke-direct in the project went unchecked here
+    // until the fixture bug above was fixed and made the gap visible.
+    accepts("invoke-direct on a direct method") {
+        checkInvokeKind(KINDS, "Lhost;->hidden()V", InvokeKind.DIRECT, "T")
+    }
+    rejects("invoke-virtual on a direct method", "direct") {
+        checkInvokeKind(KINDS, "Lhost;->hidden()V", InvokeKind.VIRTUAL, "T")
+    }
+    rejects("invoke-direct on a virtual method", "virtual") {
+        checkInvokeKind(KINDS, "Lhost;->virtual()V", InvokeKind.DIRECT, "T")
+    }
+
     accepts("a field that exists, with the right type") {
         checkFieldExists(WORLD, "Lbase;->context:Landroid/content/Context;", "T")
     }
@@ -269,7 +284,7 @@ private fun methodsAndInvokes() {
 // ------------------------------------------------------------------ resolving one method by shape
 
 private fun soleResolution() {
-    val one = clazz("Lone;", methods = listOf(method("Lone;", "a", returns = "I")))
+    val one = clazz("Lone;", virtual = listOf(method("Lone;", "a", returns = "I")))
     equal(
         "the only method with a signature",
         "Lone;->a()I",
@@ -278,7 +293,7 @@ private fun soleResolution() {
 
     val two = clazz(
         "Ltwo;",
-        methods = listOf(method("Ltwo;", "a", returns = "I"), method("Ltwo;", "b", returns = "I")),
+        virtual = listOf(method("Ltwo;", "a", returns = "I"), method("Ltwo;", "b", returns = "I")),
     )
     rejects("two methods of the same shape", "found 2") {
         soleMethodWithSignature(lookupOf(two), "Ltwo;", "()I", "T")
@@ -290,7 +305,7 @@ private fun soleResolution() {
     // The `s`-versus-`t` case: identical shapes, told apart only by what they do.
     val pair = clazz(
         "Lpair;",
-        methods = listOf(
+        virtual = listOf(
             method("Lpair;", "s", returns = "I", calls = "Lcallee;->go()V"),
             method("Lpair;", "t", returns = "I"),
         ),

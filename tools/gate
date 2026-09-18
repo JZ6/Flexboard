@@ -114,6 +114,9 @@ lane "extension"      ./gradlew :extension-check:extensionTests -q
 # The patch helpers themselves. Every check in this gate reads Python or the APK; the patches were
 # untested, and three shipped bugs lived in these helpers rather than in the APK reading.
 lane "patch helpers"  ./gradlew :patches-check:run -q
+# The eleven one-line delegates the helpers are reached through. No test covers them and none can:
+# constructing a BytecodePatchContext needs an APK, which is why the helpers stopped taking one.
+lane "delegates"      python3 .github/scripts/check_delegates.py
 lane "constants"      python3 .github/scripts/check_shared_constants.py
 lane "dex pins"       python3 .github/scripts/check_dex_pins.py
 lane "emission lint"  python3 .github/scripts/check_emission_lint.py
@@ -163,10 +166,15 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     # install can produce, and it fails on a guard behaving correctly.
     lane "driver" ./gradlew :driver:run -q \
         --args="$apk_path $FLEXBOARD_BUNDLE $patched_out"
+    undo_out="$(mktemp -d)/undo.apk"
     lane "driver +undo" ./gradlew :driver:run -q \
-        --args="$apk_path $FLEXBOARD_BUNDLE $(mktemp -d)/undo.apk +Swipe up to undo autocorrect"
+        --args="$apk_path $FLEXBOARD_BUNDLE $undo_out +Swipe up to undo autocorrect"
     lane "driver +probe" ./gradlew :driver:run -q \
         --args="$apk_path $FLEXBOARD_BUNDLE $(mktemp -d)/probe.apk +Swipe up diagnostic (temporary)"
+    # The third default-off patch. Nothing selects it either, so without a run of its own it is
+    # applied by no lane at all -- which it was, between narrowing the driver to defaults and now.
+    lane "driver +hidden" ./gradlew :driver:run -q \
+        --args="$apk_path $FLEXBOARD_BUNDLE $(mktemp -d)/hidden.apk +Hidden Features (unconfirmed)"
 
     # And the pair must be refused. Morphe cannot declare two patches mutually exclusive, so the
     # only thing enforcing it is a guard in the emitter -- one that counted a single descriptor,
@@ -184,17 +192,35 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     else
         skip "verify" "the driver produced no APK, so there is nothing to check"
     fi
+
+    # And the undo build, which is the emission that most needs it: the newest, the largest, and
+    # the one whose two previous attempts shipped a keyboard that would not open.
+    #
+    # It needs saying because it was briefly lost. Narrowing the driver to the default selection was
+    # right, but `verify` only ever read the defaults build -- and both swipe-up patches are
+    # default-off, so the riskiest injection in the project silently stopped being checked by the
+    # only thing here that approximates what ART rejects at class load. No gate output changed when
+    # that happened, which is the whole problem with it.
+    if [ -e "$undo_out" ]; then
+        lane "verify +undo" python3 tools/apk/verify.py "$undo_out" --changed-from gboard-apk
+    else
+        skip "verify +undo" "the +undo driver run produced no APK"
+    fi
 elif [ -n "${stale_reason:-}" ]; then
     skip "driver" "$stale_reason"
     skip "driver +undo" "$stale_reason"
     skip "driver +probe" "$stale_reason"
+    skip "driver +hidden" "$stale_reason"
     skip "driver +both" "$stale_reason"
     skip "verify" "needs a bundle built from this tree"
+    skip "verify +undo" "needs a bundle built from this tree"
 else
     skip "driver" "set FLEXBOARD_BUNDLE to a built .mpp to execute the patches (gh run download --name patches-bundle)"
     skip "driver +undo" "set FLEXBOARD_BUNDLE to a built .mpp"
     skip "driver +probe" "set FLEXBOARD_BUNDLE to a built .mpp"
+    skip "driver +hidden" "set FLEXBOARD_BUNDLE to a built .mpp"
     skip "driver +both" "set FLEXBOARD_BUNDLE to a built .mpp"
+    skip "verify +undo" "needs the driver's output; set FLEXBOARD_BUNDLE"
     skip "verify" "needs the driver's output; set FLEXBOARD_BUNDLE"
 fi
 

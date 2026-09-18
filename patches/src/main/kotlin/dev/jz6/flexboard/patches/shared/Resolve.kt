@@ -84,6 +84,21 @@ internal fun checkInvokeKind(
             "invoke-virtual are not interchangeable and the mismatch is an " +
             "IncompatibleClassChangeError at the call site"
     }
+
+    // Direct versus virtual, which for a long time this did not check at all -- so the one
+    // production `invoke-direct` in the project was covered by a function whose whole stated
+    // purpose is catching exactly this. dexlib2 splits them into two lists, and that split is the
+    // dex format's own: a private method, a constructor or a static is dispatched directly, and
+    // everything else through the vtable. Spelling either one the other way assembles cleanly and
+    // throws at the call site, which is the failure this exists to convert into a refused patch.
+    if (isStatic || isInterface) return
+    val isDirect = definition.directMethods.any { it.toDescriptor() == descriptor }
+    check(isDirect == (kind == InvokeKind.DIRECT)) {
+        "$what emits ${kind.mnemonic} for $descriptor, which is a " +
+            "${if (isDirect) "direct (private or constructor)" else "virtual"} method — " +
+            "invoke-direct and invoke-virtual are not interchangeable and the mismatch throws at " +
+            "the call site"
+    }
 }
 
 /** Fails the patch when [descriptor] names a field the APK does not contain, inherited or not. */

@@ -212,8 +212,11 @@ That turns on the `driver` and `verify` lanes. The only thing the SDK adds is bu
 *uncommitted* work, rather than from what CI built for your last push.
 
 Which is the catch, and the gate now enforces it: **a bundle is a build artifact, so it tests the
-code it was built from.** If its version does not match `gradle.properties`, the driver and verify
-lanes skip rather than pass, because a stale bundle passing looks exactly like a current one
+code it was built from.** `tools/bundle_freshness.py` asks three things — does its version match
+`gradle.properties`, was it built after the last commit touching patch sources, and are those
+sources committed at all — and the driver and verify lanes skip rather than pass when any answer is
+no. Version alone was the first attempt and was not enough: two bundles can both say `2.5.0-dev.3`
+and differ by every commit in between. A stale bundle passing looks exactly like a current one
 passing. That is not hypothetical — these lanes ran green for a session against the dev.2 bundle
 while the tree held a tightened guard the bundle knew nothing about, and the guard's first contact
 with a matching bundle failed immediately.
@@ -227,7 +230,14 @@ The driver applies the **default selection**, plus any patch named with a leadin
 Applying all of them sounds more thorough and is impossible. The two swipe-up patches ship
 default-off and both attach to `Lpvf;->t`, so they refuse to coexist; an apply-everything run tests
 a combination no install can produce and fails on a guard doing its job. The gate therefore runs the
-driver three times: the defaults, and the defaults plus each swipe-up patch.
+driver five times: the defaults, then the defaults plus each of the three default-off patches, and
+finally both swipe-up patches together — that last one through `lane_must_fail`, which passes only
+when the run fails *and* says why. Morphe cannot declare two patches mutually exclusive, so a guard
+in the emitter is the only thing enforcing it, and a guard nobody watches fire is a comment.
+
+`verify` runs on the defaults build and on the `+undo` build. Both, because the undo emission is the
+largest and riskiest in the project and it is default-off — so reading only the defaults build
+quietly stopped checking the one thing most worth checking.
 
 ### What each check can and cannot see
 
@@ -245,7 +255,7 @@ driver three times: the defaults, and the defaults plus each swipe-up patch.
 | `tools/apk/patched.py <out.apk> '<descriptor>' --stock gboard-apk` | what an emission *actually* produced, diffed against stock | nothing automatically — it is a read, not a check — the only gate that *runs* the patches. Needs a built bundle (any released/CI one); with an SDK installed, `patches/build/libs/*.mpp` works too | the artifact is unsigned and lacks the merged extension dex — it proves the pipeline, it is not for installing |
 | Morphe + a device | everything else | nothing — but it is the slowest loop |
 
-**CI runs `tools/gate`, and five of its nine lanes do anything there.** `preflight.py` and `check_patch_resources.py` both need the
+**CI runs `tools/gate`, and seven of its seventeen lanes do anything there.** `preflight.py` and `check_patch_resources.py` both need the
 Gboard APK, which is gitignored and cannot be redistributed, so the ~260 dex and resource pins —
 the whole defence against a Gboard bump — are a local gate. `git config core.hooksPath tools/hooks`
 installs a pre-push hook that runs them, and warns loudly rather than passing quietly when the APK

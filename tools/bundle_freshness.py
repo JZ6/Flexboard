@@ -32,7 +32,16 @@ from pathlib import Path
 # Changing any of these changes what a bundle would contain, so a bundle older than the newest
 # commit touching them is out of date. `patches-list.json` is deliberately absent: it is generated
 # *by* the release, so it is always newer than the bundle it describes.
-SOURCE_PATHS = ["patches/src", "extensions", "gradle/libs.versions.toml"]
+SOURCE_PATHS = [
+    "patches/src",
+    "extensions",
+    "gradle/libs.versions.toml",
+    # The bundle's MANIFEST is generated from the `about { }` block here, so a changed name or
+    # description changes the artifact without touching a line of patch source.
+    "patches/build.gradle.kts",
+    # Pins the Morphe patches plugin, which decides how the bundle is assembled at all.
+    "settings.gradle.kts",
+]
 
 
 def manifest_fields(bundle):
@@ -51,20 +60,45 @@ def manifest_fields(bundle):
 
 
 def tree_version():
-    text = Path("gradle.properties").read_text()
+    """The version `gradle.properties` declares, or `None` when it cannot be read.
+
+    Missing counts as unreadable rather than as an exception, so that running this from the wrong
+    directory produces a reason the caller can print instead of a traceback.
+    """
+    try:
+        text = Path("gradle.properties").read_text()
+    except OSError:
+        return None
     found = re.search(r"^version\s*=\s*(.+)$", text, re.M)
     return found.group(1).strip() if found else None
 
 
+class GitUnavailable(Exception):
+    """git could not answer, which is not the same as git answering "nothing"."""
+
+
 def _git(*args):
-    return subprocess.run(["git", *args], capture_output=True, text=True).stdout.strip()
+    """git's stdout, or [GitUnavailable] when it failed.
+
+    The return code is checked, and that is the whole point of this function existing. Ignoring it
+    turns every failure -- not a repository, a renamed path in [SOURCE_PATHS], git missing entirely
+    -- into an empty string, which reads as "no commits touched the sources" and makes this script
+    answer "current with the tree". A staleness check whose error path is `fresh` is worse than no
+    staleness check, because a skipped lane is visible and a wrongly-passing one is not.
+    """
+    done = subprocess.run(["git", *args], capture_output=True, text=True)
+    if done.returncode != 0:
+        raise GitUnavailable(done.stderr.strip().splitlines()[:1] or [f"git {args[0]} failed"])
+    return done.stdout.strip()
 
 
 def last_source_commit():
     """`(epoch, subject)` of the newest commit touching the patch sources."""
     out = _git("log", "-1", "--format=%ct%x09%s", "--", *SOURCE_PATHS)
     if not out:
-        return None, None
+        # git answered, and the answer is that nothing has ever touched these paths. In a repo whose
+        # entire purpose is patching, that means the paths are wrong, not that the tree is pristine.
+        raise GitUnavailable(f"no commit has ever touched {', '.join(SOURCE_PATHS)}")
     epoch, _, subject = out.partition("\t")
     return int(epoch), subject
 
@@ -85,19 +119,26 @@ def reasons(bundle):
         return [f"{bundle} has no readable MANIFEST.MF; it may not be a patch bundle"]
 
     want = tree_version()
-    if want and version != want:
+    if want is None:
+        found.append("gradle.properties declares no version, so there is nothing to compare against")
+    elif version != want:
         found.append(f"bundle is {version} but gradle.properties says {want}")
 
-    commit_at, subject = last_source_commit()
+    try:
+        commit_at, subject = last_source_commit()
+        dirty = dirty_sources()
+    except GitUnavailable as why:
+        # Loudly unknown rather than quietly fine.
+        return [f"git could not say whether this bundle is current ({why}), so it cannot be trusted"]
+
     if built is None:
         found.append("the bundle's manifest carries no Timestamp, so its age cannot be checked")
-    elif commit_at is not None and commit_at > built:
+    elif commit_at > built:
         ago = (commit_at - built) // 60
         found.append(
             f"the patch sources moved {ago} minute(s) after this bundle was built "
             f'-- "{subject[:60]}"')
 
-    dirty = dirty_sources()
     if dirty:
         shown = ", ".join(dirty[:3]) + (" and more" if len(dirty) > 3 else "")
         found.append(f"uncommitted changes under the patch sources, so no bundle has them: {shown}")
