@@ -261,6 +261,42 @@ class CatchHandlers(unittest.TestCase):
                         "the handler is reachable from both, so v3 conflicts there")
 
 
+class ExtensionReferences(unittest.TestCase):
+    """Calls into the Flexboard extension, which is the part we can actually adjudicate.
+
+    The general question -- does every member a patched method calls exist -- is not answerable
+    without android.jar. Gboard classes implement framework interfaces and inherit framework
+    methods, so a hierarchy walk leaves the APK almost immediately and has to say "unknowable".
+    Trying it anyway produced three false positives out of four findings. The extension has no such
+    problem: every class is in the APK and this project writes all of them.
+    """
+
+    METHODS = {"Ldev/jz6/flexboard/extension/diagnostic/GestureProbe;->fired()V"}
+    FIELDS = {"Ldev/jz6/flexboard/extension/ime/ImeService;->service:I"}
+
+    def flag(self, rows):
+        return {i for i, _ in V.unresolved_extension_references(rows, self.METHODS, self.FIELDS)}
+
+    def test_a_call_that_resolves(self):
+        rows = [(0, "invoke-static",
+                 "{}, Ldev/jz6/flexboard/extension/diagnostic/GestureProbe;->fired()V")]
+        self.assertEqual(self.flag(rows), set())
+
+    def test_a_renamed_extension_member(self):
+        # The shape that silently defeated a collision guard: the payload was renamed and the
+        # emission kept calling the old name.
+        rows = [(0, "invoke-static",
+                 "{}, Ldev/jz6/flexboard/extension/diagnostic/GestureProbe;->renamed()V")]
+        self.assertEqual(self.flag(rows), {0})
+
+    def test_a_gboard_call_is_not_adjudicated(self):
+        self.assertEqual(self.flag([(0, "invoke-virtual", "{v0}, Lpvi;->anything()V")]), set())
+
+    def test_a_missing_extension_field(self):
+        rows = [(0, "sget", "v0, Ldev/jz6/flexboard/extension/ime/ImeService;->gone:I")]
+        self.assertEqual(self.flag(rows), {0})
+
+
 class Parameters(unittest.TestCase):
     def test_instance_method_gets_its_receiver(self):
         self.assertEqual(V.parameters_of("Lfoo;->m(Lbar;)V", False), ["Lfoo;", "Lbar;"])

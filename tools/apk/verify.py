@@ -50,6 +50,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dexlib  # noqa: E402
 import dis as ddis  # noqa: E402
 
+EXTENSION = "Ldev/jz6/flexboard/extension/"
+
+OBJECT = "Ljava/lang/Object;"
+
+# What reaching the root still resolves. Short by design: treating Object as opaque would make the
+# whole walk vacuous, since Object is not in the APK and every chain ends there.
+OBJECT_MEMBERS = ("toString", "hashCode", "equals", "getClass", "clone", "finalize",
+                  "wait", "notify", "notifyAll")
+
 UNKNOWN = "?"
 ZERO = "0"
 CONFLICT = "!"
@@ -333,6 +342,81 @@ def check_method(ins, register_count, parameters, hierarchy):
     return findings
 
 
+def declared_members(dexes):
+    """Every method and field descriptor the APK declares, for resolution checks."""
+    methods, fields = set(), set()
+    for d in dexes:
+        for _cname, _af, cd in d.classes():
+            for m, _maf, _co in d.class_methods(cd):
+                methods.add(m)
+            try:
+                for descriptor, _static in _class_fields(d, cd):
+                    fields.add(descriptor)
+            except Exception:
+                pass
+    return methods, fields
+
+
+def _class_fields(d, cd):
+    """(descriptor, is_static) per field — the encoded_field walk dexlib does not expose."""
+    if not cd:
+        return
+    from dexlib import uleb
+    b = d.b
+    sf, o = uleb(b, cd)
+    inf, o = uleb(b, o)
+    dm, o = uleb(b, o)
+    vm, o = uleb(b, o)
+    for count, static in ((sf, True), (inf, False)):
+        idx = 0
+        for _ in range(count):
+            delta, o = uleb(b, o)
+            _af, o = uleb(b, o)
+            idx += delta
+            yield d.field(idx), static
+
+
+def unresolved_extension_references(ins, methods, fields):
+    """Calls into the Flexboard extension that the APK does not declare.
+
+    **Deliberately only the extension.** The general version of this — does every member a patched
+    method calls exist — cannot be answered here. `Lpvi;` implements `java.lang.AutoCloseable`,
+    `Lwzc;` inherits `cancel` from `java.util.concurrent.Future`, and neither is in the APK, so a
+    walk up the hierarchy leaves it almost immediately and has to answer "unknowable". Telling an
+    inherited framework member apart from a missing one needs `android.jar`, which needs the SDK.
+    Attempting it anyway produced three false positives out of four findings on the first run.
+
+    The extension is different: every class is in the APK, this project writes all of them, and a
+    patch emitting a call to a member that was renamed is a bug we have actually shipped — the
+    diagnostic probe's rename silently defeated a guard. Nothing about that needs a framework.
+    """
+    missing = []
+    for index, (_pc, mnemonic, args) in enumerate(ins):
+        text = (args or "").strip()
+        if mnemonic.startswith("invoke"):
+            m = _INVOKE.match(text)
+            if not m or not m.group(2).startswith(EXTENSION):
+                continue
+            descriptor = f"{m.group(2)}->{m.group(3)}({m.group(4)}){m.group(5)}"
+            if descriptor not in methods:
+                missing.append((index, descriptor))
+        elif mnemonic.startswith(("iget", "iput", "sget", "sput")):
+            m = re.search(r"(L[\w/$;]+;)->([^:]+):(\S+)$", text)
+            if not m or not m.group(1).startswith(EXTENSION):
+                continue
+            descriptor = f"{m.group(1)}->{m.group(2)}:{m.group(3)}"
+            if descriptor not in fields:
+                missing.append((index, descriptor))
+    return missing
+
+
+def _is_framework(descriptor):
+    return descriptor.startswith((
+        "Landroid/", "Ljava/", "Ljavax/", "Lkotlin/", "Ldalvik/", "Lorg/w3c/", "Lorg/xml/",
+        "Lorg/json/", "Lorg/apache/", "Lj$/", "Lsun/",
+    ))
+
+
 def extract(apk, into):
     with zipfile.ZipFile(apk) as zf:
         names = [n for n in zf.namelist() if n.startswith("classes") and n.endswith(".dex")]
@@ -400,6 +484,7 @@ def check_all(apk, stock_tree):
         dl = dexlib.load(tmp)
         hierarchy = Hierarchy(dl)
         targets = changed_methods(stock_tree, dl)
+        methods, fields = declared_members(dl)
 
         print(f"  {len(targets)} method(s) changed by the patch")
         bad = 0
@@ -410,13 +495,20 @@ def check_all(apk, stock_tree):
             ins = ddis.disasm(d, c)
             findings = check_method(ins, c["registers"],
                                     parameters_of(descriptor, bool(maf & 0x8)), hierarchy)
-            mark = "FAIL" if findings else "ok  "
+            # A member that moved is a NoSuchMethodError when the call runs, not when the class
+            # loads, so the merge check above cannot see it: the patch applies, verifies, and
+            # fails under a finger.
+            missing = unresolved_extension_references(ins, methods, fields)
+            mark = "FAIL" if (findings or missing) else "ok  "
             print(f"    {mark} {descriptor[:92]}")
             for index, register, required, _nm in findings:
                 pc, nm, a = ins[index]
                 print(f"         pc {pc}: v{register} conflicts, `{nm}` requires {required}")
                 print(f"         {nm} {a}")
-            bad += 1 if findings else 0
+            for index, reference in missing:
+                pc = ins[index][0]
+                print(f"         pc {pc}: nothing in the APK declares {reference}")
+            bad += 1 if (findings or missing) else 0
     return bad
 
 
@@ -432,7 +524,9 @@ def main():
         bad = check_all(args[0], stock_tree)
         print()
         if bad:
-            print(f"  {bad} method(s) would be rejected at class load")
+            print(f"  {bad} method(s) have a conflicting merge or an unresolved reference")
+            print("  (a merge conflict is rejected at class load; an unresolved reference throws "
+                  "when the call runs)")
             return 1
         print("  no changed method has a conflicting register reaching a typed use")
         return 0
