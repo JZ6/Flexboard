@@ -357,6 +357,72 @@ Also unverified: whether `G` is reached on any path other than `handleActionUp`.
 geometric, so a call with no movement cannot fire it, but "cannot fire" is reasoning and not a
 measurement.
 
+## Confirmed on a device: the pointer can be claimed
+
+`2.5.1-dev.1`, diagnostic patch alone, upward flick on a letter key:
+
+> **the 6 appears alone**
+
+That is goal 2, met for the first time. Returning true from `Lpvi;->G` does suppress the keypress —
+the commit at pc 116 is skipped, Gboard's own `move-object v3, v13` runs, and no character is
+inserted. The architecture question this document was written to answer is settled: **option B
+works, and option A is not needed.**
+
+It took one more mistake to get there. `2.5.1-dev.0` could never fire, because it read the gesture
+direction from `Lpvi;->i()` — which returns the direction of the *already-resolved* `ActionDef` from
+a field written at pc 250, two hundred instructions after `G` runs. It returns null there, always.
+The device symptom was "nothing at all", which looks exactly like the gesture not being detected and
+was in fact our code never executing. The real classifier is `Lpvi;->h(FFLpmy;)Lpmy;`, and the fix
+was to call it the way `handleActionUp` does.
+
+Worth naming the error rather than just the fix: the call sites of `i()` were checked, the register
+count was checked, the branch target was checked, the skip label was checked against stock pc 0 —
+and the three-line body of the one method whose meaning was taken from its name was not read.
+
+### What remains: goal 3, and it is a dial rather than a design
+
+The `6` arrives **intermittently**, which is the same reliability problem round two found and now
+has an exact cause. Inside `h()`:
+
+```
+ 99-121: v0 = Lpvf;->e|f|g|h|i : I        # base distance, chosen by Lppr;->ordinal()
+    123: v2 = abs(dy)      127: v3 = abs(dx)
+    131: cmpl-float v2, v2, v3            # more vertical than horizontal?
+    143: v5 = -(float) threshold
+    145: cmpg-float v5, v6, v5            # dy vs -threshold
+    147: if-gez -> 168                    # not far enough: no direction at all
+    149: return SLIDE_UP
+```
+
+and those fields come from a preference, in `Lpvf;->o()V`:
+
+```
+  7: getString(0x7f140ad3)          -> "keyboard_slide_sensitivity_ratio"
+ 11: const/high16 v2, #0x3f800000   -> default 1.0f
+ 13: Lqhy;->A(String, F)F
+ 17-39: this.e|f|g|h = (int)(this.u|v|w|x * ratio)
+ 41-44: this.i = (int) this.y       # not scaled by the ratio
+```
+
+So the threshold is a base distance times a user-settable ratio whose default is **1.0**. (An
+earlier draft of this document said 0.6. That was wrong and is corrected here.)
+
+`0.5f` is `0x3f000000`, high-16 representable, so halving the default is a same-width
+`const/high16` rewrite — one instruction, no insertion, no registers, the same shape as the Rambler
+and haptics patches.
+
+It should ship as **its own patch, default off**, not folded into the gesture. It lowers every slide
+threshold, not just upward ones, so it changes the scrub and flick-for-symbols too. Fusing it with
+the gesture would make one install answer two questions again.
+
+### Remaining order
+
+1. ~~claim the pointer~~ — done, confirmed.
+2. sensitivity, as a separate default-off patch.
+3. the revert itself: already written, ships behind the same anchor, untested only because the
+   gesture was not reliable enough to test it with.
+4. retire the `Lpvf;->t` emitter and the diagnostic.
+
 ## The thing that has to be fixed first
 
 **Nothing here reads what the patcher produced.** `preflight.py` takes the *stock* dex tree and the
