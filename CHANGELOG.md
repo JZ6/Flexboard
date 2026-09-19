@@ -1,3 +1,7 @@
+# [2.5.1-dev.0](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.4...v2.5.1-dev.0) (2026-09-19)
+
+* **Gboard:** feat: claim the pointer in Lpvi;->G instead of un-deciding a keypress
+
 # [2.5.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.3...v2.5.0-dev.4) (2026-09-18)
 
 * **Gboard:** fix: a flag scan that failed on another bundle's merged extension
