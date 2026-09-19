@@ -1,3 +1,8 @@
+# [2.5.1-dev.2](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.1...v2.5.1-dev.2) (2026-09-19)
+
+* **Gboard:** feat: a patch for more sensitive slide gestures
+* **Gboard:** docs: the pointer can be claimed — goal 2 confirmed on a device
+
 # [2.5.1-dev.1](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.0...v2.5.1-dev.1) (2026-09-19)
 
 * **Gboard:** fix: read the gesture direction from h(), not i() — dev.0 could never fire
