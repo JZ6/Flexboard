@@ -136,17 +136,47 @@ internal fun alreadyHandledFingerprint() = Fingerprint(
 internal const val ALREADY_HANDLED_REGISTER_COUNT = 20
 
 /**
- * The direction of a completed gesture, as Gboard computes it.
+ * The direction of the **already-resolved** `ActionDef`, or null when none is resolved.
  *
- * Called by `handleActionUp` at pc 62 and by `G` itself at pc 32, so it is well defined at `G`'s
- * entry: the pointer's current coordinates are written at pc 19–29, before `G` is called at 56.
+ * Not the gesture direction, which is what `2.5.1-dev.0` used it as and why that build did nothing
+ * at all. Its body is:
  *
- * Reusing it rather than deriving a direction from the coordinates keeps this emission on Gboard's
- * own threshold, which is deliberate. Gboard's threshold is also why the gesture fires only
- * intermittently at ordinary swipe length, and that is a separate dial — tuning it here as well
- * would confuse "the claim does not work" with "the claim never triggered".
+ * ```
+ * i():  invoke-virtual {v1}, Lpvi;->I()Z     # is an ActionDef resolved?
+ *       if-eqz -> 11
+ *       iget-object v1, v1, Lpvi;->n:…ActionDef;   # ← reads the resolved one
+ *       …return its direction
+ *   11: return null
+ * ```
+ *
+ * `Lpvi;->n` is written at pc 250 of `handleActionUp`, in the teardown, long after `G` runs at 56.
+ * So at `G`'s entry this returns null every time, and a guard comparing it to [SLIDE_UP] can never
+ * be true. It is the *input* to the real computation, not the computation.
  */
 internal const val POINTER_DIRECTION = "$POINTER->i()Lpmy;"
+
+/**
+ * The gesture direction, computed from where the finger started and where it ended.
+ *
+ * This is the one that matters. `handleActionUp` calls it at pc 72 with the current coordinates and
+ * whatever [POINTER_DIRECTION] returned, and passes the result straight to [ACTION_DEF_LOOKUP]:
+ *
+ * ```
+ *  62: invoke-virtual {v13}, Lpvi;->i()Lpmy;      # prior/resolved, usually null here
+ *  68: iget v15, v13, Lpvi;->d:F                  # current x
+ *  70: iget v0,  v13, Lpvi;->e:F                  # current y
+ *  72: invoke-virtual {v13,v15,v0,v2}, Lpvi;->h(FFLpmy;)Lpmy;
+ *  76: invoke-virtual {v13,v2}, Lpvi;->j(Lpmy;)…ActionDef;
+ * ```
+ *
+ * Reusing it keeps the emission on Gboard's own threshold — the same reckoning that decides whether
+ * a motion was a slide at all — rather than inventing a second one that could disagree.
+ *
+ * **Safe to call an extra time.** Its body writes no field: it reads the start coordinates, asks
+ * `M()`, `Lpvj;->r()` and the `SoftKeyDef`, and returns. Calling it once at `G`'s entry and letting
+ * Gboard call it again at pc 72 computes the same answer twice and changes nothing.
+ */
+internal const val POINTER_SLIDE_DIRECTION = "$POINTER->h(FFLpmy;)Lpmy;"
 
 /** Where the emission jumps when the gesture is not ours: straight into stock `G`. */
 internal const val STOCK_LABEL = "flexboard_not_our_flick"
