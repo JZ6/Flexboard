@@ -89,7 +89,7 @@ val undoAutocorrectDiagnosticPatch = bytecodePatch(
         // Nothing happens -> the direction is never SLIDE_UP, and the cause is upstream of
         // anything this patch controls: `Lpvi;->M()`, `Lpvj;->r()`, the `Lpvi;->t` branch, or the
         // per-key slide threshold in `Lpvf;->e`..`i`.
-        emitUndoAutocorrectOnUpFlick(
+        emitConsumingUndoAutocorrect(
             requireCorridor = false,
             requireUnclaimedKey = false,
             probe = GESTURE_PROBE,
