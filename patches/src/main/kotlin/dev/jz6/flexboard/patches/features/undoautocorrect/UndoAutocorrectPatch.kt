@@ -60,6 +60,8 @@ val undoAutocorrectPatch = bytecodePatch(
     dependsOn(basePatch)
 
     execute {
-        emitUndoAutocorrectOnUpFlick()
+        // Option B: claim the pointer in `Lpvi;->G` instead of trying to un-decide a keypress in
+        // `Lpvf;->t`. See ConsumeEmitter's header, and docs/undo-autocorrect-plan.md.
+        emitConsumingUndoAutocorrect()
     }
 }

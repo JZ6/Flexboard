@@ -90,3 +90,75 @@ internal fun pointerReleaseFingerprint() = Fingerprint(
     parameters = listOf(POINTER, "Landroid/view/MotionEvent;", "I"),
     returnType = "V",
 )
+
+// --------------------------------------------------------------------------- option B
+
+/**
+ * Gboard's own "this pointer was already handled" check, and the anchor the consuming emission
+ * prepends to.
+ *
+ * `handleActionUp` calls it before any per-direction dispatch:
+ *
+ * ```
+ *  56: invoke-virtual {v13,v14,v1,v0,v15}, Lpvi;->G(…)Z
+ *  59: move-result v2
+ *  60: if-nez v2, -> 16          # handled
+ * 116: …Lpvi;->u(…)              # the keypress commit, skipped
+ *  16: move-object v3, v13       # the handover, written by Gboard
+ *  17: goto/16 -> 256            # clean exit
+ * ```
+ *
+ * Returning true is therefore the whole of goal 2: the commit never runs, and `v3` is set to the
+ * pointer by Gboard's own instruction. `2.5.0-dev.0` and `dev.1` crashed jumping into that block
+ * with `v3` holding a `Lpmy;`. Here no merge arises, because nothing jumps — the method returns and
+ * Gboard branches.
+ */
+internal fun alreadyHandledFingerprint() = Fingerprint(
+    definingClass = POINTER,
+    name = "G",
+    parameters = listOf(
+        "Landroid/view/MotionEvent;",
+        "Lcom/google/android/libraries/inputmethod/metadata/SoftKeyDef;",
+        "I",
+        "I",
+    ),
+    returnType = "Z",
+)
+
+/**
+ * Register count of [alreadyHandledFingerprint]'s method, pinned because the emission depends on it.
+ *
+ * Twenty, with five parameters, so `this` is v15 and v0–v14 are locals. **Every one of those locals
+ * is uninitialised at pc 0**, which is the reason this emission needs no liveness analysis, no
+ * scratch-register handover and no `live_free` call. The failure mode that produced two broken
+ * releases is absent by construction rather than by care.
+ */
+internal const val ALREADY_HANDLED_REGISTER_COUNT = 20
+
+/**
+ * The direction of a completed gesture, as Gboard computes it.
+ *
+ * Called by `handleActionUp` at pc 62 and by `G` itself at pc 32, so it is well defined at `G`'s
+ * entry: the pointer's current coordinates are written at pc 19–29, before `G` is called at 56.
+ *
+ * Reusing it rather than deriving a direction from the coordinates keeps this emission on Gboard's
+ * own threshold, which is deliberate. Gboard's threshold is also why the gesture fires only
+ * intermittently at ordinary swipe length, and that is a separate dial — tuning it here as well
+ * would confuse "the claim does not work" with "the claim never triggered".
+ */
+internal const val POINTER_DIRECTION = "$POINTER->i()Lpmy;"
+
+/** Where the emission jumps when the gesture is not ours: straight into stock `G`. */
+internal const val STOCK_LABEL = "flexboard_not_our_flick"
+
+/**
+ * Scratch for the consuming emission. Five slots, all locals of `G` and all dead at pc 0.
+ *
+ * Low deliberately: a `35c` invoke encodes each register in four bits, and these are passed to
+ * `Math.abs` and the key-data constructor.
+ */
+internal val CONSUME_SCRATCH = listOf(0, 1, 2, 3, 4)
+
+/** Anything this project emits a call to, whatever the payload. */
+internal const val EXTENSION_PACKAGE = "Ldev/jz6/flexboard/extension/"
+

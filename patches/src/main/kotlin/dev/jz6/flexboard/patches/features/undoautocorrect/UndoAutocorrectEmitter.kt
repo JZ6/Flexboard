@@ -58,6 +58,17 @@ private const val SKIP_LABEL = "flexboard_not_undo_autocorrect"
  * reached by falling out of the guard rather than by branching into it. Nothing is excised and the
  * stock instruction keeps its identity as the label target.
  */
+/**
+ * **No longer wired to any patch.** Both swipe-up patches moved to [emitConsumingUndoAutocorrect],
+ * which prepends to `Lpvi;->G` and returns true instead of falling through here.
+ *
+ * Kept rather than deleted because it is the only version ever watched working on a device. It
+ * fires the revert and types the key — wrong, per goal 2, but known. If the consuming emission
+ * turns out not to claim the pointer, restoring this is a one-line change in
+ * `UndoAutocorrectPatch.kt` rather than an archaeology exercise. `docs/undo-autocorrect-plan.md`
+ * phase 5 retires it for good once the replacement is confirmed.
+ */
+@Suppress("unused")  // Unwired as of the move to ConsumeEmitter; see the note above.
 internal fun BytecodePatchContext.emitUndoAutocorrectOnUpFlick(
     keycode: Int = REVERT_AUTOCORRECT,
     requireCorridor: Boolean = true,
