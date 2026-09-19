@@ -60,7 +60,8 @@ internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
 
     // Every obfuscated member the emission spells, before an instruction is written, so a rename is
     // a refused patch naming the member rather than a verify error on a device.
-    checkInvokeKind(POINTER_DIRECTION, InvokeKind.VIRTUAL, "the gesture direction this emission reads")
+    checkInvokeKind(POINTER_DIRECTION, InvokeKind.VIRTUAL, "the resolved-action direction")
+    checkInvokeKind(POINTER_SLIDE_DIRECTION, InvokeKind.VIRTUAL, "the gesture direction this emission reads")
     checkInvokeKind(ACTION_DEF_LOOKUP, InvokeKind.VIRTUAL, "the action lookup that spares a symbol key")
     if (probe == null) {
         checkInvokeKind(KEY_DATA_CTOR, InvokeKind.DIRECT, "the key-data constructor the revert builds")
@@ -142,6 +143,10 @@ internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
         0,
         """
             invoke-virtual { v$pointer }, $POINTER_DIRECTION
+            move-result-object v$a
+            iget v$b, v$pointer, $POINTER_X
+            iget v$c, v$pointer, $POINTER_Y
+            invoke-virtual { v$pointer, v$b, v$c, v$a }, $POINTER_SLIDE_DIRECTION
             move-result-object v$a
             sget-object v$b, $SLIDE_UP
             if-ne v$a, v$b, :$STOCK_LABEL
