@@ -1,3 +1,7 @@
+# [2.5.1-dev.1](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.0...v2.5.1-dev.1) (2026-09-19)
+
+* **Gboard:** fix: read the gesture direction from h(), not i() — dev.0 could never fire
+
 # [2.5.1-dev.0](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.4...v2.5.1-dev.0) (2026-09-19)
 
 * **Gboard:** feat: claim the pointer in Lpvi;->G instead of un-deciding a keypress
