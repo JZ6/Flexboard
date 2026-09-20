@@ -192,3 +192,43 @@ internal val CONSUME_SCRATCH = listOf(0, 1, 2, 3, 4)
 /** Anything this project emits a call to, whatever the payload. */
 internal const val EXTENSION_PACKAGE = "Ldev/jz6/flexboard/extension/"
 
+// --------------------------------------------------------------------------- journey tracking
+
+/**
+ * `TouchActionBundle.handleActionMove` — named by its own trace string at pc 21, not inferred.
+ *
+ * Iterates every live pointer on every move event and writes each one's current coordinates:
+ *
+ * ```
+ *  53-57: v1.d = getX(index)
+ *  59-63: v1.e = getY(index)
+ * ```
+ *
+ * Two pointers are skipped: one whose `findPointerIndex` is stale, and one whose `M()` is false.
+ * The second costs nothing here, because `Lpvi;->h` gates on `M()` too — anything it excludes was
+ * never going to produce a slide direction anyway.
+ *
+ * The emission goes in after the y write, where the pointer in `v1` carries both the gesture start
+ * (`b`, `c`) and the current position (`d`, `e`). Having both is what removes the need for a
+ * separate DOWN hook: a changed start *is* the signal that a new gesture began.
+ */
+internal fun pointerMoveFingerprint() = Fingerprint(
+    definingClass = POINTER_DELEGATE,
+    name = "h",
+    parameters = listOf("Landroid/view/MotionEvent;"),
+    returnType = "V",
+)
+
+/** The pointer's id, as `findPointerIndex` uses it, and the tracker's key. */
+internal const val POINTER_ID = "$POINTER->a:I"
+
+/**
+ * Scratch for the move emission, all dead at the insertion point by `preflight.live_free`.
+ *
+ * Five, because `track` takes five arguments and a `35c` invoke holds exactly five registers. The
+ * insertion is **inside the per-pointer loop**, so a register that is not actually free corrupts
+ * every later pointer in the same event rather than failing where it was written — which is why
+ * this came from the CFG-correct liveness helper rather than from reading the disassembly.
+ */
+internal val MOVE_SCRATCH = listOf(3, 4, 5, 6, 7)
+

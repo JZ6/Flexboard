@@ -18,6 +18,17 @@ public class Resources {
         return null;
     }
 
+    /**
+     * The system resources, for code with no Context to borrow.
+     *
+     * <p>Display density is a property of the display rather than of an application, and the
+     * up-flick tracker is reached from a static emission inside Gboard's touch loop, where there is
+     * no instance to take one from.
+     */
+    public static Resources getSystem() {
+        return null;
+    }
+
     /** Thrown by the id-addressed lookups when the id names nothing on this build. */
     public static class NotFoundException extends RuntimeException {
     }

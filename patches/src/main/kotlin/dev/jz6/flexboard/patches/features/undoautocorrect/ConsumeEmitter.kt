@@ -1,5 +1,6 @@
 package dev.jz6.flexboard.patches.features.undoautocorrect
 
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.BytecodePatchContext
@@ -7,6 +8,10 @@ import app.morphe.patcher.util.smali.ExternalLabel
 import dev.jz6.flexboard.patches.shared.InvokeKind
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.methodDescriptorOrNull
+import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.sole
+import dev.jz6.flexboard.patches.shared.usesField
+import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.checkFieldExists
 import dev.jz6.flexboard.patches.shared.checkInvokeKind
@@ -48,6 +53,68 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
  * Question 2 is the one the old emission got for free by anchoring where that lookup returned null.
  * Asking it explicitly is what keeps flick-for-symbols working from the new position.
  */
+/**
+ * Where the journey is recorded, and where it is asked about.
+ *
+ * Declared beside the emissions rather than in `Fingerprints.kt`, because
+ * `check_shared_constants.py` matches a file's extension descriptors against the calls emitted *in
+ * that file*. Split across two files it found descriptors, matched no call, and reported that it
+ * had silently stopped checking — which is the guard working.
+ */
+internal const val TRACK_MOVE =
+    "Ldev/jz6/flexboard/extension/gesture/UpFlickTracker;->track(IFFFF)V"
+internal const val WAS_UP_FLICK =
+    "Ldev/jz6/flexboard/extension/gesture/UpFlickTracker;->wasUpFlick(IFF)Z"
+
+/**
+ * Records every pointer's furthest upward travel, once per move event.
+ *
+ * The companion to [emitConsumingUndoAutocorrect], and the reason the gesture can be recognised at
+ * all. Gboard's `Lpvi;->h` classifies once at release from start-to-end displacement, which is why
+ * this gesture fired intermittently while the scrub — a handler that sees every event — never
+ * misses. Watching the journey is the property that makes the difference, not a lower threshold.
+ */
+internal fun BytecodePatchContext.emitUpFlickTracking() {
+    val method = pointerMoveFingerprint().method
+    val what = "$POINTER_DELEGATE->h"
+    checkMethodExists(TRACK_MOVE, "the up-flick tracker in the extension")
+    for (field in listOf(POINTER_ID, POINTER_START_X, POINTER_START_Y, POINTER_X, POINTER_Y)) {
+        checkFieldExists(field, "a pointer field the move emission reads")
+    }
+
+    val body = method.instructions.toList()
+    check(body.count { it.callsMethod(TRACK_MOVE) } == 0) {
+        "$what already records up-flicks — this patch has been applied twice"
+    }
+
+    // After the y write, where the pointer holds both the gesture start and the current position.
+    // Located by the write itself rather than by a pc, so a build that moves it is followed.
+    val yWrite = body.withIndex()
+        .filter { (_, instruction) -> instruction.usesField(POINTER_Y) && instruction.opcodeName().startsWith("IPUT") }
+        .sole { "$what writes $POINTER_Y $it times, expected exactly one" }
+    val pointerRegister = (yWrite.value as TwoRegisterInstruction).registerB
+
+    validateScratchRegisters(
+        scratch = MOVE_SCRATCH,
+        avoid = listOf(pointerRegister),
+        what = what,
+        registerCount = method.implementation!!.registerCount,
+    )
+    val (a, b, c, d, e) = MOVE_SCRATCH
+
+    method.addInstructions(
+        yWrite.index + 1,
+        """
+            iget v$a, v$pointerRegister, $POINTER_ID
+            iget v$b, v$pointerRegister, $POINTER_START_X
+            iget v$c, v$pointerRegister, $POINTER_START_Y
+            iget v$d, v$pointerRegister, $POINTER_X
+            iget v$e, v$pointerRegister, $POINTER_Y
+            invoke-static { v$a, v$b, v$c, v$d, v$e }, $TRACK_MOVE
+        """.trimIndent(),
+    )
+}
+
 internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
     keycode: Int = REVERT_AUTOCORRECT,
     probe: String? = null,
@@ -60,8 +127,7 @@ internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
 
     // Every obfuscated member the emission spells, before an instruction is written, so a rename is
     // a refused patch naming the member rather than a verify error on a device.
-    checkInvokeKind(POINTER_DIRECTION, InvokeKind.VIRTUAL, "the resolved-action direction")
-    checkInvokeKind(POINTER_SLIDE_DIRECTION, InvokeKind.VIRTUAL, "the gesture direction this emission reads")
+    checkMethodExists(WAS_UP_FLICK, "the up-flick question in the extension")
     checkInvokeKind(ACTION_DEF_LOOKUP, InvokeKind.VIRTUAL, "the action lookup that spares a symbol key")
     if (probe == null) {
         checkInvokeKind(KEY_DATA_CTOR, InvokeKind.DIRECT, "the key-data constructor the revert builds")
@@ -142,14 +208,12 @@ internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
     method.addInstructionsWithLabels(
         0,
         """
-            invoke-virtual { v$pointer }, $POINTER_DIRECTION
-            move-result-object v$a
-            iget v$b, v$pointer, $POINTER_X
-            iget v$c, v$pointer, $POINTER_Y
-            invoke-virtual { v$pointer, v$b, v$c, v$a }, $POINTER_SLIDE_DIRECTION
-            move-result-object v$a
-            sget-object v$b, $SLIDE_UP
-            if-ne v$a, v$b, :$STOCK_LABEL
+            iget v$a, v$pointer, $POINTER_ID
+            iget v$b, v$pointer, $POINTER_START_X
+            iget v$c, v$pointer, $POINTER_START_Y
+            invoke-static { v$a, v$b, v$c }, $WAS_UP_FLICK
+            move-result v$a
+            if-eqz v$a, :$STOCK_LABEL
 $unclaimed$corridor
 $payload
             const/4 v$a, 0x1
