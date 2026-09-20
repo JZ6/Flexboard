@@ -423,6 +423,75 @@ the gesture would make one install answer two questions again.
    gesture was not reliable enough to test it with.
 4. retire the `Lpvf;->t` emitter and the diagnostic.
 
+## Why it fires intermittently, and it is not the threshold
+
+`2.5.1-dev.2` halved `keyboard_slide_sensitivity_ratio`. The marker still arrives on some flicks and
+not others. The device report that explains it:
+
+> swipe left, right and down all work 100% of the time
+
+That asymmetry is the finding. Those gestures are not a better-tuned version of this one — they run
+on entirely different machinery.
+
+### Two mechanisms, not one
+
+**The scrub** (`ScrubMotionEventHandler->g(MotionEvent)V`) is a motion event handler. It receives
+*every* event: on DOWN it records the start, and on each MOVE it re-evaluates and claims the pointer
+the moment the drag qualifies. Where the finger is at release never enters into it.
+
+**The slide direction** (`Lpvi;->h`) runs once, on ACTION_UP, over start→end displacement. Three
+things follow, and together they are the whole problem:
+
+ - **It measures the release point, not the journey.** An upward flick decelerates, and a finger
+   commonly drifts back down as it lifts. Peak `dy` can clear the threshold comfortably while the
+   `dy` that `h()` actually sees does not.
+ - **One comparison, one chance.** The scrub has dozens of move events in which to succeed.
+ - **The arc is invisible.** Curvature, a pause, speed — none of it exists in two points.
+
+Halving the ratio made that single comparison easier to pass. It did not stop it being a single
+comparison taken at the worst possible instant, which is why the result is "more often" rather than
+"reliably".
+
+### The scrub engine cannot simply be reused
+
+Worth recording, because it looked like configuration and is not. `g(MotionEvent)V` is horizontal by
+construction:
+
+```
+ 104-112: starts only if the touched key's keycode == Lpvs;->a:I
+ 162-166: records getX(...) only — no Y is stored
+ 176-186: threshold from Lpvr;->d:F or ->e:F, chosen by Lpvs;->j:I
+```
+
+Teaching it about Y means changing what it stores and what it compares, for every subclass that
+shares the engine — delete, space-move and inline suggestion. That is a much larger and riskier
+change than the gesture is worth.
+
+### The tractable fix: measure the journey ourselves
+
+Keep `Lpvi;->G` for the claim. That part is proven and goal 2 is met. Replace only the *detection*.
+
+`Lpvf;->h(Landroid/view/MotionEvent;)V` is the move path: it iterates every tracked pointer and
+writes `Lpvi;->e:F` from `getY` at pc 63, once per motion event. Hook there, hand the coordinates to
+the extension, and keep the peak upward displacement per pointer. Then at `G`, ask *did this gesture
+ever travel far enough upward* rather than *is the release point high enough*.
+
+The extension is the right home and is already proven on exactly this path — `GestureProbe.fired()`
+is called from `G` today and types its marker, so the plumbing works. This adds two floats of state
+and one earlier call site.
+
+That gives the gesture the same property that makes the scrub reliable — continuous observation
+instead of a single endpoint sample — without modifying Gboard's scrub engine at all.
+
+Open, for whoever picks this up:
+
+ - where to key the per-pointer state. `Lpvf;->h` has the `Lpvi;` in hand; passing its identity hash
+   or the pointer id is probably enough, and it must be reset on DOWN or the peak leaks between
+   gestures.
+ - whether `Lpvf;->h` is reached for every pointer on every move, or only for pointers the delegate
+   already owns. Read it before relying on it.
+ - whether the corridor test should also move to peak-relative rather than release-relative.
+
 ## The thing that has to be fixed first
 
 **Nothing here reads what the patcher produced.** `preflight.py` takes the *stock* dex tree and the
