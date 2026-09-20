@@ -2505,6 +2505,62 @@ def run(dl, apk=None):
         check('rambler: nothing is isolated that is not forced',
               isolated <= forced, str(isolated - forced))
 
+    # ---- inline autofill suggestions
+    #
+    # A rollout flag Gboard ships off, which stock Gboard gets switched on from Google's servers and
+    # a renamed package never does. Pinned the same way as rambler -- the flag set is read out of
+    # the patch's own Kotlin, so the two cannot drift -- plus the gate that reads it, because a flag
+    # forced on while nothing consumes it is a patch that claims credit for nothing.
+    inline_src = os.path.join(
+        repo, 'patches/src/main/kotlin/dev/jz6/flexboard/patches/features/inlinesuggestions',
+        'InlineSuggestionsPatch.kt')
+    i_forced, i_isolated = (declared_flag_sets(open(inline_src).read())
+                            if os.path.exists(inline_src) else (None, None))
+    if check('inline: the patch declares its flag sets readably', i_forced is not None):
+        for flag in sorted(i_forced):
+            owner = find_string_holder(dl, flag)
+            _c, hins = body(dl, f'{owner}-><clinit>()V') if owner else (None, None)
+            layout = flag_layout(hins, flag) if hins else None
+            if not check(f'inline: {flag} is locatable in the dex', layout is not None):
+                continue
+            check(f'inline: {flag} is actually off, so forcing it means something',
+                  layout['effective'] == 0, f"effective={layout['effective']}")
+            check(f'inline: {flag} isolation matches what its constant sharing requires',
+                  layout['isolate'] == (flag in i_isolated),
+                  f"dex says isolate={layout['isolate']}, patch says {flag in i_isolated}")
+        check('inline: nothing is isolated that is not forced',
+              i_isolated <= i_forced, str(i_isolated - i_forced))
+
+        # The consumer. `Loni;` is InlineSuggestionCandidateViewController, and its `x()` is the
+        # guard asked before a candidate is shown. If the flag stops being read here, forcing it
+        # would silently achieve nothing -- which is the failure this whole file exists to catch.
+        c_, ins_ = body(dl, 'Loni;->x()Z')
+        if check('inline: the candidate controller gate exists', ins_ is not None):
+            check('inline: the gate still reads the client-side flag',
+                  any(n_.startswith('sget-object') and 'Lonj;->b:' in (a_ or '')
+                      for _pc, n_, a_ in ins_))
+            check('inline: it is still a boolean short-circuit, not a value read',
+                  any(n_.startswith('invoke-virtual') and 'Boolean;->booleanValue' in (a_ or '')
+                      for _pc, n_, a_ in ins_))
+        # Not find_string_holder: that only scans <clinit>, and this string is in a log call in
+        # an ordinary method. Using it here returned None and failed a pin that was correct.
+        def names_itself(cls, needle):
+            for d_ in dl:
+                for cname, _af, cd_ in d_.classes():
+                    if cname != cls or not cd_:
+                        continue
+                    for m_, _ma, co_ in d_.class_methods(cd_):
+                        code = d_.code(co_) if co_ else None
+                        if code is None:
+                            continue
+                        for _pc, n_, a_ in ddis.disasm(d_, code):
+                            if n_.startswith('const-string') and needle in (a_ or ''):
+                                return True
+            return False
+
+        check('inline: the gate belongs to the inline suggestion view controller',
+              names_itself('Loni;', 'InlineSuggestionCandidateViewController.java'))
+
     # ---- modern keypress haptics
     #
     # Gboard has both vibration paths compiled in and picks between them in Lpho;->k. The primitive
