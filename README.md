@@ -35,9 +35,9 @@ Both keyboards stay installed, so you can switch back whenever you like.
 ## Patches
 
 <!-- PATCHES_START EXPANDED -->
-> **[v2.5.1-dev.2](https://github.com/JZ6/Flexboard/releases/tag/v2.5.1-dev.2)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;17 patches total
+> **[v2.5.1-dev.3](https://github.com/JZ6/Flexboard/releases/tag/v2.5.1-dev.3)**&nbsp;&nbsp;•&nbsp;&nbsp;`dev`&nbsp;&nbsp;•&nbsp;&nbsp;17 patches total
 <details open>
-<summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;16 patches</summary>
+<summary>📦 Gboard&nbsp;&nbsp;•&nbsp;&nbsp;17 patches</summary>
 <br>
 
 **🎯 Supported versions:**
@@ -51,8 +51,8 @@ Both keyboards stay installed, so you can switch back whenever you like.
 | [Bypass Gboard Signature](#bypass-gboard-signature) | Bypass Gboard's signature whitelist checks and force them to pass. |  |
 | Enable Rambler | Exposes Google Rambler — Gboard's agentic dictation, which rewrites what you say into composed text — as a choice in Voice settings. It is not switched on for you: the feature uses a Google server, has its own quota and asks for consent, so picking it is left to you. |  |
 | [Hidden Features](#hidden-features) | Turns on two finished Gboard features that a resigned build can never receive: grammar check, and a close control on the chips Gboard offers unprompted. Their flags are delivered per app signature, so resigning the APK means they never arrive and stay off. Both are confirmed working on a device; five other flags were tried and dropped. |  |
-| Inline autofill suggestions | Restores the inline suggestions password managers and autofill services show above the keyboard. Gboard ships this feature switched off and relies on Google enabling it per install, which never happens for a renamed package — so installing as a Gboard clone loses it. This forces it on. Off by default until it has been confirmed on a device. | No |
 | Hidden Features (unconfirmed) | Turns on four finished Gboard features that a resigned build can never receive: Emoji Kitchen browse, the custom sticker tab, offline translation, and search in Gboard's settings. Off by default because none of the four has been seen working on a device — the flags flip, but each also depends on data Google only sends to an unpatched install. Safe to try: none of them crashes. |  |
+| Inline autofill suggestions | Restores the inline suggestions password managers and autofill services show above the keyboard. Gboard ships this feature switched off and relies on Google enabling it per install, which never happens for a renamed package — so installing as a Gboard clone loses it. This forces it on. Off by default until it has been confirmed on a device. |  |
 | [Install as Gboard Clone](#install-as-gboard-clone) | Rename the package to dev.jz6.com.google.android.inputmethod.latin so the patched build installs alongside the official Gboard instead of replacing it. |  |
 | Modern keypress haptics | Uses Android's haptic primitives for keypresses — the crisp tick the rest of the system uses — instead of a plain buzz. Gboard has the code and disables it with an impossible minimum Android version; this removes that. Devices whose vibrator cannot do primitives are unaffected, because Gboard's own hardware check still runs. Note that it changes what the vibration strength slider means, from milliseconds to intensity. |  |
 | More sensitive slide gestures | Halves how far a finger must travel before Gboard treats it as a slide rather than a keypress. Makes "Swipe up to undo autocorrect", swipe left to delete and swipe right to undo trigger on shorter, more natural motions. The trade is that brief accidental drags become slides too, and on a key with no action bound to that direction a slide types nothing at all. Off by default. |  |

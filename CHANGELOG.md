@@ -1,3 +1,9 @@
+# [2.5.1-dev.3](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.2...v2.5.1-dev.3) (2026-09-21)
+
+* **Gboard:** feat: recognise the up-flick by its journey, not by where the finger lifted
+* **Gboard:** feat: restore inline autofill suggestions, which a clone install loses
+* **Gboard:** docs: the intermittency is the detection mechanism, not the threshold
+
 # [2.5.1-dev.2](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.1...v2.5.1-dev.2) (2026-09-19)
 
 * **Gboard:** feat: a patch for more sensitive slide gestures
