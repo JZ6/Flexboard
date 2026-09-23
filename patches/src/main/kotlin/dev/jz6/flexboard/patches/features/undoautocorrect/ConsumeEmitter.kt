@@ -84,7 +84,14 @@ internal fun BytecodePatchContext.emitUpFlickTracking() {
 
     val body = method.instructions.toList()
     check(body.count { it.callsMethod(TRACK_MOVE) } == 0) {
-        "$what already records up-flicks — this patch has been applied twice"
+        // Worded to match the guard in the consuming emission, because either can fire first and
+        // the reader should get the same diagnosis either way. It said "this patch has been applied
+        // twice", which named the wrong situation: the two swipe-up patches both emit here, so the
+        // second one to run trips this — and it is the mutual exclusion doing its job, not a double
+        // application. `tools/gate` asserts on this wording, and caught the mismatch.
+        "$what already carries a Flexboard emission. \"Swipe up to undo autocorrect\" and " +
+            "\"Swipe up diagnostic (temporary)\" both record the gesture here — enable one or the " +
+            "other."
     }
 
     // After the y write, where the pointer holds both the gesture start and the current position.
