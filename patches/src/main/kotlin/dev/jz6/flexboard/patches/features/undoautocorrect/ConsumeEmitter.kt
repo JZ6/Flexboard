@@ -67,6 +67,15 @@ internal const val WAS_UP_FLICK =
     "Ldev/jz6/flexboard/extension/gesture/UpFlickTracker;->wasUpFlick(IFF)Z"
 
 /**
+ * Diagnostic build only: types the outcome of every release that moved.
+ *
+ * Unconditional, and it does not consume. The question is why the gesture fires in bursts, and a
+ * build that only reports its successes cannot answer that — the failures are the data.
+ */
+internal const val REPORT_OUTCOME =
+    "Ldev/jz6/flexboard/extension/gesture/UpFlickTracker;->report(IFF)V"
+
+/**
  * Records every pointer's furthest upward travel, once per move event.
  *
  * The companion to [emitConsumingUndoAutocorrect], and the reason the gesture can be recognised at
@@ -141,7 +150,7 @@ internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
         checkInvokeKind(EVENT_FROM_KEY_DATA, InvokeKind.STATIC, "the event wrapper the revert uses")
         checkInvokeKind(DISPATCH_EVENT, InvokeKind.INTERFACE, "the event sink the revert is raised on")
     } else {
-        checkMethodExists(probe, "the diagnostic probe in the extension")
+        checkMethodExists(REPORT_OUTCOME, "the diagnostic outcome report in the extension")
     }
     checkFieldExists(SLIDE_UP, "the SLIDE_UP action constant")
     checkFieldExists(POINTER_DELEGATE_FIELD, "the pointer's delegate back-reference")
@@ -212,6 +221,21 @@ internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
     """.trimIndent().prependIndent("            ")
 
     // `const/4 v$a, 0x1 / return v$a` is the whole of goal 2. Gboard's caller does the rest.
+    // The probe build reports and gets out of the way: no guards, no claim. Anything else makes
+    // one install answer two questions, which is how dev.0 and dev.1 taught nothing.
+    if (probe != null) {
+        method.addInstructions(
+            0,
+            """
+                iget v$a, v$pointer, $POINTER_ID
+                iget v$b, v$pointer, $POINTER_START_X
+                iget v$c, v$pointer, $POINTER_START_Y
+                invoke-static { v$a, v$b, v$c }, $REPORT_OUTCOME
+            """.trimIndent(),
+        )
+        return
+    }
+
     method.addInstructionsWithLabels(
         0,
         """

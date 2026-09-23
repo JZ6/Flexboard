@@ -67,11 +67,13 @@ private const val GESTURE_PROBE =
 @Suppress("unused")
 val undoAutocorrectDiagnosticPatch = bytecodePatch(
     name = "Swipe up diagnostic (temporary)",
-    description = "Diagnostic build only. Swipe up on a key to type a marker character, which " +
-        "proves whether the swipe gesture is being detected at all without eating any text. " +
-        "Cannot be used alongside \"Swipe up to undo autocorrect\" — they attach to the same " +
-        "instruction, and selecting both fails the patch rather than giving you both effects. Off " +
-        "by default, and this patch will be removed once it has answered its question.",
+    description = "Diagnostic build only. Types a digit after every swipe that moved, saying " +
+        "what the up-flick detector made of it: 1 means it never saw the gesture, 2 means the " +
+        "travel was too short, 3 means the motion was too diagonal, and 6 means it would have " +
+        "fired. It does not undo anything and does not stop the key being typed \u2014 it only " +
+        "reports. Cannot be used alongside \"Swipe up to undo autocorrect\", which records the " +
+        "same gesture. Off by default, and this patch will be removed once it has answered its " +
+        "question.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)

@@ -1,6 +1,9 @@
 package dev.jz6.flexboard.extension.gesture;
 
 import android.content.res.Resources;
+import android.view.inputmethod.InputConnection;
+
+import dev.jz6.flexboard.extension.ime.ImeService;
 
 /**
  * Remembers how far a pointer travelled upward, so an up-flick can be recognised by its journey
@@ -73,6 +76,39 @@ public final class UpFlickTracker {
         }
     }
 
+    /** Outcomes of {@link #classify}, and the markers {@link #report} types for each. */
+    public static final int NOT_TRACKED = 1;
+    public static final int TOO_SHORT = 2;
+    public static final int OFF_CORRIDOR = 3;
+    public static final int UP_FLICK = 6;
+
+    /**
+     * Why the gesture that just ended was, or was not, an upward flick.
+     *
+     * <p>Three-valued on the failure side rather than a boolean, because the three causes need
+     * completely different fixes and look identical from a device. The gesture currently fires in
+     * bursts — several in a row, then nothing, then several again — and that is consistent with the
+     * tracker never having seen the pointer at all ({@link #NOT_TRACKED}), with the travel being
+     * genuinely short ({@link #TOO_SHORT}), and with the corridor rejecting it
+     * ({@link #OFF_CORRIDOR}). Guessing between them is what this exists to stop.
+     */
+    public static int classify(int id, float gestureStartX, float gestureStartY) {
+        try {
+            if (id != pointerId || gestureStartX != startX || gestureStartY != startY) {
+                return NOT_TRACKED;
+            }
+            if (peakDy > -flickDistancePx()) {
+                return TOO_SHORT;
+            }
+            if (CORRIDOR_RATIO * Math.abs(dxAtPeak) > Math.abs(peakDy)) {
+                return OFF_CORRIDOR;
+            }
+            return UP_FLICK;
+        } catch (Throwable oops) {
+            return NOT_TRACKED;
+        }
+    }
+
     /**
      * Whether the gesture that just ended was an upward flick.
      *
@@ -80,16 +116,36 @@ public final class UpFlickTracker {
      * path — a tap, or one skipped because its index was stale — cannot be mistaken for a flick.
      */
     public static boolean wasUpFlick(int id, float gestureStartX, float gestureStartY) {
+        return classify(id, gestureStartX, gestureStartY) == UP_FLICK;
+    }
+
+    /**
+     * Diagnostic build only: types the outcome of every pointer release as a digit.
+     *
+     * <p>Called unconditionally rather than on success, because a gesture that produces nothing is
+     * the case under investigation and a silent failure tells you nothing. A run of 1s means the
+     * tracker is not seeing the pointer; a run of 2s means 24dp is too far; 3s mean the corridor is
+     * too narrow. The proportions matter as much as the values.
+     *
+     * <p>Only fires for gestures that moved at all, so ordinary typing does not fill the field with
+     * 1s — a tap has no travel to classify and nothing to report.
+     */
+    public static void report(int id, float gestureStartX, float gestureStartY) {
         try {
-            if (id != pointerId || gestureStartX != startX || gestureStartY != startY) {
-                return false;
+            boolean tracked = id == pointerId
+                    && gestureStartX == startX
+                    && gestureStartY == startY;
+            if (tracked && peakDy == 0f) {
+                return;
             }
-            if (peakDy > -flickDistancePx()) {
-                return false;
+            int outcome = classify(id, gestureStartX, gestureStartY);
+            InputConnection connection = ImeService.connection();
+            if (connection == null) {
+                return;
             }
-            return CORRIDOR_RATIO * Math.abs(dxAtPeak) <= Math.abs(peakDy);
+            connection.commitText(Integer.toString(outcome), 1);
         } catch (Throwable oops) {
-            return false;
+            // A diagnostic must never be the thing that breaks the keyboard it is measuring.
         }
     }
 
