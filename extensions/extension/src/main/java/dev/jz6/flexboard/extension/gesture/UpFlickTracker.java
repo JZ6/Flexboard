@@ -45,34 +45,62 @@ public final class UpFlickTracker {
     private static final float CORRIDOR_RATIO = 2f;
 
     private static int pointerId = -1;
-    private static float startX;
-    private static float startY;
 
-    /** Most negative dy seen this gesture, and the dx at that moment. Up is negative. */
-    private static float peakDy;
-    private static float dxAtPeak;
+    /** The lowest the finger has been this gesture (largest y), and where it was horizontally. */
+    private static float lowestY;
+    private static float xAtLowest;
+
+    /** The largest upward excursion from that low point, and the sideways drift at its peak. */
+    private static float peakRise;
+    private static float driftAtPeak;
+
+    private static boolean seen;
 
     private UpFlickTracker() {
     }
 
-    /** Called once per pointer per move event, with the gesture's start and current positions. */
-    public static void track(int id, float gestureStartX, float gestureStartY, float x, float y) {
+    /**
+     * Called once per pointer per move event.
+     *
+     * <p><b>The origin comes from the y-stream, not from Gboard.</b> The first version measured
+     * displacement from {@code Lpvi;->b/c}, on the reasonable-looking belief that those are the
+     * gesture's start. They are re-initialised by {@code Lpvi;->B(SoftKeyView, …)}, which is "this
+     * pointer is now on this key" — so a swipe that crosses onto another key silently restarts the
+     * measurement and a long flick reports as a short one. On a device that showed up as a flood of
+     * {@code 2}s: tracked, but never far enough.
+     *
+     * <p>So the low point is whatever the stream says it is. Running maximum y, and the largest
+     * rise above it. Nothing Gboard owns can reset it mid-gesture, and it needs no notion of where
+     * the gesture began.
+     *
+     * <p>The start parameters are still accepted and ignored. Keeping the signature means the
+     * emission does not change, and the emission is the part that has been verified in a patched
+     * dex.
+     */
+    public static void track(int id, float unusedStartX, float unusedStartY, float x, float y) {
         try {
-            if (id != pointerId || gestureStartX != startX || gestureStartY != startY) {
+            if (id != pointerId || !seen) {
                 pointerId = id;
-                startX = gestureStartX;
-                startY = gestureStartY;
-                peakDy = 0f;
-                dxAtPeak = 0f;
+                seen = true;
+                lowestY = y;
+                xAtLowest = x;
+                peakRise = 0f;
+                driftAtPeak = 0f;
+                return;
             }
-            float dy = y - gestureStartY;
-            if (dy < peakDy) {
-                peakDy = dy;
-                dxAtPeak = x - gestureStartX;
+            if (y > lowestY) {
+                // Still descending, or settling. This becomes the point to rise from.
+                lowestY = y;
+                xAtLowest = x;
+                return;
+            }
+            float rise = lowestY - y;
+            if (rise > peakRise) {
+                peakRise = rise;
+                driftAtPeak = x - xAtLowest;
             }
         } catch (Throwable oops) {
-            // This runs on every motion event of every pointer. It must never be the reason the
-            // keyboard stops handling touch.
+            // Runs on every motion event of every pointer; it must never break touch handling.
         }
     }
 
@@ -92,15 +120,15 @@ public final class UpFlickTracker {
      * genuinely short ({@link #TOO_SHORT}), and with the corridor rejecting it
      * ({@link #OFF_CORRIDOR}). Guessing between them is what this exists to stop.
      */
-    public static int classify(int id, float gestureStartX, float gestureStartY) {
+    public static int classify(int id, float unusedStartX, float unusedStartY) {
         try {
-            if (id != pointerId || gestureStartX != startX || gestureStartY != startY) {
+            if (id != pointerId || !seen) {
                 return NOT_TRACKED;
             }
-            if (peakDy > -flickDistancePx()) {
+            if (peakRise < flickDistancePx()) {
                 return TOO_SHORT;
             }
-            if (CORRIDOR_RATIO * Math.abs(dxAtPeak) > Math.abs(peakDy)) {
+            if (CORRIDOR_RATIO * Math.abs(driftAtPeak) > peakRise) {
                 return OFF_CORRIDOR;
             }
             return UP_FLICK;
@@ -110,13 +138,29 @@ public final class UpFlickTracker {
     }
 
     /**
+     * Ends the gesture.
+     *
+     * <p>Asked at release, which is the only reliable boundary available: Gboard's own start fields
+     * cannot be used to detect a new gesture now that the origin does not come from them, and there
+     * is no DOWN hook. Clearing here means a pointer that is never asked about leaks its state into
+     * the next gesture — which the running-maximum recovers from on the first downward sample.
+     */
+    private static void finish() {
+        seen = false;
+        peakRise = 0f;
+        driftAtPeak = 0f;
+    }
+
+    /**
      * Whether the gesture that just ended was an upward flick.
      *
      * <p>Answers false for anything it was not watching, so a pointer that never reached the move
      * path — a tap, or one skipped because its index was stale — cannot be mistaken for a flick.
      */
     public static boolean wasUpFlick(int id, float gestureStartX, float gestureStartY) {
-        return classify(id, gestureStartX, gestureStartY) == UP_FLICK;
+        int outcome = classify(id, gestureStartX, gestureStartY);
+        finish();
+        return outcome == UP_FLICK;
     }
 
     /**
@@ -132,13 +176,16 @@ public final class UpFlickTracker {
      */
     public static void report(int id, float gestureStartX, float gestureStartY) {
         try {
-            boolean tracked = id == pointerId
-                    && gestureStartX == startX
-                    && gestureStartY == startY;
-            if (tracked && peakDy == 0f) {
+            // Quiet unless the finger actually travelled upward. A tap wobbles by a pixel or two,
+            // and the first version reported those as 2 — filling the field with noise that looked
+            // like a detection failure and was a reporting one.
+            boolean worthReporting = id == pointerId && seen
+                    && peakRise >= flickDistancePx() / 4f;
+            int outcome = classify(id, gestureStartX, gestureStartY);
+            finish();
+            if (!worthReporting) {
                 return;
             }
-            int outcome = classify(id, gestureStartX, gestureStartY);
             InputConnection connection = ImeService.connection();
             if (connection == null) {
                 return;
