@@ -56,6 +56,9 @@ public final class UpFlickTracker {
 
     private static boolean seen;
 
+    /** How many move events this gesture produced. Sparse sampling is one of the suspects. */
+    private static int sampleCount;
+
     private UpFlickTracker() {
     }
 
@@ -86,8 +89,10 @@ public final class UpFlickTracker {
                 xAtLowest = x;
                 peakRise = 0f;
                 driftAtPeak = 0f;
+                sampleCount = 1;
                 return;
             }
+            sampleCount++;
             if (y > lowestY) {
                 // Still descending, or settling. This becomes the point to rise from.
                 lowestY = y;
@@ -147,6 +152,7 @@ public final class UpFlickTracker {
      */
     private static void finish() {
         seen = false;
+        sampleCount = 0;
         peakRise = 0f;
         driftAtPeak = 0f;
     }
@@ -174,23 +180,42 @@ public final class UpFlickTracker {
      * <p>Only fires for gestures that moved at all, so ordinary typing does not fill the field with
      * 1s — a tap has no travel to classify and nothing to report.
      */
-    public static void report(int id, float gestureStartX, float gestureStartY) {
+    public static void report(int id, float unusedStartX, float unusedStartY) {
         try {
-            // Quiet unless the finger actually travelled upward. A tap wobbles by a pixel or two,
-            // and the first version reported those as 2 — filling the field with noise that looked
-            // like a detection failure and was a reporting one.
-            boolean worthReporting = id == pointerId && seen
-                    && peakRise >= flickDistancePx() / 4f;
-            int outcome = classify(id, gestureStartX, gestureStartY);
+            boolean tracked = id == pointerId && seen;
+            float rise = tracked ? peakRise : 0f;
+            float drift = tracked ? Math.abs(driftAtPeak) : 0f;
+            int outcome = classify(id, unusedStartX, unusedStartY);
+            int samples = sampleCount;
             finish();
-            if (!worthReporting) {
+
+            // Below a quarter of the flick distance this was not an attempt at a gesture, and
+            // reporting it fills the field with noise about ordinary typing.
+            if (!tracked || rise < flickDistancePx() / 4f) {
                 return;
             }
+
+            // The measurement, not a verdict on it. Three rounds of this feature have been lost to
+            // me choosing between explanations that all produce the same category — "too short" is
+            // consistent with the threshold being wrong, with the sampling being sparse, and with
+            // the measurement being broken, and those need different fixes. A number separates
+            // them in one swipe: do a deliberate long flick and read what it thought it saw.
+            //
+            //   u<rise>/<drift>s<samples>=<outcome>
+            //
+            // rise and drift in dp so they can be compared against the 24dp threshold directly,
+            // samples being how many move events the gesture produced, which is the one thing that
+            // cannot be inferred afterwards.
+            float density = Resources.getSystem().getDisplayMetrics().density;
+            String text = "u" + Math.round(rise / density)
+                    + "/" + Math.round(drift / density)
+                    + "s" + samples
+                    + "=" + outcome + " ";
             InputConnection connection = ImeService.connection();
             if (connection == null) {
                 return;
             }
-            connection.commitText(Integer.toString(outcome), 1);
+            connection.commitText(text, 1);
         } catch (Throwable oops) {
             // A diagnostic must never be the thing that breaks the keyboard it is measuring.
         }
