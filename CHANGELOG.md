@@ -1,3 +1,7 @@
+# [2.5.1-dev.5](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.4...v2.5.1-dev.5) (2026-09-29)
+
+* **Gboard:** fix: measure the flick from the touch stream, not from Gboard's start fields
+
 # [2.5.1-dev.4](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.3...v2.5.1-dev.4) (2026-09-23)
 
 * **Gboard:** test: make the device say why the up-flick did not fire
