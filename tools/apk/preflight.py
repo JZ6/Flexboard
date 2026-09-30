@@ -148,9 +148,7 @@ EXPECTED = {
     'hidden_feature_flags_shared': [
         ('enable_close_proactive_suggestions_access_point', 'enable_auto_fill_pk_fallback_ui'),
     ],
-    'undo_ac_register_count': 16,
     'undo_ac_slide_up_field': 'c',
-    'undo_ac_scratch': [3, 5, 6, 7, 8],
     'toolbar_capacity_flag': 'config_max_access_points',
     'toolbar_stock_flag_default': -1,
     'toolbar_stock_ceiling': 8,
@@ -762,13 +760,13 @@ def live_free(ins, register_count, at_pc):
 
 # The floor for the check count. Not the exact number: adding a pin should not require editing
 # two places. It exists to catch a *collapse*, which is what an empty dex-derived list causes.
-MINIMUM_CHECKS = 314
+MINIMUM_CHECKS = 310
 
 # And the floor when an APK is supplied too, which is how the gate runs it. Two numbers because the
 # resource pins only exist in that mode: a single floor either has to sit below the dex-only count,
 # which leaves twenty-odd resource pins free to vanish unnoticed, or above it, which breaks the
 # dex-only run. The whole point of a floor is that it sits just under the real number.
-MINIMUM_CHECKS_WITH_APK = 334
+MINIMUM_CHECKS_WITH_APK = 330
 
 
 class Report:
@@ -2324,66 +2322,38 @@ def run(dl, apk=None):
 
     # ---- swipe up to undo autocorrect
     #
-    # The patch inserts a guard before the ActionDef test on the pointer-release path and, on an
-    # upward flick over a key that claims none, dispatches Gboard's own revert-autocorrect event.
-    #
-    # The release path, not the touch handler: BasicMotionEventHandler->g dispatches only on
-    # actions 7, 9 and 10 -- ACTION_HOVER_* -- so an emission there would never see a finger. It
-    # also carries two of these lookups where the release path carries one. Both facts are pinned,
-    # because "patched the plausible-looking method" is the failure this cost a rewrite to find.
+    # The real patch prepends to Lpvi;->G, which handleActionUp asks before any per-direction
+    # dispatch; returning true skips the keypress commit. These pin what that rests on. The checks
+    # that used to live here pinned the old Lpvf;->t anchor -- its frame, its scratch registers, the
+    # action lookup it sat beside -- for an emitter that was deleted once it was shown never to have
+    # fired, and meanwhile nothing pinned the anchor that actually ships.
     DISPATCH_EVENT = f"{B['event_sink']}->n({B['ime_event']})V"
     release = f"{B['pointer_delegate']}->t({B['pointer_tracker']}Landroid/view/MotionEvent;I)V"
-    lookup = (f"{B['pointer_tracker']}->j({B['key_selector']})"
-              'Lcom/google/android/libraries/inputmethod/metadata/ActionDef;')
+    handled = (f"{B['pointer_tracker']}->G(Landroid/view/MotionEvent;"
+               'Lcom/google/android/libraries/inputmethod/metadata/SoftKeyDef;II)Z')
 
     c_, ins_ = body(dl, release)
     if check('undo-ac: the pointer release path exists', ins_ is not None):
-        # R8 renames `t`; it does not rename strings. Gboard's own trace section names this method
-        # in plain text, which makes it the one anchor here that a re-obfuscation cannot move. It is
-        # also the evidence that this is the release path and not something that merely looks like
-        # it -- the reason the first version of this patch went to the wrong method.
+        # R8 renames `t`; it does not rename strings. Gboard's own trace section names this method.
         traced = [a for _pc, n_, a in ins_
                   if n_.startswith('const-string') and 'handleActionUp' in (a or '')]
         check('undo-ac: the release path still identifies itself as handleActionUp',
               len(traced) == 1, str(len(traced)))
-        check('undo-ac: its frame is the one the scratch registers were measured against',
-              c_['registers'] == E['undo_ac_register_count'], str(c_['registers']))
-        hits = [i for i, (_pc, _n, a) in enumerate(ins_) if lookup in (a or '')]
-        if check('undo-ac: one action lookup to anchor on', len(hits) == 1, str(len(hits))):
-            i_ = hits[0]
-            check('undo-ac: the lookup result is moved',
-                  ins_[i_ + 1][1] == 'move-result-object', ins_[i_ + 1][1])
-            adr = re.match(r'\s*v(\d+)', ins_[i_ + 1][2] or '')
-            tests = [(j, ins_[j][0]) for j in range(i_ + 2, min(i_ + 10, len(ins_)))
-                     if ins_[j][1] == 'if-eqz' and adr
-                     and (ins_[j][2] or '').strip().startswith(f'v{adr.group(1)},')]
-            # Two const/4s sit between the move-result and this test. Assuming adjacency is what
-            # pointed the first version of the emitter at the wrong instruction.
-            if check('undo-ac: the ActionDef is tested with if-eqz nearby', len(tests) == 1,
-                     str(len(tests))):
-                at = tests[0][1]
-                free = set(live_free(ins_, c_['registers'], at))
-                want = set(E['undo_ac_scratch'])
-                check('undo-ac: the scratch registers are dead at the insertion point',
-                      want <= free, str(sorted(want - free)))
+        calls = [a for _pc, n_, a in ins_ if n_.startswith('invoke') and handled in (a or '')]
+        check('undo-ac: handleActionUp asks the already-handled question exactly once',
+              len(calls) == 1, str(len(calls)))
 
-    # The emission's own "have I already run here" signal. Both swipe-up patches attach to this
-    # method, and the second one distinguishes "already patched" from "Gboard moved" by counting
-    # dispatches. That only works while stock carries none.
-    c_, ins_ = body(dl, release)
-    if ins_ is not None:
+    # The consuming emission writes v0-v4 at pc 0 on the strength of this frame: twenty registers,
+    # five of them parameters, so every local is unwritten on entry.
+    c_, ins_ = body(dl, handled)
+    if check('undo-ac: the already-handled method exists', ins_ is not None):
+        check('undo-ac: its frame is the one the emission was measured against',
+              (c_['registers'], c_['ins']) == (20, 5), f"{c_['registers']}/{c_['ins']}")
+        # The emission's own "already applied" guard counts IME dispatches here. That only
+        # distinguishes a second application from stock while stock carries none.
         sinks = [i for i, (_pc, _n, a) in enumerate(ins_) if DISPATCH_EVENT in (a or '')]
-        check('undo-ac: stock dispatches no IME event from the release path',
+        check('undo-ac: stock dispatches no IME event from the already-handled method',
               len(sinks) == 0, f'found {len(sinks)}')
-
-    # The hover handler, pinned as the thing this is deliberately *not*. If a build ever moves the
-    # finger path into it, this fails and the choice gets revisited rather than silently inherited.
-    c_, ins_ = body(dl, 'Lcom/google/android/libraries/inputmethod/motioneventhandler/'
-                        'BasicMotionEventHandler;->g(Landroid/view/MotionEvent;)V')
-    if check('undo-ac: the hover handler still exists', ins_ is not None):
-        hover = [i for i, (_pc, _n, a) in enumerate(ins_) if lookup in (a or '')]
-        check('undo-ac: it is still the two-lookup hover path, not the release path',
-              len(hover) == 2, str(len(hover)))
 
     # SLIDE_UP by name, not by letter. A build that reordered the enum would otherwise leave the
     # patch comparing against SLIDE_DOWN in silence.

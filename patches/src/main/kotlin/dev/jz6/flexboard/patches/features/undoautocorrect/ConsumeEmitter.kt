@@ -5,61 +5,50 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLa
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.util.smali.ExternalLabel
+import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import dev.jz6.flexboard.patches.shared.InvokeKind
+import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.callsMethod
+import dev.jz6.flexboard.patches.shared.checkFieldExists
+import dev.jz6.flexboard.patches.shared.checkInvokeKind
+import dev.jz6.flexboard.patches.shared.checkMethodExists
 import dev.jz6.flexboard.patches.shared.methodDescriptorOrNull
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.usesField
-import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
-import dev.jz6.flexboard.patches.shared.assertRegisterCount
-import dev.jz6.flexboard.patches.shared.checkFieldExists
-import dev.jz6.flexboard.patches.shared.checkInvokeKind
-import dev.jz6.flexboard.patches.shared.checkMethodExists
 import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
-/**
- * Swipe up to undo autocorrect, by telling Gboard the pointer was already handled.
+/*
+ * The real "Swipe up to undo autocorrect" emission, in the key pipeline.
  *
- * This is "option B" from `docs/undo-autocorrect-plan.md`, and it exists because the emission it
- * replaces could not meet goal 2 — *the key must not be typed*. That one hooks `Lpvf;->t` after
- * Gboard has already decided the pointer is a keypress, and every way of un-deciding it either
- * typed the letter anyway or crashed at class load.
+ * **This design is being replaced, and as it stands it cannot fire.** Two findings from review,
+ * both verified against the dex; see docs/undo-autocorrect-plan.md.
  *
- * ### Why this one cannot crash the same way
+ *  1. `Lpvi;->G` is only reached while the finger is still attached to a key. Letter keys declare
+ *     no upward action, so Gboard treats an upward slide as moving onto another key, and above the
+ *     top row there is none: the finger detaches and `G` never runs. Confirmed on a device, where a
+ *     top-row flick produced nothing and a bottom-row flick produced a report.
+ *  2. The "does this key own an upward action" check asks `Lpvi;->j(SLIDE_UP)`, whose lookup falls
+ *     back to the key's PRESS action when there is no exact match. It is therefore never null on a
+ *     letter key, the skip is always taken, and the payload is unreachable.
  *
- * `Lpvi;->G` is Gboard's own "already handled" question, asked *before* any per-direction dispatch.
- * Returning true from it skips the commit and lands on a block Gboard reaches from eight other arms
- * — the block that does `move-object v3, v13` and exits. That `move-object` is the handover
- * `2.5.0-dev.0` and `dev.1` failed to emit and crashed without. Here it is not our instruction to
- * get right: **nothing jumps, so nothing merges.** The method returns and Gboard branches.
+ * The replacement lives in the motion-event-handler layer, the one swipe left and swipe right use,
+ * where the diagnostic now measures (FlickProbeEmitter.kt). This file is kept, not rewritten, until
+ * that diagnostic has answered whether a real flick crosses the threshold before the finger lifts,
+ * because the answer decides the new shape.
  *
- * ### Why it needs no register analysis
- *
- * The emission goes at pc 0. `G` has twenty registers and five parameters, so `this` is v15 and
- * v0–v14 are locals that nothing has written yet. There is no liveness question to get wrong, which
- * matters more than it sounds: the same liveness mistake has shipped from this repo twice, in the
- * same file, days apart. The safest analysis is the one that is not required.
- *
- * ### What it asks before claiming
- *
- * Three questions, in increasing cost:
- *
- *  1. is the gesture an upward slide, by Gboard's own reckoning (`Lpvi;->i()`);
- *  2. does this key define an upward action of its own (`Lpvi;->j(SLIDE_UP)`) — if it does, this is
- *     flick-for-symbols and none of our business;
- *  3. is the motion within a vertical corridor, `2·|dx| ≤ |dy|`.
- *
- * Question 2 is the one the old emission got for free by anchoring where that lookup returned null.
- * Asking it explicitly is what keeps flick-for-symbols working from the new position.
+ * What remains true of this emission, and is worth keeping when it is rebuilt:
+ *  - Returning true from `G` skips the keypress commit. Confirmed on a device (2.5.1-dev.1).
+ *  - Inserting at pc 0 of `G` needs no liveness analysis: twenty registers, five parameters, every
+ *    local unwritten on entry.
  */
+
 /**
  * Where the journey is recorded, and where it is asked about.
  *
  * Declared beside the emissions rather than in `Fingerprints.kt`, because
- * `check_shared_constants.py` matches a file's extension descriptors against the calls emitted *in
- * that file*. Split across two files it found descriptors, matched no call, and reported that it
- * had silently stopped checking — which is the guard working.
+ * `check_shared_constants.py` matches a file's extension descriptors against the calls emitted in
+ * that same file.
  */
 internal const val TRACK_MOVE =
     "Ldev/jz6/flexboard/extension/gesture/UpFlickTracker;->track(IFFFF)V"
@@ -67,21 +56,16 @@ internal const val WAS_UP_FLICK =
     "Ldev/jz6/flexboard/extension/gesture/UpFlickTracker;->wasUpFlick(IFF)Z"
 
 /**
- * Diagnostic build only: types the outcome of every release that moved.
+ * Feeds each pointer's position to the tracker, once per move event.
  *
- * Unconditional, and it does not consume. The question is why the gesture fires in bursts, and a
- * build that only reports its successes cannot answer that — the failures are the data.
- */
-internal const val REPORT_OUTCOME =
-    "Ldev/jz6/flexboard/extension/gesture/UpFlickTracker;->report(IFF)V"
-
-/**
- * Records every pointer's furthest upward travel, once per move event.
+ * Placed after the one write to the pointer's y in `TouchActionBundle.handleActionMove`, located by
+ * that write rather than by a pc. The scratch registers are dead there by `preflight.live_free`,
+ * which matters more than usual: this is inside the per-pointer loop, so a register that is not
+ * really free corrupts every later pointer in the same event.
  *
- * The companion to [emitConsumingUndoAutocorrect], and the reason the gesture can be recognised at
- * all. Gboard's `Lpvi;->h` classifies once at release from start-to-end displacement, which is why
- * this gesture fired intermittently while the scrub — a handler that sees every event — never
- * misses. Watching the journey is the property that makes the difference, not a lower threshold.
+ * Inherits the move path's skips: a pointer whose index is stale, and one whose `M()` is false —
+ * which includes every pointer that has detached from its key, so a top-row flick stops being
+ * sampled at exactly the moment it leaves the keyboard.
  */
 internal fun BytecodePatchContext.emitUpFlickTracking() {
     val method = pointerMoveFingerprint().method
@@ -92,21 +76,14 @@ internal fun BytecodePatchContext.emitUpFlickTracking() {
     }
 
     val body = method.instructions.toList()
-    check(body.count { it.callsMethod(TRACK_MOVE) } == 0) {
-        // Worded to match the guard in the consuming emission, because either can fire first and
-        // the reader should get the same diagnosis either way. It said "this patch has been applied
-        // twice", which named the wrong situation: the two swipe-up patches both emit here, so the
-        // second one to run trips this — and it is the mutual exclusion doing its job, not a double
-        // application. `tools/gate` asserts on this wording, and caught the mismatch.
-        "$what already carries a Flexboard emission. \"Swipe up to undo autocorrect\" and " +
-            "\"Swipe up diagnostic (temporary)\" both record the gesture here — enable one or the " +
-            "other."
+    check(body.none { it.callsMethod(TRACK_MOVE) }) {
+        "$what already feeds the up-flick tracker — the patch has been applied twice"
     }
 
-    // After the y write, where the pointer holds both the gesture start and the current position.
-    // Located by the write itself rather than by a pc, so a build that moves it is followed.
     val yWrite = body.withIndex()
-        .filter { (_, instruction) -> instruction.usesField(POINTER_Y) && instruction.opcodeName().startsWith("IPUT") }
+        .filter { (_, instruction) ->
+            instruction.usesField(POINTER_Y) && instruction.opcodeName().startsWith("IPUT")
+        }
         .sole { "$what writes $POINTER_Y $it times, expected exactly one" }
     val pointerRegister = (yWrite.value as TwoRegisterInstruction).registerB
 
@@ -131,12 +108,11 @@ internal fun BytecodePatchContext.emitUpFlickTracking() {
     )
 }
 
-internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
-    keycode: Int = REVERT_AUTOCORRECT,
-    probe: String? = null,
-    requireCorridor: Boolean = true,
-    requireUnclaimedKey: Boolean = true,
-) {
+/**
+ * At pc 0 of `Lpvi;->G`: if the tracker saw an upward flick, send Gboard's UNDO and return true so
+ * the keypress is not committed. See the file header for why this is unreachable today.
+ */
+internal fun BytecodePatchContext.emitConsumingUndoAutocorrect() {
     val method = alreadyHandledFingerprint().method
     val what = "$POINTER->G"
     method.assertRegisterCount(ALREADY_HANDLED_REGISTER_COUNT, what)
@@ -144,36 +120,23 @@ internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
     // Every obfuscated member the emission spells, before an instruction is written, so a rename is
     // a refused patch naming the member rather than a verify error on a device.
     checkMethodExists(WAS_UP_FLICK, "the up-flick question in the extension")
-    checkInvokeKind(ACTION_DEF_LOOKUP, InvokeKind.VIRTUAL, "the action lookup that spares a symbol key")
-    if (probe == null) {
-        checkInvokeKind(KEY_DATA_CTOR, InvokeKind.DIRECT, "the key-data constructor the revert builds")
-        checkInvokeKind(EVENT_FROM_KEY_DATA, InvokeKind.STATIC, "the event wrapper the revert uses")
-        checkInvokeKind(DISPATCH_EVENT, InvokeKind.INTERFACE, "the event sink the revert is raised on")
-    } else {
-        checkMethodExists(REPORT_OUTCOME, "the diagnostic outcome report in the extension")
-    }
+    checkInvokeKind(ACTION_DEF_LOOKUP, InvokeKind.VIRTUAL, "the action lookup")
+    checkInvokeKind(KEY_DATA_CTOR, InvokeKind.DIRECT, "the key-data constructor the undo builds")
+    checkInvokeKind(EVENT_FROM_KEY_DATA, InvokeKind.STATIC, "the event wrapper the undo uses")
+    checkInvokeKind(DISPATCH_EVENT, InvokeKind.INTERFACE, "the event sink the undo is raised on")
     checkFieldExists(SLIDE_UP, "the SLIDE_UP action constant")
     checkFieldExists(POINTER_DELEGATE_FIELD, "the pointer's delegate back-reference")
     checkFieldExists(EVENT_SINK_FIELD, "the delegate's event sink")
-    for (field in listOf(POINTER_START_X, POINTER_START_Y, POINTER_X, POINTER_Y)) {
-        checkFieldExists(field, "a pointer coordinate the corridor test reads")
-    }
 
-    // Refuse a second emission at this anchor. Both swipe-up patches attach here and Morphe cannot
-    // declare two patches mutually exclusive, so this is the only thing keeping them apart --
-    // `tools/gate` asserts that it fires, because a guard nobody watches is a comment.
     val body = method.instructions.toList()
-    val already = body.count {
+    check(body.none {
         it.callsMethod(DISPATCH_EVENT) ||
             it.methodDescriptorOrNull()?.startsWith(EXTENSION_PACKAGE) == true
-    }
-    check(already == 0) {
-        "$what already carries a Flexboard emission. \"Swipe up to undo autocorrect\" and " +
-            "\"Swipe up diagnostic (temporary)\" both attach to it — enable one or the other."
+    }) {
+        "$what already carries a Flexboard emission — the patch has been applied twice"
     }
 
-    // v15 is `this`, the pointer itself, so every coordinate the corridor reads is a field on it and
-    // the delegate is one hop away. v0-v4 are locals, uninitialised at pc 0.
+    // v15 is `this`, the pointer itself. v0-v4 are locals, unwritten at pc 0.
     val pointer = ALREADY_HANDLED_REGISTER_COUNT - 5
     val (a, b, c, d, e) = CONSUME_SCRATCH
     validateScratchRegisters(
@@ -182,59 +145,6 @@ internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
         what = what,
         registerCount = ALREADY_HANDLED_REGISTER_COUNT,
     )
-
-    val unclaimed = if (!requireUnclaimedKey) "" else """
-            sget-object v$b, $SLIDE_UP
-            invoke-virtual { v$pointer, v$b }, $ACTION_DEF_LOOKUP
-            move-result-object v$b
-            if-nez v$b, :$STOCK_LABEL
-    """.trimIndent().prependIndent("            ")
-
-    val corridor = if (!requireCorridor) "" else """
-            iget v$a, v$pointer, $POINTER_X
-            iget v$b, v$pointer, $POINTER_START_X
-            sub-float/2addr v$a, v$b
-            iget v$b, v$pointer, $POINTER_Y
-            iget v$c, v$pointer, $POINTER_START_Y
-            sub-float/2addr v$b, v$c
-            invoke-static { v$a }, Ljava/lang/Math;->abs(F)F
-            move-result v$a
-            invoke-static { v$b }, Ljava/lang/Math;->abs(F)F
-            move-result v$b
-            add-float/2addr v$a, v$a
-            cmpg-float v$c, v$a, v$b
-            if-gtz v$c, :$STOCK_LABEL
-    """.trimIndent().prependIndent("            ")
-
-    val payload = if (probe != null) "            invoke-static { }, $probe" else """
-            new-instance v$a, $KEY_DATA
-            const/16 v$b, $keycode
-            const v$c, $EVENT_PRIORITY
-            const/4 v$d, 0x0
-            invoke-direct { v$a, v$b, v$d, v$d, v$c }, $KEY_DATA_CTOR
-            invoke-static { v$a }, $EVENT_FROM_KEY_DATA
-            move-result-object v$a
-            iget-object v$e, v$pointer, $POINTER_DELEGATE_FIELD
-            check-cast v$e, $POINTER_DELEGATE
-            iget-object v$e, v$e, $EVENT_SINK_FIELD
-            invoke-interface { v$e, v$a }, $DISPATCH_EVENT
-    """.trimIndent().prependIndent("            ")
-
-    // `const/4 v$a, 0x1 / return v$a` is the whole of goal 2. Gboard's caller does the rest.
-    // The probe build reports and gets out of the way: no guards, no claim. Anything else makes
-    // one install answer two questions, which is how dev.0 and dev.1 taught nothing.
-    if (probe != null) {
-        method.addInstructions(
-            0,
-            """
-                iget v$a, v$pointer, $POINTER_ID
-                iget v$b, v$pointer, $POINTER_START_X
-                iget v$c, v$pointer, $POINTER_START_Y
-                invoke-static { v$a, v$b, v$c }, $REPORT_OUTCOME
-            """.trimIndent(),
-        )
-        return
-    }
 
     method.addInstructionsWithLabels(
         0,
@@ -245,8 +155,21 @@ internal fun BytecodePatchContext.emitConsumingUndoAutocorrect(
             invoke-static { v$a, v$b, v$c }, $WAS_UP_FLICK
             move-result v$a
             if-eqz v$a, :$STOCK_LABEL
-$unclaimed$corridor
-$payload
+            sget-object v$b, $SLIDE_UP
+            invoke-virtual { v$pointer, v$b }, $ACTION_DEF_LOOKUP
+            move-result-object v$b
+            if-nez v$b, :$STOCK_LABEL
+            new-instance v$a, $KEY_DATA
+            const/16 v$b, $UNDO_KEYCODE
+            const v$c, $EVENT_PRIORITY
+            const/4 v$d, 0x0
+            invoke-direct { v$a, v$b, v$d, v$d, v$c }, $KEY_DATA_CTOR
+            invoke-static { v$a }, $EVENT_FROM_KEY_DATA
+            move-result-object v$a
+            iget-object v$e, v$pointer, $POINTER_DELEGATE_FIELD
+            check-cast v$e, $POINTER_DELEGATE
+            iget-object v$e, v$e, $EVENT_SINK_FIELD
+            invoke-interface { v$e, v$a }, $DISPATCH_EVENT
             const/4 v$a, 0x1
             return v$a
         """.trimIndent(),

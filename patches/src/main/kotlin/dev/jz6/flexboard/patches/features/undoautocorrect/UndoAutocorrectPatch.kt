@@ -5,54 +5,27 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.basePatch
 
 /**
- * Swipe up on a key to put back the word an autocorrect replaced.
+ * Swipe up on a letter key to undo, without the key being typed.
  *
- * Gboard already has this on backspace, behind **Undo autocorrect with backspace**. That path arms
- * itself when an autocorrection lands and, on the next backspace, dispatches an event carrying
- * keycode `-10045` instead of deleting. This patch dispatches the same event from an upward flick.
+ * **Not working yet, and being rebuilt.** The current emission lives in the key pipeline
+ * (ConsumeEmitter.kt), and review showed it cannot fire: the check meant to spare keys with their
+ * own swipe-up action uses a lookup that falls back to the key's PRESS action, so it is always
+ * taken; and even without that, the claim point is unreachable for a flick from the top row, which
+ * detaches the finger from every key. docs/undo-autocorrect-plan.md has the detail.
  *
- * It does not go through Gboard's arming, so it works whether or not that preference is on — no
- * consumer of `-10045` reads it. Firing with nothing to revert is a no-op: both handlers null-check
- * their tracked state and return.
+ * It moves to the motion-event-handler layer — where swipe left and swipe right run, and where the
+ * "Swipe up diagnostic (temporary)" patch now measures — once that diagnostic has shown whether a
+ * real flick crosses the threshold before the finger lifts.
  *
- * ## Where it attaches, and why not somewhere more obvious
- *
- * Gboard already detects the flick. `Lpvi;->h` turns a pointer delta into SLIDE_UP/DOWN/LEFT/RIGHT
- * against a per-key threshold and already returns SLIDE_UP on Latin keys; what is missing is
- * anything to do with it, because no Latin layout binds a SLIDE_UP action. So the emission sits at
- * the `ActionDef` lookup that comes back null, and nothing here detects a gesture.
- *
- * The attachment point is `Lpvf;->t`, which Gboard's own trace section names
- * `TouchActionBundle.handleActionUp` — a pointer *release*, so the gesture is measured once, at the
- * end, rather than part-way through.
- *
- * Four routes that looked better and are not, each recorded in `docs/undo-autocorrect.md`: binding
- * a SLIDE_UP action declaratively (no Latin layout binds any slide action, and doing so would switch
- * off flick-for-symbols on that key); hooking `LatinGestureMotionEventHandler` (gated on
- * `enable_gesture_input`, which Swipe to Delete turns off); writing our own direction detection
- * (unnecessary); and `BasicMotionEventHandler->g`, which this patch was actually written against
- * first. `LatinMotionEventHandler` overrides it, it is ungated, and it is first in the handler list
- * — all true, and it still dispatches only on `ACTION_HOVER_*`, so it never sees a finger. That
- * version would have compiled, applied, and silently never fired.
- *
- * ## The scrub gesture
- *
- * Swipe to Delete widens the scrub corridor to the full keyboard height, so an upward swipe no
- * longer cancels a scrub and the two share one pointer stream. The corridor test is what separates
- * them, and it is a ratio rather than a distance on purpose: `ScrubTuningPatch` rescales the scrub's
- * own distance table, so anything derived from that would be wrong for a tuned build.
- *
- * The separation has to be spatial because it can no longer be temporal — `ScrubTuningPatch` lowered
- * the hold delay so a scrub registers on a flick, which is the same shape as this gesture.
+ * The keycode it sends is Gboard's general UNDO, so with no autocorrection pending a swipe undoes the
+ * last edit. Accepted as the design.
  */
 @Suppress("unused")
 val undoAutocorrectPatch = bytecodePatch(
     name = "Swipe up to undo autocorrect",
-    description = "Swipe up on the keyboard to put back the word an autocorrect replaced. Gboard " +
-        "has the same undo on backspace, behind a setting; this adds a gesture for it and works " +
-        "whether or not that setting is on. A swipe with nothing to undo does nothing. Cannot be " +
-        "used alongside \"Swipe up diagnostic (temporary)\", which attaches to the same " +
-        "instruction. Off by default until it has been confirmed on a device.",
+    description = "Experimental and not yet working — it is being rebuilt. Intended to undo the " +
+        "last autocorrection, or the last edit, when you swipe up on a letter key, without typing " +
+        "the key. Off by default; leave it off until a release says it works.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -60,8 +33,6 @@ val undoAutocorrectPatch = bytecodePatch(
     dependsOn(basePatch)
 
     execute {
-        // Option B: claim the pointer in `Lpvi;->G` instead of trying to un-decide a keypress in
-        // `Lpvf;->t`. See ConsumeEmitter's header, and docs/undo-autocorrect-plan.md.
         emitUpFlickTracking()
         emitConsumingUndoAutocorrect()
     }

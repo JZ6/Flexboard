@@ -128,12 +128,12 @@ EMITTED_CALL = re.compile(
 # Each entry maps a helper to the opcode it emits, which is the part that has to be known rather
 # than inferred: a helper hardcoding invoke-static against a member someone later made non-static
 # is exactly the failure this file exists to catch.
-# `emitUndoAutocorrectOnUpFlick(probe = GESTURE_PROBE)` is the second: the emitter writes
-# `invoke-static { }, $probe` for whatever descriptor the diagnostic patch hands it, so the same
-# blind spot applies and the same guard caught it.
-HELPER_CALLS = {"callAtAppStart": "static", "probe": "static"}
+# There used to be a second, `probe = GESTURE_PROBE`, for a diagnostic emitter that wrote
+# `invoke-static { }, $probe`. The diagnostic now emits a literal call in FlickProbeEmitter.kt, which
+# the ordinary pattern sees, so the helper entry went with the emitter.
+HELPER_CALLS = {"callAtAppStart": "static"}
 
-# Either `helper(CONST)` or `helper(named = CONST)`, since the probe is passed by name.
+# Either `helper(CONST)` or `helper(named = CONST)`.
 HELPER_CALL = re.compile(
     rf"\b({'|'.join(HELPER_CALLS)})\s*=?\s*\(?\s*([A-Z_][A-Z0-9_]*)\s*\)?")
 

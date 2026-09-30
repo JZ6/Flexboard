@@ -1,33 +1,21 @@
 package dev.jz6.flexboard.extension.gesture;
 
 import android.content.res.Resources;
-import android.view.inputmethod.InputConnection;
-
-import dev.jz6.flexboard.extension.ime.ImeService;
 
 /**
- * Remembers how far a pointer travelled upward, so an up-flick can be recognised by its journey
- * rather than by where the finger happened to be when it lifted.
+ * Records how far a pointer travelled upward, for the key-pipeline swipe-up emission.
  *
- * <p>Gboard's own classifier, {@code Lpvi;->h}, runs once on ACTION_UP over start-to-end
- * displacement. That is why "swipe up to undo autocorrect" fires intermittently while swipe left
- * and swipe right never miss: those are handled by {@code ScrubMotionEventHandler}, which sees
- * every motion event and claims the pointer mid-gesture. A finger lifting from an upward flick is
- * decelerating and commonly drifts back down, so the displacement at release can be well short of
- * the displacement at the peak. One comparison, taken at the worst possible instant.
+ * Fed from {@code TouchActionBundle.handleActionMove} and asked at {@code Lpvi;->G}. Both are in the
+ * key pipeline, and that is this class's limit rather than a bug in it: a flick that slides off the
+ * top of the keyboard detaches the finger from every key, after which the move path stops writing
+ * its position and {@code G} is never reached. The diagnostic that measures the whole gesture is
+ * {@link FlickProbe}, which rides on the motion-event-handler layer instead; the real patch moves
+ * there once that has answered its question.
  *
- * <p>This is fed from {@code TouchActionBundle.handleActionMove}, once per pointer per event, and
- * keeps the furthest upward point of the current gesture. The question asked at release changes
- * from <em>is the release point high enough</em> to <em>did this gesture ever go far enough</em>.
- *
- * <p><b>No reset hook is needed.</b> The move path carries the gesture's start coordinates
- * alongside the current ones, so a change of start is itself the signal that a new gesture began.
- * Two consecutive gestures starting at bit-identical float coordinates is not a real case.
- *
- * <p>Single-slot rather than a map. Every gesture this recognises is a single finger on a key, the
- * input pipeline is single-threaded, and a map keyed by pointer id would need eviction that nothing
- * would ever exercise. A second finger simply takes the slot, which loses the first finger's peak —
- * correct, since a multi-touch gesture is not an up-flick.
+ * <p>The origin comes from the touch stream — running maximum y, and the largest rise above it —
+ * because the pointer's own start fields are rewritten each time the finger crosses onto another key.
+ * A 250 ms gap between samples starts a new gesture, because {@code finish()} runs only when
+ * {@code G} does and so cannot be relied on to end one.
  */
 public final class UpFlickTracker {
 
@@ -56,8 +44,6 @@ public final class UpFlickTracker {
 
     private static boolean seen;
 
-    /** How many move events this gesture produced. Sparse sampling is one of the suspects. */
-    private static int sampleCount;
 
     /**
      * When the last move event arrived, as a gesture boundary.
@@ -111,10 +97,8 @@ public final class UpFlickTracker {
                 xAtLowest = x;
                 peakRise = 0f;
                 driftAtPeak = 0f;
-                sampleCount = 1;
                 return;
             }
-            sampleCount++;
             if (y > lowestY) {
                 // Still descending, or settling. This becomes the point to rise from.
                 lowestY = y;
@@ -131,7 +115,7 @@ public final class UpFlickTracker {
         }
     }
 
-    /** Outcomes of {@link #classify}, and the markers {@link #report} types for each. */
+    /** Outcomes of {@link #classify}. */
     public static final int NOT_TRACKED = 1;
     public static final int TOO_SHORT = 2;
     public static final int OFF_CORRIDOR = 3;
@@ -177,7 +161,6 @@ public final class UpFlickTracker {
      */
     private static void finish() {
         seen = false;
-        sampleCount = 0;
         peakRise = 0f;
         driftAtPeak = 0f;
     }
@@ -192,58 +175,6 @@ public final class UpFlickTracker {
         int outcome = classify(id, gestureStartX, gestureStartY);
         finish();
         return outcome == UP_FLICK;
-    }
-
-    /**
-     * Diagnostic build only: types the outcome of every pointer release as a digit.
-     *
-     * <p>Called unconditionally rather than on success, because a gesture that produces nothing is
-     * the case under investigation and a silent failure tells you nothing. A run of 1s means the
-     * tracker is not seeing the pointer; a run of 2s means 24dp is too far; 3s mean the corridor is
-     * too narrow. The proportions matter as much as the values.
-     *
-     * <p>Only fires for gestures that moved at all, so ordinary typing does not fill the field with
-     * 1s — a tap has no travel to classify and nothing to report.
-     */
-    public static void report(int id, float unusedStartX, float unusedStartY) {
-        try {
-            boolean tracked = id == pointerId && seen;
-            float rise = tracked ? peakRise : 0f;
-            float drift = tracked ? Math.abs(driftAtPeak) : 0f;
-            int outcome = classify(id, unusedStartX, unusedStartY);
-            int samples = sampleCount;
-            finish();
-
-            // Below a quarter of the flick distance this was not an attempt at a gesture, and
-            // reporting it fills the field with noise about ordinary typing.
-            if (!tracked || rise < flickDistancePx() / 4f) {
-                return;
-            }
-
-            // The measurement, not a verdict on it. Three rounds of this feature have been lost to
-            // me choosing between explanations that all produce the same category — "too short" is
-            // consistent with the threshold being wrong, with the sampling being sparse, and with
-            // the measurement being broken, and those need different fixes. A number separates
-            // them in one swipe: do a deliberate long flick and read what it thought it saw.
-            //
-            //   u<rise>/<drift>s<samples>=<outcome>
-            //
-            // rise and drift in dp so they can be compared against the 24dp threshold directly,
-            // samples being how many move events the gesture produced, which is the one thing that
-            // cannot be inferred afterwards.
-            float density = Resources.getSystem().getDisplayMetrics().density;
-            String text = "u" + Math.round(rise / density)
-                    + "/" + Math.round(drift / density)
-                    + "s" + samples
-                    + "=" + outcome + " ";
-            InputConnection connection = ImeService.connection();
-            if (connection == null) {
-                return;
-            }
-            connection.commitText(text, 1);
-        } catch (Throwable oops) {
-            // A diagnostic must never be the thing that breaks the keyboard it is measuring.
-        }
     }
 
     /**
