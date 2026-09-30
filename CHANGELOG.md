@@ -1,3 +1,10 @@
+# [2.5.1-dev.7](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.6...v2.5.1-dev.7) (2026-09-30)
+
+* **Gboard:** feat: swipe up to undo, rebuilt in the motion-event-handler layer
+* **Gboard:** docs: record that swipe up sends Gboard's general undo, by decision
+* **Gboard:** fix: the gate honours FLEXBOARD_BUNDLE as documented, and proves opt-in patches emit
+* **Gboard:** refactor: delete the dead swipe-up paths and correct what the rest claims
+
 # [2.5.1-dev.6](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.5...v2.5.1-dev.6) (2026-09-30)
 
 * **Gboard:** test: report whether the flick crossed the threshold before the finger lifted
