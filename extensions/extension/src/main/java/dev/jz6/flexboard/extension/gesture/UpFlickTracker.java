@@ -59,6 +59,25 @@ public final class UpFlickTracker {
     /** How many move events this gesture produced. Sparse sampling is one of the suspects. */
     private static int sampleCount;
 
+    /**
+     * When the last move event arrived, as a gesture boundary.
+     *
+     * <p>{@link #finish} runs at {@code Lpvi;->G}, which {@code handleActionUp} skips when the
+     * release has no SoftKeyDef — exactly what happens when a finger lifts off the top of a key,
+     * which is this gesture. So the state survived into the next touch: the following tap updated
+     * the low point and returned before recomputing, leaving the *previous* gesture's rise and
+     * drift to be classified. A large rise with a large drift is a 3, and on a device that showed
+     * up as the first typed letter after a swipe reporting one.
+     *
+     * <p>Samples within a gesture are milliseconds apart and gestures are separated by at least a
+     * tenth of a second, so the gap is an unambiguous boundary — and unlike a DOWN hook it depends
+     * on nothing Gboard might redefine.
+     */
+    private static long lastEventNanos;
+
+    /** Longer than any interval between samples, far shorter than any interval between gestures. */
+    private static final long GESTURE_GAP_NANOS = 250L * 1000L * 1000L;
+
     private UpFlickTracker() {
     }
 
@@ -82,7 +101,10 @@ public final class UpFlickTracker {
      */
     public static void track(int id, float unusedStartX, float unusedStartY, float x, float y) {
         try {
-            if (id != pointerId || !seen) {
+            long nanos = System.nanoTime();
+            boolean stale = nanos - lastEventNanos > GESTURE_GAP_NANOS;
+            lastEventNanos = nanos;
+            if (id != pointerId || !seen || stale) {
                 pointerId = id;
                 seen = true;
                 lowestY = y;
@@ -127,7 +149,10 @@ public final class UpFlickTracker {
      */
     public static int classify(int id, float unusedStartX, float unusedStartY) {
         try {
-            if (id != pointerId || !seen) {
+            long nanos = System.nanoTime();
+            boolean stale = nanos - lastEventNanos > GESTURE_GAP_NANOS;
+            lastEventNanos = nanos;
+            if (id != pointerId || !seen || stale) {
                 return NOT_TRACKED;
             }
             if (peakRise < flickDistancePx()) {
