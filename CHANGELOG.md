@@ -1,3 +1,10 @@
+# [2.5.1-dev.6](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.5...v2.5.1-dev.6) (2026-09-30)
+
+* **Gboard:** test: report whether the flick crossed the threshold before the finger lifted
+* **Gboard:** feat: move the swipe-up diagnostic into the motion-event-handler layer
+* **Gboard:** fix: the tracker leaked state between gestures, and a tap inherited it
+* **Gboard:** test: report the measurement, not a verdict on it
+
 # [2.5.1-dev.5](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.4...v2.5.1-dev.5) (2026-09-29)
 
 * **Gboard:** fix: measure the flick from the touch stream, not from Gboard's start fields
