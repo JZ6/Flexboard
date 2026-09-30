@@ -492,6 +492,48 @@ Open, for whoever picks this up:
    already owns. Read it before relying on it.
  - whether the corridor test should also move to peak-relative rather than release-relative.
 
+## Why up is the hard direction — found by review, confirmed on a device
+
+An independent review traced it through the dex, and a device test confirmed the prediction:
+**a flick from the top row produced nothing at all; the same flick from the bottom row produced a
+number.**
+
+Gboard decides, direction by direction, whether a slide stays on its key. It does if the key
+*declares* an action in that direction (`Lpvi;->ae()`):
+
+- **Down** works because keys declare SLIDE_DOWN (flick-for-symbols), so a downward slide stays on
+  the key and is classified and committed there.
+- **Left and right** work because they are not in the key pipeline at all. They run in the
+  motion-event-handler layer, which sees every event whether or not the finger is on a key.
+- **Up** fails because letter keys declare no SLIDE_UP. Gboard treats upward motion as moving onto
+  another key: past 0.8 of a key height it retargets, past about 0.3 inch beyond the edge it detaches
+  the finger from every key, and above the top row there is no key to move onto.
+
+A detached finger fails the `M()` checks that guard `handleActionUp`, so `Lpvi;->G` is never
+reached — and the move path stops writing the pointer's position at the same moment. Everything
+built on `G` inherits that blind spot: the old probe could not see the flicks most likely to
+succeed, and what it did report skewed short. None of the threshold, origin or corridor changes
+could help, because the check never ran for the common case.
+
+### Two further findings from the same review
+
+- **The real patch has never been able to fire.** It skips keys where `Lpvi;->j(SLIDE_UP)` is
+  non-null, meaning to spare keys with their own swipe-up symbol. But the lookup behind `j` falls
+  back to the key's PRESS action when there is no exact match, so on every letter key it is
+  non-null and the skip is always taken. The old `Lpvf;->t` emitter had the same guard. Every
+  success seen on a device was the diagnostic, which switched that guard off. The right question is
+  `SoftKeyDef.n(Lpmy;)`, which is what `ae()` uses.
+- **-10045 is Gboard's general UNDO**, the keycode Ctrl+Z sends. With no autocorrection to revert,
+  a swipe may undo the last edit instead of doing nothing. That is a product decision, not a bug.
+
+### Where detection moves
+
+The diagnostic now observes from the scrub engine's `g(MotionEvent)`: it measures from touchdown,
+reads the positions Android batches into each move event, tracks each pointer separately, and
+reports on every release. The real patch should follow once the diagnostic answers one question:
+on UP the key handler commits the letter before the scrub handler sees the event, so a claim has to
+happen mid-gesture. Does a real flick cross the threshold before the finger lifts?
+
 ## The thing that has to be fixed first
 
 **Nothing here reads what the patcher produced.** `preflight.py` takes the *stock* dex tree and the
