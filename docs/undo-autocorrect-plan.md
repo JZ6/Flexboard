@@ -492,6 +492,40 @@ Open, for whoever picks this up:
    already owns. Read it before relying on it.
  - whether the corridor test should also move to peak-relative rather than release-relative.
 
+## The rebuild: swipe up in the handler layer
+
+The diagnostic answered the question the design depended on. On a device, most real flicks came back
+`6m`: the 24dp threshold and the 2:1 corridor were met *during* the swipe. The occasional `3m` was a
+genuinely diagonal swipe, correctly rejected, so neither value needed tuning.
+
+That matters because on release the key handler types the letter before the scrub handler sees the
+event. The only way to stop the letter is to take the swipe over while it is still moving, and `6m`
+says that is possible.
+
+The real patch now lives in the scrub engine's `g(MotionEvent)`, next to swipe left and right:
+
+- `SwipeUpUndo` (extension) decides per event: pass, claim, or swallow. It holds no obfuscated Gboard
+  type, so a Gboard update that renames them becomes a refused patch, not a crash on load.
+- The emission does the Gboard side: `Lpvo;->m()` (the call the scrub uses for its own swipes) to take
+  the gesture over, a read-back of `Lozj;->k` to confirm the takeover took, then Gboard's UNDO through
+  `Lpvo;->n`. Skipped events jump to the end of `g`, so the scrub's own reset and trace section still
+  run.
+
+Read out of the dex before any of it was written:
+
+- **The takeover makes the key pipeline drop the letter.** `Lozi;->m()` records the handler as owner
+  only if the gesture has none, and calls `l()` on every other handler; the key pipeline's `l()`
+  resets its pointers without committing them.
+- **A takeover cannot outlive its gesture.** The dispatcher runs `Lozj;->o` after every event, and it
+  clears the owner on UP and CANCEL whatever the handler did. Without that, a stuck takeover would
+  send every later tap to the scrub handler and the keyboard would stop typing. Preflight pins it,
+  and removing any part of it fails the pin.
+- **A failed takeover sends nothing.** `m()` returns nothing and does nothing when the gesture already
+  has an owner, so the emission compares the owner with itself before sending the undo.
+
+Known limit: a key that binds its own swipe-up action is not spared. No Latin layout does — letter
+keys bind none, and flick-for-symbols binds swipe *down* — but a layout that did would lose it.
+
 ## Why up is the hard direction — found by review, confirmed on a device
 
 An independent review traced it through the dex, and a device test confirmed the prediction:

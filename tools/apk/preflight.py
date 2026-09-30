@@ -148,7 +148,6 @@ EXPECTED = {
     'hidden_feature_flags_shared': [
         ('enable_close_proactive_suggestions_access_point', 'enable_auto_fill_pk_fallback_ui'),
     ],
-    'undo_ac_slide_up_field': 'c',
     'toolbar_capacity_flag': 'config_max_access_points',
     'toolbar_stock_flag_default': -1,
     'toolbar_stock_ceiling': 8,
@@ -760,13 +759,13 @@ def live_free(ins, register_count, at_pc):
 
 # The floor for the check count. Not the exact number: adding a pin should not require editing
 # two places. It exists to catch a *collapse*, which is what an empty dex-derived list causes.
-MINIMUM_CHECKS = 310
+MINIMUM_CHECKS = 316
 
 # And the floor when an APK is supplied too, which is how the gate runs it. Two numbers because the
 # resource pins only exist in that mode: a single floor either has to sit below the dex-only count,
 # which leaves twenty-odd resource pins free to vanish unnoticed, or above it, which breaks the
 # dex-only run. The whole point of a floor is that it sits just under the real number.
-MINIMUM_CHECKS_WITH_APK = 330
+MINIMUM_CHECKS_WITH_APK = 336
 
 
 class Report:
@@ -2322,70 +2321,75 @@ def run(dl, apk=None):
 
     # ---- swipe up to undo autocorrect
     #
-    # The real patch prepends to Lpvi;->G, which handleActionUp asks before any per-direction
-    # dispatch; returning true skips the keypress commit. These pin what that rests on. The checks
-    # that used to live here pinned the old Lpvf;->t anchor -- its frame, its scratch registers, the
-    # action lookup it sat beside -- for an emitter that was deleted once it was shown never to have
-    # fired, and meanwhile nothing pinned the anchor that actually ships.
-    DISPATCH_EVENT = f"{B['event_sink']}->n({B['ime_event']})V"
-    release = f"{B['pointer_delegate']}->t({B['pointer_tracker']}Landroid/view/MotionEvent;I)V"
-    handled = (f"{B['pointer_tracker']}->G(Landroid/view/MotionEvent;"
-               'Lcom/google/android/libraries/inputmethod/metadata/SoftKeyDef;II)Z')
-
-    c_, ins_ = body(dl, release)
-    if check('undo-ac: the pointer release path exists', ins_ is not None):
-        # R8 renames `t`; it does not rename strings. Gboard's own trace section names this method.
-        traced = [a for _pc, n_, a in ins_
-                  if n_.startswith('const-string') and 'handleActionUp' in (a or '')]
-        check('undo-ac: the release path still identifies itself as handleActionUp',
-              len(traced) == 1, str(len(traced)))
-        calls = [a for _pc, n_, a in ins_ if n_.startswith('invoke') and handled in (a or '')]
-        check('undo-ac: handleActionUp asks the already-handled question exactly once',
-              len(calls) == 1, str(len(calls)))
-
-    # The consuming emission writes v0-v4 at pc 0 on the strength of this frame: twenty registers,
-    # five of them parameters, so every local is unwritten on entry.
-    c_, ins_ = body(dl, handled)
-    if check('undo-ac: the already-handled method exists', ins_ is not None):
+    # The patch runs inside the scrub engine's g(MotionEvent): it asks the extension whether this
+    # event completes a swipe up, takes the gesture over with the call the scrub uses for its own
+    # swipes, confirms the takeover took, and sends Gboard's UNDO through the handler's route. These
+    # pin what that rests on -- above all that a takeover cannot outlive its gesture.
+    S_ = ('Lcom/google/android/libraries/inputmethod/motioneventhandler/scrubmove/'
+          'ScrubMotionEventHandler;')
+    c_, ins_ = body(dl, f'{S_}->g(Landroid/view/MotionEvent;)V')
+    if check('undo-ac: the scrub engine entry point exists', ins_ is not None):
         check('undo-ac: its frame is the one the emission was measured against',
-              (c_['registers'], c_['ins']) == (20, 5), f"{c_['registers']}/{c_['ins']}")
-        # The emission's own "already applied" guard counts IME dispatches here. That only
-        # distinguishes a second application from stock while stock carries none.
-        sinks = [i for i, (_pc, _n, a) in enumerate(ins_) if DISPATCH_EVENT in (a or '')]
-        check('undo-ac: stock dispatches no IME event from the already-handled method',
-              len(sinks) == 0, f'found {len(sinks)}')
+              (c_['registers'], c_['ins']) == (13, 2), f"{c_['registers']}/{c_['ins']}")
+        begins = [i for i, (_pc, n_, a_) in enumerate(ins_)
+                  if n_.startswith('invoke') and 'Trace;->beginSection' in (a_ or '')]
+        ends = [i for i, (_pc, n_, a_) in enumerate(ins_)
+                if n_.startswith('invoke') and f'{S_}->t(Landroid/view/MotionEvent;)Z' in (a_ or '')]
+        check('undo-ac: it opens its trace section first, where the emission goes',
+              begins[:1] == [1], str(begins))
+        if check('undo-ac: it asks the end-of-pointer test exactly once, where skipped events go',
+                 len(ends) == 1, str(len(ends))):
+            # v0-v5 are written by the emission, which then continues into stock code at both
+            # points. Dead there means nothing stock reads can see them.
+            for label, at in (('insertion point', ins_[begins[0] + 1][0] if begins else None),
+                              ('jump target', ins_[ends[0]][0])):
+                free = set(live_free(ins_, c_['registers'], at)) if at is not None else set()
+                check(f'undo-ac: v0-v5 are dead at the {label}', set(range(6)) <= free,
+                      str(sorted(set(range(6)) - free)))
 
-    # SLIDE_UP by name, not by letter. A build that reordered the enum would otherwise leave the
-    # patch comparing against SLIDE_DOWN in silence.
-    c_, ins_ = body(dl, f"{B['key_selector']}-><clinit>()V")
-    if check('undo-ac: the action enum clinit exists', ins_ is not None):
-        named, pending = {}, None
-        for _pc, n_, a_ in ins_:
-            if n_.startswith('const-string'):
-                m_ = re.search(r"'(.*)'", a_ or '')
-                if m_:
-                    pending = m_.group(1)
-            elif n_.startswith('sput-object') and pending and '->' in (a_ or ''):
-                named[a_.split('->')[1].split(':')[0]] = pending
-                pending = None
-        check('undo-ac: SLIDE_UP is still the field the patch spells',
-              named.get(E['undo_ac_slide_up_field']) == 'SLIDE_UP',
-              str(named.get(E['undo_ac_slide_up_field'])))
+    # The takeover route. `p` is typed as the interface and is only ever the manager's own
+    # implementation, whose fields say who owns the gesture -- how the emission confirms it took.
+    route = find_instance_field(dl, S_, 'p')
+    check('undo-ac: the handler carries its route to the manager, typed as the interface',
+          route is not None and route.endswith(':Lpvo;'), str(route))
+    check('undo-ac: the manager\'s route implements that interface',
+          'Lpvo;' in (class_interfaces(dl, 'Lozi;') or []), str(class_interfaces(dl, 'Lozi;')))
+    check('undo-ac: the route knows its manager', find_instance_field(dl, 'Lozi;', 'b') == 'Lozi;->b:Lozj;',
+          str(find_instance_field(dl, 'Lozi;', 'b')))
+    check('undo-ac: the manager records the gesture owner',
+          find_instance_field(dl, 'Lozj;', 'k') == 'Lozj;->k:Lpvn;', str(find_instance_field(dl, 'Lozj;', 'k')))
+    for desc in ('Lpvo;->m()V', 'Lpvo;->n(Lnur;)V'):
+        maf = method_access_flags(dl, desc)
+        check(f'undo-ac: {desc} is a non-static interface method, as invoke-interface requires',
+              maf is not None and not (maf & 0x8), f'flags={maf}')
 
-    # By type, not only by name. In R8 output "some instance field is called d" is close to a
-    # certainty, so a name-only check is nearly vacuous -- and the type is the whole reason these
-    # two fields are the ones the emission walks.
-    sink = find_instance_field(dl, B['pointer_delegate'], 'd')
-    check('undo-ac: the delegate declares its event sink, typed as the interface',
-          sink is not None and sink.endswith(f":{B['event_sink']}"), str(sink))
-    back = find_instance_field(dl, B['pointer_tracker'], 'r')
-    check('undo-ac: the tracker declares its delegate back-reference, typed as the interface',
-          back is not None and back.endswith(f":{B['pointer_delegate_iface']}"), str(back))
+    # Taking over only an unowned gesture is why the emission reads the owner back: a takeover that
+    # silently did nothing must not be followed by an undo.
+    c_, ins_ = body(dl, 'Lozi;->m()V')
+    if check('undo-ac: the takeover exists', ins_ is not None):
+        reads = [a for _pc, n_, a in ins_ if n_.startswith('iget-object') and 'Lozj;->k:' in (a or '')]
+        writes = [a for _pc, n_, a in ins_ if n_.startswith('iput-object') and 'Lozj;->k:' in (a or '')]
+        check('undo-ac: it checks for an existing owner before recording itself',
+              len(reads) >= 1 and len(writes) == 1, f'reads={len(reads)} writes={len(writes)}')
 
-    # The emitter hardcodes an invoke kind per call. Existence is not the property it depends on:
-    # invoke-static against a method that stopped being static, or invoke-interface against a
-    # class, both assemble and both fail verification on a device this project cannot read a log
-    # from. ACC_STATIC is 0x8, ACC_INTERFACE 0x200.
+    # The property the whole design rests on. A takeover that outlived its gesture would route every
+    # later tap to the scrub handler and the keyboard would stop typing. The dispatcher prevents it:
+    # after every event it calls o(), which clears the owner on UP and CANCEL, whatever the handler
+    # did with the event. If a Gboard update moves that, this must fail before anything ships.
+    c_, ins_ = body(dl, 'Lozj;->o(Landroid/view/MotionEvent;)V')
+    if check('undo-ac: the owner-release step exists', ins_ is not None):
+        consts = {literal_of(a) for _pc, n_, a in ins_ if n_.startswith('const/4')}
+        nulls = [i for i, (_pc, n_, a) in enumerate(ins_)
+                 if n_.startswith('iput-object') and 'Lozj;->k:' in (a or '')]
+        check('undo-ac: it clears the owner', len(nulls) == 1, str(len(nulls)))
+        check('undo-ac: on UP (1) and CANCEL (3)', {1, 3} <= consts, str(sorted(c for c in consts if c is not None)))
+    c_, ins_ = body(dl, 'Lozj;->a(Landroid/view/MotionEvent;)V')
+    if check('undo-ac: the dispatcher exists', ins_ is not None):
+        calls = [a for _pc, n_, a in ins_ if n_.startswith('invoke') and 'Lozj;->o(Landroid/view/MotionEvent;)V' in (a or '')]
+        check('undo-ac: the dispatcher runs the owner-release step', len(calls) == 1, str(len(calls)))
+
+    # The event the undo builds. Existence is not the property the emission depends on: an invoke
+    # of the wrong kind assembles and fails verification on a device. ACC_STATIC is 0x8.
     for desc, want_static in ((f"{B['key_data']}-><init>(IL{B['key_data_arg'][1:]}"
                                'Ljava/lang/Object;I)V', False),
                               (f"{B['ime_event']}->d({B['key_data']}){B['ime_event']}", True)):
@@ -2394,27 +2398,14 @@ def run(dl, apk=None):
             check(f'undo-ac: {desc.split("->")[1][:28]} staticness is what the invoke assumes',
                   bool(maf & 0x8) == want_static, f'static={bool(maf & 0x8)}')
 
-    caf = class_access_flags(dl, B['event_sink'])
-    check('undo-ac: the event sink is an interface, as invoke-interface requires',
-          caf is not None and bool(caf & 0x200), f'flags={caf}')
-    maf = method_access_flags(dl, DISPATCH_EVENT)
-    check('undo-ac: the dispatch method is a non-static interface method',
-          maf is not None and not (maf & 0x8), f'flags={maf}')
-
-    # The check-cast the dispatch route depends on.
-    ifaces = class_interfaces(dl, B['pointer_delegate'])
-    check('undo-ac: the delegate still implements the interface the tracker field is typed as',
-          ifaces is not None and B['pointer_delegate_iface'] in ifaces,
-          str(ifaces))
-
-    # Pinned on Gboard's own producer rather than on our copy of it. If the stock path stops
-    # dispatching this code, the consumers that make an unarmed swipe a no-op are what changed.
+    # Pinned on Gboard's own producer rather than on our copy of it: backspace after an
+    # autocorrection sends this same code, which is how it was found.
     c_, ins_ = body(dl, 'Lcom/google/android/apps/inputmethod/libs/edittracker/'
                         'EditTrackingImeWrapper;->q(Lnur;)Z')
     if check('undo-ac: the stock backspace revert exists', ins_ is not None):
         codes = [i for i, (_pc, n_, a_) in enumerate(ins_)
                  if n_.startswith('const') and re.search(r'#-10045\b', a_ or '')]
-        check('undo-ac: it still dispatches the revert code', len(codes) == 1, str(len(codes)))
+        check('undo-ac: it still sends the undo code', len(codes) == 1, str(len(codes)))
 
     # ---- long-flag holders: the shape that broke dev.6
     #
