@@ -34,8 +34,9 @@ import dev.jz6.flexboard.extension.ime.ImeService;
  * </ul>
  *
  * <p>Output, after each release that rose at least a quarter of the flick distance:
- * {@code u<rise>/<drift>s<samples>=<outcome> } with rise and drift in dp. Outcome 6 means it met the
- * threshold and the corridor, 2 means too short, 3 means too diagonal. It observes only: it does not
+ * {@code u<rise>/<drift>s<samples>=<outcome><when> } with rise and drift in dp. Outcome 6 means it
+ * met the threshold and the corridor, 2 means too short, 3 means too diagonal. {@code when} is
+ * {@code m} if the threshold was met during a move and {@code e} if only at release. It observes only: it does not
  * claim the pointer, does not undo anything, and does not stop the key being typed.
  */
 public final class FlickProbe {
@@ -99,8 +100,13 @@ public final class FlickProbe {
                     int index = event.getActionIndex();
                     int id = event.getPointerId(index);
                     if (tracking(id)) {
+                        // Decided before the release position is sampled. On UP the key handler
+                        // types the letter before the scrub handler sees the event, so the real patch
+                        // can only stop the letter by claiming during a MOVE. Whether the threshold
+                        // was already met at that point is the question this probe exists to answer.
+                        boolean crossedOnMove = peakRise[id] >= flickPx();
                         sample(id, event.getX(index), event.getY(index));
-                        report(id);
+                        report(id, crossedOnMove);
                         active[id] = false;
                     }
                     break;
@@ -153,7 +159,16 @@ public final class FlickProbe {
         }
     }
 
-    private static void report(int id) {
+    private static float flickPx() {
+        return FLICK_DP * Resources.getSystem().getDisplayMetrics().density;
+    }
+
+    /**
+     * Types the measurement. The trailing letter says when the threshold was met: {@code m} during a
+     * move, where a mid-gesture claim would have stopped the letter, or {@code e} only at the end,
+     * where it would already have been typed. Omitted for 2, which never met it.
+     */
+    private static void report(int id, boolean crossedOnMove) {
         float density = Resources.getSystem().getDisplayMetrics().density;
         float flickPx = FLICK_DP * density;
         float rise = peakRise[id];
@@ -176,6 +191,8 @@ public final class FlickProbe {
         connection.commitText("u" + Math.round(rise / density)
                 + "/" + Math.round(drift / density)
                 + "s" + samples[id]
-                + "=" + outcome + " ", 1);
+                + "=" + outcome
+                + (outcome == 2 ? "" : crossedOnMove ? "m" : "e")
+                + " ", 1);
     }
 }

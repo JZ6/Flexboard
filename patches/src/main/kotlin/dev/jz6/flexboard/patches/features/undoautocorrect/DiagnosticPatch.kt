@@ -34,8 +34,9 @@ import dev.jz6.flexboard.patches.shared.basePatch
 val undoAutocorrectDiagnosticPatch = bytecodePatch(
     name = "Swipe up diagnostic (temporary)",
     description = "Diagnostic build only. After each upward swipe, types what the detector " +
-        "measured: u<rise>/<drift>s<samples>=<outcome>, with rise and drift in dp. 6 means it " +
-        "would count as a swipe up, 2 means too short, 3 means too diagonal. It only reports: it " +
+        "measured: u<rise>/<drift>s<samples>=<outcome><when>, with rise and drift in dp. 6 means " +
+        "it would count as a swipe up, 2 means too short, 3 means too diagonal; a trailing m or e " +
+        "says whether that was reached mid-swipe or only at release. It only reports: it " +
         "does not undo anything and does not stop the key being typed. Needs Swipe Left to Delete " +
         "enabled. Off by default, and this patch will be removed once it has answered its question.",
     default = false,
