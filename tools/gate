@@ -76,6 +76,14 @@ lane_must_fail() {
     fi
 }
 
+# A lane that fails with a stated reason and runs nothing. For configuration that was asked for and
+# cannot be honoured -- which must not read as "not asked for".
+fail_lane() {
+    printf '\n=== %s ===\n  FAILED: %s\n' "$1" "$2"
+    record "$1" "FAIL"
+    failed=$((failed + 1))
+}
+
 skip() {
     printf '\n=== %s ===\n  SKIPPED: %s\n' "$1" "$2"
     record "$1" "SKIP"
@@ -143,19 +151,45 @@ fi
 # code in front of you. That is not a theoretical failure: this lane passed all session against the
 # dev.2 bundle while the tree held a tightened guard the bundle knew nothing about, and only the
 # real dev.3 bundle revealed it. The version is checked against gradle.properties for that reason.
-if [ -n "${FLEXBOARD_BUNDLE:-}" ] && [ -e "$FLEXBOARD_BUNDLE" ] && have_apk; then
-    patched_out="$(mktemp -d)/patched.apk"
-    apk_path="$(python3 -c "import os;print(os.path.realpath('gboard.apk'))")"
-
-    # Version, build time against the last commit touching the patch sources, and whether those
-    # sources are even committed. The filename was the first attempt and was not enough: two
-    # bundles can both be called 2.5.0-dev.3 and differ by every commit in between.
-    if freshness=$(python3 tools/bundle_freshness.py "$FLEXBOARD_BUNDLE" 2>&1); then
-        printf '%s\n' "$freshness"
-        bundle_ready=1
+#
+# Resolved before anything else, because "set but unusable" used to read as "not set": every bundle
+# lane skipped with "set FLEXBOARD_BUNDLE", and the gate exited 0. The documented form was one of the
+# unusable ones -- `FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate` does not expand the glob,
+# because an assignment never does, so the asterisk arrived intact and matched nothing. The loop
+# below expands it (word-splitting and globbing on purpose) and insists on exactly one match.
+bundle_error=""
+if [ -n "${FLEXBOARD_BUNDLE:-}" ]; then
+    matches=0
+    match=""
+    for candidate in $FLEXBOARD_BUNDLE; do
+        if [ -e "$candidate" ]; then
+            matches=$((matches + 1))
+            match=$candidate
+        fi
+    done
+    if [ "$matches" -ne 1 ]; then
+        bundle_error="FLEXBOARD_BUNDLE=$FLEXBOARD_BUNDLE matches $matches file(s); point it at exactly one .mpp"
+    elif ! have_apk; then
+        stale_reason="gboard.apk and gboard-apk/ are needed to apply a bundle, and are not here"
     else
-        printf '%s\n' "$freshness"
-        stale_reason="$(printf '%s' "$freshness" | sed -n '1s/^ *//p')"
+        FLEXBOARD_BUNDLE="$(cd "$(dirname "$match")" && pwd)/$(basename "$match")"
+        patched_out="$(mktemp -d)/patched.apk"
+        apk_path="$(python3 -c "import os;print(os.path.realpath('gboard.apk'))")"
+
+        # Version, build time against the last commit touching the patch sources, and whether those
+        # sources are even committed. The filename was the first attempt and was not enough: two
+        # bundles can both be called 2.5.0-dev.3 and differ by every commit in between.
+        if freshness=$(python3 tools/bundle_freshness.py "$FLEXBOARD_BUNDLE" 2>&1); then
+            printf '%s\n' "$freshness"
+            bundle_ready=1
+        else
+            printf '%s\n' "$freshness"
+            case "$freshness" in
+                # A crash is not staleness. It used to become a SKIP like any other exit 1.
+                *Traceback*) bundle_error="tools/bundle_freshness.py crashed; its output is above" ;;
+                *) stale_reason="$(printf '%s' "$freshness" | sed -n '1s/^ *//p')" ;;
+            esac
+        fi
     fi
 fi
 
@@ -169,8 +203,9 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     undo_out="$(mktemp -d)/undo.apk"
     lane "driver +undo" ./gradlew :driver:run -q \
         --args="$apk_path $FLEXBOARD_BUNDLE $undo_out +Swipe up to undo autocorrect"
+    probe_out="$(mktemp -d)/probe.apk"
     lane "driver +probe" ./gradlew :driver:run -q \
-        --args="$apk_path $FLEXBOARD_BUNDLE $(mktemp -d)/probe.apk +Swipe up diagnostic (temporary)"
+        --args="$apk_path $FLEXBOARD_BUNDLE $probe_out +Swipe up diagnostic (temporary)"
     # The third default-off patch. Nothing selects it either, so without a run of its own it is
     # applied by no lane at all -- which it was, between narrowing the driver to defaults and now.
     lane "driver +hidden" ./gradlew :driver:run -q \
@@ -207,6 +242,34 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     else
         skip "verify +undo" "the +undo driver run produced no APK"
     fi
+
+    # And that each opt-in patch changed anything at all. `verify` checks what was emitted; it
+    # cannot notice that nothing was, and an emission that produces nothing applies cleanly and
+    # passes every other lane -- `2.5.0-dev.1` was exactly that, byte-identical to the build it
+    # claimed to fix. Diffing each opt-in build against the defaults build of the same bundle
+    # removes that: identical means the patch did nothing.
+    if [ -e "$undo_out" ] && [ -e "$patched_out" ]; then
+        lane "undo emits" python3 tools/apk/verify.py "$undo_out" --differs-from "$patched_out"
+    else
+        skip "undo emits" "needs both the defaults and the +undo build"
+    fi
+    if [ -e "$probe_out" ] && [ -e "$patched_out" ]; then
+        lane "probe emits" python3 tools/apk/verify.py "$probe_out" --differs-from "$patched_out"
+        # The diagnostic is what is on a device right now, so its one emission gets the same
+        # type and reference check as the undo patch's -- including that FlickProbe.observe
+        # resolves in the merged extension.
+        lane "verify +probe" python3 tools/apk/verify.py "$probe_out" --changed-from gboard-apk
+    else
+        skip "probe emits" "needs both the defaults and the +probe build"
+        skip "verify +probe" "the +probe driver run produced no APK"
+    fi
+elif [ -n "${bundle_error:-}" ]; then
+    # Asked for and unusable: one lane fails so the gate does, and the rest say why they did not run.
+    fail_lane "bundle" "$bundle_error"
+    for name in "driver" "driver +undo" "driver +probe" "driver +hidden" "driver +both" \
+                "verify" "verify +undo" "undo emits" "probe emits" "verify +probe"; do
+        skip "$name" "FLEXBOARD_BUNDLE is set but unusable"
+    done
 elif [ -n "${stale_reason:-}" ]; then
     skip "driver" "$stale_reason"
     skip "driver +undo" "$stale_reason"
@@ -215,14 +278,20 @@ elif [ -n "${stale_reason:-}" ]; then
     skip "driver +both" "$stale_reason"
     skip "verify" "needs a bundle built from this tree"
     skip "verify +undo" "needs a bundle built from this tree"
+    skip "undo emits" "needs a bundle built from this tree"
+    skip "probe emits" "needs a bundle built from this tree"
+    skip "verify +probe" "needs a bundle built from this tree"
 else
     skip "driver" "set FLEXBOARD_BUNDLE to a built .mpp to execute the patches (gh run download --name patches-bundle)"
     skip "driver +undo" "set FLEXBOARD_BUNDLE to a built .mpp"
     skip "driver +probe" "set FLEXBOARD_BUNDLE to a built .mpp"
     skip "driver +hidden" "set FLEXBOARD_BUNDLE to a built .mpp"
     skip "driver +both" "set FLEXBOARD_BUNDLE to a built .mpp"
-    skip "verify +undo" "needs the driver's output; set FLEXBOARD_BUNDLE"
     skip "verify" "needs the driver's output; set FLEXBOARD_BUNDLE"
+    skip "verify +undo" "needs the driver's output; set FLEXBOARD_BUNDLE"
+    skip "undo emits" "needs the driver's output; set FLEXBOARD_BUNDLE"
+    skip "probe emits" "needs the driver's output; set FLEXBOARD_BUNDLE"
+    skip "verify +probe" "needs the driver's output; set FLEXBOARD_BUNDLE"
 fi
 
 if [ "$run_resources" -eq 0 ]; then

@@ -477,6 +477,23 @@ def changed_methods(stock_tree, patched_dexes):
     return sorted(m for m, body in patched.items() if m in stock and stock[m] != body)
 
 
+def differing_methods(patched_apk, baseline_apk):
+    """Methods whose body differs between two patched builds of the same APK.
+
+    The evidence that one extra patch emitted anything at all. An emission that produces nothing
+    looks exactly like one that worked -- the patch applies, verify finds nothing wrong, and the
+    build ships unchanged, which is what `2.5.0-dev.1` was. Comparing a build with the patch
+    against the same bundle's build without it removes that possibility: if they are identical, the
+    patch did nothing, however cleanly it applied.
+    """
+    with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+        extract(patched_apk, a)
+        extract(baseline_apk, b)
+        mine = method_bodies(dexlib.load(a))
+        base = method_bodies(dexlib.load(b))
+        return sorted(m for m, body in mine.items() if m in base and base[m] != body)
+
+
 def check_all(apk, stock_tree):
     """Verify every method the patch changed. Returns the number with findings."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -514,6 +531,25 @@ def check_all(apk, stock_tree):
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
+
+    if "--differs-from" in sys.argv:
+        at = sys.argv.index("--differs-from")
+        baseline = sys.argv[at + 1]
+        # By position, not by value: filtering out "the baseline's path" also removed the patched
+        # argument whenever the two were the same file, and reported a usage error instead.
+        args = [a for j, a in enumerate(sys.argv[1:], 1)
+                if j not in (at, at + 1) and not a.startswith("--")]
+        if len(args) != 1:
+            print("usage: verify.py <patched.apk> --differs-from <baseline.apk>", file=sys.stderr)
+            return 2
+        changed = differing_methods(args[0], baseline)
+        if not changed:
+            print("  identical to the baseline: the extra patch applied and emitted nothing")
+            return 1
+        print(f"  {len(changed)} method(s) differ from the baseline:")
+        for descriptor in changed:
+            print(f"    {descriptor[:100]}")
+        return 0
 
     if "--changed-from" in sys.argv:
         stock_tree = sys.argv[sys.argv.index("--changed-from") + 1]
