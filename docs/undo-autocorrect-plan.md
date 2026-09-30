@@ -525,6 +525,8 @@ could help, because the check never ran for the common case.
   `SoftKeyDef.n(Lpmy;)`, which is what `ae()` uses.
 - **-10045 is Gboard's general UNDO**, the keycode Ctrl+Z sends. With no autocorrection to revert,
   a swipe may undo the last edit instead of doing nothing. That is a product decision, not a bug.
+  **Decided 2026-09-30: accepted.** Swipe up is "undo". The rebuild does not need to consult the
+  edit tracker's armed state, which removes one piece of work from it.
 
 ### Where detection moves
 
