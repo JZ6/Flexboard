@@ -223,7 +223,7 @@ jobs:
       # apply it, then `tools/apk/verify.py` on the result. No release, no version bump, nothing
       # published.
       - name: Upload the bundle for local testing
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: patches-bundle
           path: patches/build/libs/*.mpp
