@@ -512,13 +512,34 @@ removed: one patch, one capability added per release.
 
 1. **Detect, and type a single 6** — the diagnostic's measuring code, acting mid-swipe. No Gboard
    calls. *Confirmed on 2.5.1-dev.8: a 6 on every swipe up, before the finger lifts.*
-2. Take the gesture over: 6 if the takeover took, x if refused, no letter. *(current)* Built as
-   dev.7's takeover path instruction for instruction, with the undo replaced by the report, so it
-   splits dev.7's crash: a crash here is the takeover; none means it was sending the undo.
+2. Take the gesture over: 6 if the takeover took, x if refused, no letter. Built as dev.7's
+   takeover path instruction for instruction, with the undo replaced by the report, so it splits
+   dev.7's crash. **Result on 2.5.1-dev.9: it crashed on a swipe up.** So the dev.7 crash is in the
+   takeover, or in how the rest of the gesture is skipped afterwards. It is *not* in building or
+   sending the undo, which stage 2 never does; stage 3 is cleared as the cause.
+
+   Checked statically and found safe: the scrub's teardown (`s(Z)` is a null-checked `setPressed`),
+   and the four methods the key pipeline's reset calls per pointer (null-guarded). That left no
+   suspect worth a release, and there is no logcat, so the recorder below was built instead of a
+   fifth guess.
 3. Send the undo in place of the 6.
 4. Undo only when an autocorrection is armed. Gboard's own revert checks the edit tracker's `d` flag
    before sending -10045; gating on the same state makes this "undo autocorrect" rather than general
    undo. This reverses the 2026-09-30 decision to accept general undo, now as the end goal.
+
+## Reading a crash without logcat
+
+`CrashRecorder` (extension, installed at app start by the swipe-up patch only) saves an uncaught
+exception with a synchronous `commit()` — `apply()` writes on a background thread and the process is
+about to be killed — hands it on to Android's own handler so crash handling is unchanged, and on the
+next start copies it to the clipboard and forgets it. A report that cannot be delivered because the
+clipboard is unreachable is kept, not lost.
+
+It is temporary, tied to the swipe-up patch so only testers get it, and overwrites the clipboard
+after a crash, which the patch description and README say. Everything in it catches `Throwable`: a
+crash reporter that can crash the keyboard, or swallow a crash so the process is never killed and the
+keyboard freezes instead of restarting, is worse than none. Both of those are tested, and
+mutation-tested.
 
 ## The rebuild: swipe up in the handler layer
 

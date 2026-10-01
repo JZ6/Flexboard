@@ -22,6 +22,9 @@ import java.util.Map;
  */
 public final class FakeContext extends Context {
 
+    /** How many synchronous commits were made, as opposed to asynchronous applies. */
+    public int commits;
+
     private final Map<String, Object> store = new HashMap<>();
     private final Map<Integer, String> resources = new HashMap<>();
 
@@ -59,6 +62,16 @@ public final class FakeContext extends Context {
                 public Editor remove(String key) {
                     removals.put(key, true);
                     return this;
+                }
+
+                @Override
+                public boolean commit() {
+                    // Synchronous on a device, where apply() is not; here both write straight
+                    // through, which is why a test about surviving a dying process has to assert
+                    // that commit() is the call being made, not merely that something was written.
+                    commits++;
+                    apply();
+                    return true;
                 }
 
                 @Override
@@ -116,6 +129,33 @@ public final class FakeContext extends Context {
     @Override
     public Context getApplicationContext() {
         return this;
+    }
+
+    /** A clipboard that remembers what was put on it, and can be taken away. */
+    public static final class FakeClipboard extends android.content.ClipboardManager {
+        public String text;
+
+        @Override
+        public void setPrimaryClip(android.content.ClipData clip) {
+            text = clip.getItemAt(0).getText().toString();
+        }
+    }
+
+    private FakeClipboard clipboard = new FakeClipboard();
+
+    public FakeClipboard clipboard() {
+        return clipboard;
+    }
+
+    /** Model a device where the clipboard cannot be reached, so delivery has to keep the report. */
+    public FakeContext withoutClipboard() {
+        clipboard = null;
+        return this;
+    }
+
+    @Override
+    public Object getSystemService(String name) {
+        return CLIPBOARD_SERVICE.equals(name) ? clipboard : null;
     }
 
     @Override

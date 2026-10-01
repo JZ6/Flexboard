@@ -194,7 +194,11 @@ measuring code that worked:
 4. Undo only when an autocorrection is pending, as Gboard's own backspace does.
 
 The swipe has to be reasonably vertical, at least twice as far up as sideways, which keeps it apart
-from **Swipe left to delete** and **Swipe right to undo**. **Off by default.**
+from **Swipe left to delete** and **Swipe right to undo**.
+
+**While this patch is on, a keyboard crash is recorded.** It is saved, and copied to your clipboard
+the next time the keyboard starts, so it can be pasted into a bug report. That overwrites whatever
+was on the clipboard, which is why it only happens with this patch enabled. **Off by default.**
 
 ## Text action buttons
 

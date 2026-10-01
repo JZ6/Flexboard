@@ -1,5 +1,8 @@
 package dev.jz6.flexboard.extension;
 
+import android.content.Context;
+
+import dev.jz6.flexboard.extension.diagnostic.CrashRecorder;
 import dev.jz6.flexboard.extension.toolbar.Hotkeys;
 
 /**
@@ -31,11 +34,122 @@ public final class ExtensionTests {
         textSurvivesTabsAndNewlines();
         labelIsClampedByCodePointsNotChars();
         emptyTextHidesTheSlot();
+        crashReportNamesTheExceptionAndTheThread();
+        crashReportKeepsBothEndsOfALongTrace();
+        crashReportIsSavedSynchronously();
+        crashReportReachesTheClipboardOnce();
+        crashReportSurvivesAClipboardThatCannotBeReached();
+        nothingSavedMeansNothingDelivered();
+        theHandlerRecordsThenHandsTheCrashOn();
+        aFailureWhileRecordingStillHandsTheCrashOn();
+        theHandlerToleratesHavingNoPredecessor();
 
         System.out.printf("%d checks, %d failed%n", checks, failures);
         if (failures > 0) {
             System.exit(1);
         }
+    }
+
+    // ---------------------------------------------------------------- the crash recorder
+
+    private static void crashReportNamesTheExceptionAndTheThread() {
+        Thread main = new Thread("main");
+        String report = CrashRecorder.describe(main, new IllegalStateException("boom"));
+        truthy("names the exception class", report.contains("IllegalStateException"));
+        truthy("carries the message", report.contains("boom"));
+        truthy("names the thread", report.contains("thread: main"));
+    }
+
+    /**
+     * The end of a long trace is the deepest cause, which is usually the real reason, and the start
+     * is what was thrown and from where. Keeping only the start would have thrown the answer away.
+     */
+    private static void crashReportKeepsBothEndsOfALongTrace() {
+        Throwable chain = new RuntimeException("root-cause-marker");
+        for (int i = 0; i < 150; i++) {
+            chain = new RuntimeException("wrapper " + i, chain);
+        }
+        String report = CrashRecorder.describe(new Thread("main"), chain);
+        truthy("a long trace is cut down", report.length() < 4000);
+        truthy("the outermost exception survives", report.contains("wrapper 149"));
+        truthy("the deepest cause survives", report.contains("root-cause-marker"));
+        truthy("the cut says so", report.contains("middle omitted"));
+    }
+
+    /** apply() writes on a background thread and the process is about to be killed. */
+    private static void crashReportIsSavedSynchronously() {
+        FakeContext context = new FakeContext();
+        CrashRecorder.record(context, "report");
+        equal("the report is saved", "report", (String) context.store().get("last"));
+        equal("by commit(), not apply()", "1", String.valueOf(context.commits));
+    }
+
+    private static void crashReportReachesTheClipboardOnce() {
+        FakeContext context = new FakeContext();
+        CrashRecorder.record(context, "the trace");
+        truthy("delivery reports success", CrashRecorder.deliver(context));
+        equal("the clipboard holds the trace", "the trace", context.clipboard().text);
+        falsy("and it is forgotten once delivered", context.store().containsKey("last"));
+        falsy("so a second start delivers nothing", CrashRecorder.deliver(context));
+    }
+
+    /** The whole point of keeping it: a report that cannot be delivered now is delivered later. */
+    private static void crashReportSurvivesAClipboardThatCannotBeReached() {
+        FakeContext context = new FakeContext().withoutClipboard();
+        CrashRecorder.record(context, "the trace");
+        falsy("delivery reports failure", CrashRecorder.deliver(context));
+        equal("the report is still there", "the trace", (String) context.store().get("last"));
+    }
+
+    private static void nothingSavedMeansNothingDelivered() {
+        FakeContext context = new FakeContext();
+        falsy("no report, no delivery", CrashRecorder.deliver(context));
+        equal("and the clipboard is untouched", null, context.clipboard().text);
+    }
+
+    private static void theHandlerRecordsThenHandsTheCrashOn() {
+        final boolean[] handedOn = {false};
+        FakeContext context = new FakeContext();
+        Thread.UncaughtExceptionHandler handler = CrashRecorder.handler(context,
+            new Thread.UncaughtExceptionHandler() {
+                @Override
+                public void uncaughtException(Thread thread, Throwable error) {
+                    handedOn[0] = true;
+                }
+            });
+        handler.uncaughtException(new Thread("main"), new IllegalStateException("boom"));
+        truthy("the crash is recorded", context.store().containsKey("last"));
+        truthy("and handed to the handler that was there before", handedOn[0]);
+    }
+
+    /** A reporter that can swallow a crash leaves a frozen keyboard instead of a restarted one. */
+    private static void aFailureWhileRecordingStillHandsTheCrashOn() {
+        final boolean[] handedOn = {false};
+        Context broken = new Context() {
+            @Override public Context getApplicationContext() { return this; }
+            @Override public String getPackageName() { return "x"; }
+            @Override public android.content.SharedPreferences getSharedPreferences(String n, int m) {
+                throw new IllegalStateException("storage is unavailable");
+            }
+            @Override public String getString(int id) { return ""; }
+            @Override public android.content.res.Resources getResources() { return null; }
+        };
+        Thread.UncaughtExceptionHandler handler = CrashRecorder.handler(broken,
+            new Thread.UncaughtExceptionHandler() {
+                @Override
+                public void uncaughtException(Thread thread, Throwable error) {
+                    handedOn[0] = true;
+                }
+            });
+        handler.uncaughtException(new Thread("main"), new IllegalStateException("boom"));
+        truthy("the crash still reaches the previous handler", handedOn[0]);
+    }
+
+    private static void theHandlerToleratesHavingNoPredecessor() {
+        FakeContext context = new FakeContext();
+        CrashRecorder.handler(context, null)
+            .uncaughtException(new Thread("main"), new IllegalStateException("boom"));
+        truthy("it still records", context.store().containsKey("last"));
     }
 
     // ---------------------------------------------------------------- the blob

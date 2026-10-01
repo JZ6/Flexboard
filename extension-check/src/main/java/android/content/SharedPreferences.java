@@ -26,5 +26,7 @@ public interface SharedPreferences {
         Editor remove(String key);
 
         void apply();
+
+        boolean commit();
     }
 }

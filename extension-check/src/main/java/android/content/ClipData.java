@@ -6,21 +6,31 @@ package android.content;
  */
 public class ClipData {
 
+    private CharSequence text;
+
     public static ClipData newPlainText(CharSequence label, CharSequence text) {
-        return null;
+        ClipData data = new ClipData();
+        data.text = text;
+        return data;
     }
 
     public int getItemCount() {
-        return 0;
+        return text == null ? 0 : 1;
     }
 
     public static class Item {
+        private final CharSequence text;
+
+        Item(CharSequence text) {
+            this.text = text;
+        }
+
         public CharSequence getText() {
-            return null;
+            return text;
         }
     }
 
     public Item getItemAt(int index) {
-        return null;
+        return index == 0 && text != null ? new Item(text) : null;
     }
 }
