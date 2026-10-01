@@ -522,6 +522,14 @@ removed: one patch, one capability added per release.
    and the four methods the key pipeline's reset calls per pointer (null-guarded). That left no
    suspect worth a release, and there is no logcat, so the recorder below was built instead of a
    fifth guess.
+
+   **It crashes from every row, not only the top one.** A top-row swipe up leaves the keyboard and
+   detaches the finger from its key, which is the one case the takeover had never run on, so it
+   was the natural suspect. It is ruled out: a middle-row swipe takes over at 24dp while the finger
+   is still on its key (retargeting needs 0.8 of a key height) and crashes all the same. Stage 1
+   (2.5.1-dev.8) detected and typed from every row without crashing, so the difference that
+   crashes is what stage 2 added and runs every time: the takeover call and the resets it sets off
+   in the other handlers, the scrub's own takeover, and skipping the rest of the gesture.
 3. Send the undo in place of the 6.
 4. Undo only when an autocorrection is armed. Gboard's own revert checks the edit tracker's `d` flag
    before sending -10045; gating on the same state makes this "undo autocorrect" rather than general
