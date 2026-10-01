@@ -511,8 +511,10 @@ So the real patch was rebuilt from the diagnostic, which never crashed, and the 
 removed: one patch, one capability added per release.
 
 1. **Detect, and type a single 6** — the diagnostic's measuring code, acting mid-swipe. No Gboard
-   calls. *(current)*
-2. Take the gesture over: 6 only if the takeover took, no letter.
+   calls. *Confirmed on 2.5.1-dev.8: a 6 on every swipe up, before the finger lifts.*
+2. Take the gesture over: 6 if the takeover took, x if refused, no letter. *(current)* Built as
+   dev.7's takeover path instruction for instruction, with the undo replaced by the report, so it
+   splits dev.7's crash: a crash here is the takeover; none means it was sending the undo.
 3. Send the undo in place of the 6.
 4. Undo only when an autocorrection is armed. Gboard's own revert checks the edit tracker's `d` flag
    before sending -10045; gating on the same state makes this "undo autocorrect" rather than general

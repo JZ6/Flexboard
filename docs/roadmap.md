@@ -16,7 +16,7 @@ some settings disabled like grammer check and ai writing tools, rambler mode etc
 > remaining "etc" is unenumerated — name a specific fourth setting and it can be checked the same
 > way.
 
-flick up to undo autocorrect 
+does the hidden settings patch still need to be there
 
 clean up the current changelog, remove all bump commits from the changelog, and make the past stable releases show all commits from the dev releases before it
 

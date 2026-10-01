@@ -187,9 +187,9 @@ it.
 and crashed the keyboard on a swipe up, so it is now being rebuilt one step per release from the
 measuring code that worked:
 
-1. **Detect, and type a 6.** The current build. A swipe up types a `6`; nothing is undone, and the
-   swiped key is still typed.
-2. Take the swipe over, so the key is not typed.
+1. Detect, and type a 6. Confirmed on a device.
+2. **Take the swipe over, so the key is not typed.** The current build: a swipe up types a `6` in
+   place of the key, or an `x` if the swipe could not be taken over. Nothing is undone yet.
 3. Send an undo in place of the `6`.
 4. Undo only when an autocorrection is pending, as Gboard's own backspace does.
 

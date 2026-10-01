@@ -9,16 +9,21 @@ import dev.jz6.flexboard.extension.ime.ImeService;
 /**
  * Swipe up to undo autocorrect, built up one step at a time from the diagnostic that measured it.
  *
- * <p><b>Stage 1 of 4: detect, and type a single "6".</b> Nothing in Gboard is called. The previous
- * version went straight to taking the gesture over and sending an undo, and it crashed the keyboard
- * on a swipe up; the build it was based on — this measuring code, as a diagnostic — never did. So it
- * is rebuilt from that base, adding one capability per release, so whatever breaks names itself:
+ * <p><b>Stage 2 of 4: take the gesture over, and say whether it took.</b> Stage 1 typed a "6" on
+ * every swipe up, mid-swipe, and was confirmed on a device. Stage 2 adds the takeover — exactly the
+ * takeover path of the build that crashed (2.5.1-dev.7), with its undo replaced by a marker — so it
+ * splits that crash in two: if this crashes, the takeover is the cause; if not, sending the undo was.
  * <ol>
- *   <li>detect, and type "6" — the measuring code acting at the moment a swipe qualifies;</li>
- *   <li>take the gesture over — "6" alone, with no letter typed;</li>
+ *   <li>detect, and type "6" — confirmed;</li>
+ *   <li><b>take the gesture over</b> — "6" if it took and the key is not typed, "x" if refused;</li>
  *   <li>send an undo in place of the "6";</li>
  *   <li>undo only when an autocorrection is armed, which is what Gboard's own backspace checks.</li>
  * </ol>
+ *
+ * <p>This class decides and the emission acts. The takeover has to be done in Gboard's own terms,
+ * which are obfuscated, so they stay in the emission where the patcher checks them; nothing
+ * obfuscated is compiled in here. {@link #decide} answers pass, claim or swallow, and the emission
+ * reports back through {@link #tookOver}.
  *
  * <p>Fed from the scrub engine's {@code g(MotionEvent)} — the motion-event-handler layer swipe left
  * and swipe right run on — which sees DOWN, every MOVE and UP for the keyboard whether or not the key
@@ -42,58 +47,106 @@ public final class SwipeUp {
     private static final float FLICK_DP = 24f;
     private static final float CORRIDOR_RATIO = 2f;
 
-    /** Stage 1's action. Replaced by the takeover in stage 2. */
-    private static final String MARKER = "6";
+    /** The decisions the emission branches on. */
+    public static final int PASS = 0;
+    public static final int CLAIM = 1;
+    public static final int SWALLOW = 2;
+
+    /** Stage 2's markers: the takeover took, or it was refused. Replaced by the undo in stage 3. */
+    private static final String TOOK = "6";
+    private static final String REFUSED = "x";
 
     private static final boolean[] active = new boolean[SLOTS];
     private static final boolean[] fired = new boolean[SLOTS];
+    private static final boolean[] claimed = new boolean[SLOTS];
+    private static int lastClaimed = -1;
     private static final float[] lowestY = new float[SLOTS];
     private static final float[] xAtLowest = new float[SLOTS];
 
     private SwipeUp() {
     }
 
-    /** Called from the scrub engine's {@code g(MotionEvent)} with the handler and the event. */
-    public static void observe(Object handler, MotionEvent event) {
+    /**
+     * Called first in the scrub engine's {@code g(MotionEvent)}: what to do with this event.
+     *
+     * <p>{@link #PASS}: not ours, the scrub engine handles it as always. {@link #CLAIM}: this move
+     * completed a swipe up; take the gesture over. {@link #SWALLOW}: the gesture is ours; keep the
+     * scrub engine's own logic out of it (its end-of-gesture reset still runs).
+     */
+    public static int decide(Object handler, MotionEvent event) {
         try {
             if (handler == null || event == null
                     || !handler.getClass().getName().endsWith(ACTING_HANDLER)) {
-                return;
+                return PASS;
             }
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                 case MotionEvent.ACTION_POINTER_DOWN: {
+                    if (anyClaimed()) {
+                        return SWALLOW;
+                    }
                     int index = event.getActionIndex();
                     begin(event.getPointerId(index), event.getX(index), event.getY(index));
-                    break;
+                    return PASS;
                 }
                 case MotionEvent.ACTION_MOVE:
-                    onMove(event);
-                    break;
+                    return onMove(event);
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_POINTER_UP: {
+                    boolean ours = anyClaimed();
                     int id = event.getPointerId(event.getActionIndex());
                     if (id >= 0 && id < SLOTS) {
                         active[id] = false;
                         fired[id] = false;
+                        claimed[id] = false;
                     }
-                    break;
+                    return ours ? SWALLOW : PASS;
                 }
-                case MotionEvent.ACTION_CANCEL:
+                case MotionEvent.ACTION_CANCEL: {
+                    boolean ours = anyClaimed();
                     for (int i = 0; i < SLOTS; i++) {
                         active[i] = false;
                         fired[i] = false;
+                        claimed[i] = false;
                     }
-                    break;
+                    return ours ? SWALLOW : PASS;
+                }
                 default:
-                    break;
+                    return anyClaimed() ? SWALLOW : PASS;
             }
         } catch (Throwable oops) {
-            // Runs on every motion event of the keyboard; it must never break touch handling.
+            // Runs on every motion event of the keyboard. Failing here must mean "not ours",
+            // never a broken keyboard.
+            return PASS;
         }
     }
 
-    private static void onMove(MotionEvent event) {
+    /**
+     * Called by the emission right after the takeover, with whether it took.
+     *
+     * <p>The takeover call returns nothing and silently does nothing when the gesture already has an
+     * owner, so the emission reads the owner back and reports. A refused takeover releases the
+     * claim, so the rest of the gesture is the scrub engine's again; the swipe stays marked as
+     * fired, so it is not attempted twice.
+     */
+    public static void tookOver(boolean took) {
+        try {
+            if (!took && lastClaimed >= 0 && lastClaimed < SLOTS) {
+                claimed[lastClaimed] = false;
+            }
+            InputConnection connection = ImeService.connection();
+            if (connection != null) {
+                connection.commitText(took ? TOOK : REFUSED, 1);
+            }
+        } catch (Throwable oops) {
+            // A report must never be the thing that breaks the keyboard.
+        }
+    }
+
+    private static int onMove(MotionEvent event) {
+        if (anyClaimed()) {
+            return SWALLOW;
+        }
         float flickPx = FLICK_DP * Resources.getSystem().getDisplayMetrics().density;
         int history = event.getHistorySize();
         for (int p = 0; p < event.getPointerCount(); p++) {
@@ -111,18 +164,22 @@ public final class SwipeUp {
                 qualified = qualifies(id, event.getX(p), event.getY(p), flickPx);
             }
             if (qualified) {
-                act(id);
+                fired[id] = true;
+                claimed[id] = true;
+                lastClaimed = id;
+                return CLAIM;
             }
         }
+        return PASS;
     }
 
-    /** Stage 1: once per swipe, type the marker. */
-    private static void act(int id) {
-        fired[id] = true;
-        InputConnection connection = ImeService.connection();
-        if (connection != null) {
-            connection.commitText(MARKER, 1);
+    private static boolean anyClaimed() {
+        for (int i = 0; i < SLOTS; i++) {
+            if (claimed[i]) {
+                return true;
+            }
         }
+        return false;
     }
 
     private static void begin(int id, float x, float y) {
@@ -131,6 +188,7 @@ public final class SwipeUp {
         }
         active[id] = true;
         fired[id] = false;
+        claimed[id] = false;
         lowestY[id] = y;
         xAtLowest[id] = x;
     }

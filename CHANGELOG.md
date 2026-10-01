@@ -44,7 +44,7 @@
 
 * **Gboard:** feat: claim the pointer in Lpvi;->G instead of un-deciding a keypress
 
-# [2.5.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.3...v2.5.0-dev.4) (2026-09-18)
+# [2.4.2](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.3...v2.5.0-dev.4) (2026-09-18)
 
 * **Gboard:** fix: a flag scan that failed on another bundle's merged extension
 * **Gboard:** docs: draft option B against the dex, and verify the claim it rests on
