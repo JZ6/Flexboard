@@ -1,3 +1,7 @@
+# [2.5.1-dev.8](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.7...v2.5.1-dev.8) (2026-10-01)
+
+* **Gboard:** refactor: one swipe-up patch, rebuilt in stages from the diagnostic
+
 # [2.5.1-dev.7](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.6...v2.5.1-dev.7) (2026-09-30)
 
 * **Gboard:** feat: swipe up to undo, rebuilt in the motion-event-handler layer
