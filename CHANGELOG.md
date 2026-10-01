@@ -1,3 +1,7 @@
+# [2.5.1-dev.9](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.8...v2.5.1-dev.9) (2026-10-01)
+
+* **Gboard:** feat: swipe up stage 2 — take the gesture over, and say whether it took
+
 # [2.5.1-dev.8](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.7...v2.5.1-dev.8) (2026-10-01)
 
 * **Gboard:** refactor: one swipe-up patch, rebuilt in stages from the diagnostic

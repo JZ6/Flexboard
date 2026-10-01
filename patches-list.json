@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "2.5.1-dev.8",
+  "version": "2.5.1-dev.9",
   "patches": [
     {
       "name": "Bigger Toolbar",
@@ -317,7 +317,7 @@
     },
     {
       "name": "Swipe up to undo autocorrect",
-      "description": "Work in progress, being built in stages. This build only detects the gesture: swipe up on the keyboard and it types a 6. It does not undo anything yet, and the swiped key is still typed. Off by default.",
+      "description": "Work in progress, being built in stages. This build takes the swipe over: swipe up on the keyboard and it types a 6 instead of the key you swiped on, or an x if it could not take the swipe over. It does not undo anything yet. Off by default.",
       "default": false,
       "dependencies": [
         "BytecodePatch"
