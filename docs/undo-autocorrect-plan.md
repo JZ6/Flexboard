@@ -492,6 +492,32 @@ Open, for whoever picks this up:
    already owns. Read it before relying on it.
  - whether the corridor test should also move to peak-relative rather than release-relative.
 
+## The first handler-layer build crashed; rebuilding in stages
+
+`2.5.1-dev.7` — takeover plus undo in one step — crashed the keyboard on a swipe up. It opened fine,
+so ART accepted the class and the failure was a runtime exception on the takeover path. What was
+ruled out before anything else was changed:
+
+- the emission, read out of the dev.7 APK, was exactly what was intended, every branch landing right;
+- `verify` was clean;
+- the undo event was byte-for-byte what Gboard's own backspace revert builds;
+- the undo patch changed exactly one method, so no leftover code from the old design was involved.
+
+What was *not* settled is which of the three runtime steps throws — the takeover, building the
+event, or sending it from inside the touch dispatch rather than from the input pipeline as Gboard
+does. No logcat was available.
+
+So the real patch was rebuilt from the diagnostic, which never crashed, and the diagnostic patch was
+removed: one patch, one capability added per release.
+
+1. **Detect, and type a single 6** — the diagnostic's measuring code, acting mid-swipe. No Gboard
+   calls. *(current)*
+2. Take the gesture over: 6 only if the takeover took, no letter.
+3. Send the undo in place of the 6.
+4. Undo only when an autocorrection is armed. Gboard's own revert checks the edit tracker's `d` flag
+   before sending -10045; gating on the same state makes this "undo autocorrect" rather than general
+   undo. This reverses the 2026-09-30 decision to accept general undo, now as the end goal.
+
 ## The rebuild: swipe up in the handler layer
 
 The diagnostic answered the question the design depended on. On a device, most real flicks came back

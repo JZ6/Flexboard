@@ -180,20 +180,22 @@ when you swipe on the backspace key, so it works there too.
 
 ## Swipe up to undo autocorrect
 
-Swipe up on the keyboard to put back the word an autocorrect just replaced.
+Swipe up on the keyboard to put back the word an autocorrect just replaced. Gboard can already do
+this on backspace, behind its **Undo autocorrect with backspace** setting; this adds a gesture for
+it.
 
-Gboard can already do this, but only on backspace, and only if you have found **Undo autocorrect
-with backspace** in the settings. This adds a gesture for the same thing, and it works whether or
-not that setting is on — it does not go through Gboard's arming, and nothing downstream checks.
+**Work in progress, built in stages.** The first attempt went straight to the finished behaviour
+and crashed the keyboard on a swipe up, so it is now being rebuilt one step per release from the
+measuring code that worked:
 
-A swipe with nothing to undo does nothing at all. The gesture is only read on keys that do not
-already define an upward flick of their own, so flick-for-symbols keys keep their behaviour, and
-the swipe has to be reasonably vertical — twice as much up as sideways — which is what keeps it
-apart from the sideways scrub that **Swipe left to delete** uses.
+1. **Detect, and type a 6.** The current build. A swipe up types a `6`; nothing is undone, and the
+   swiped key is still typed.
+2. Take the swipe over, so the key is not typed.
+3. Send an undo in place of the `6`.
+4. Undo only when an autocorrection is pending, as Gboard's own backspace does.
 
-**Off by default.** It has not yet been confirmed on a device, and this project has shipped one
-default-on patch that had to be bisected across four releases afterwards. Turn it on in the patch
-selector if you want to try it.
+The swipe has to be reasonably vertical, at least twice as far up as sideways, which keeps it apart
+from **Swipe left to delete** and **Swipe right to undo**. **Off by default.**
 
 ## Text action buttons
 

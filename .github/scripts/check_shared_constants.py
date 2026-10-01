@@ -201,8 +201,14 @@ def _declares(body, class_name, member, params, returns, needs_static):
     """Is `member` declared on this class with a matching signature?
 
     Deliberately strict about the things that make a reference resolve or not: the parameter
-    types, the return type, and staticness. A name match alone is what the previous version of
-    this check did, and a Javadoc sentence satisfied it.
+    types, the return type, staticness, and visibility. A name match alone is what the previous
+    version of this check did, and a Javadoc sentence satisfied it.
+
+    Visibility was the last of those to be added, and only after a negative test showed it was
+    missing: a member made package-private still passed. Every call this file checks is emitted
+    into a Gboard class, which is in another package, so anything short of `public` resolves at
+    patch time and throws IllegalAccessError the first time it runs -- a crash on use, from a lane
+    that said the call was fine.
     """
     if member == "<init>":
         pattern = rf"(?:^|\s)((?:public|protected|private)\s+)?{class_name}\s*\(([^)]*)\)\s*\{{"
@@ -224,6 +230,8 @@ def _declares(body, class_name, member, params, returns, needs_static):
         # through — an IncompatibleClassChangeError on the device, from a lane whose docstring
         # says the opcode matters.
         if ("static" in modifiers) != needs_static:
+            continue
+        if "public" not in modifiers.split():
             continue
         return True
     return False
@@ -317,12 +325,20 @@ def _check_extension_references(problems):
             class_name = descriptor[1:-1].split("/")[-1]
             params = _java_types(parameters)
             checked += 1
+            # The class must be reachable from another package as well as the member.
+            if not re.search(rf"\bpublic\s+(?:final\s+|abstract\s+)*class\s+{re.escape(class_name)}\b",
+                             body):
+                problems.append(
+                    f"  {path.name} calls into {descriptor}, but {source.name} does not declare it "
+                    f"a public class — the call is emitted into Gboard's code, in another package, "
+                    f"and would throw IllegalAccessError when it runs")
+                continue
             if not _declares(body, class_name, member, params,
                              _java_types(returns)[0], opcode == "static"):
                 problems.append(
                     f"  {path.name} emits invoke-{opcode} {descriptor}->{member}"
                     f"({', '.join(params)}){returns}, which {source.name} does not declare "
-                    f"with that signature"
+                    f"public with that signature"
                 )
 
         # A guard that checks nothing is the failure this whole function exists to prevent, and

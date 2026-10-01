@@ -5,29 +5,29 @@ import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.basePatch
 
 /**
- * Swipe up on the keyboard to undo, without the swiped key being typed.
+ * Swipe up on the keyboard to undo the last autocorrection.
  *
- * Runs in the motion-event-handler layer, beside swipe left to delete and swipe right to undo: the
- * scrub engine offers every event to `SwipeUpUndo`, which takes the gesture over the moment it has
- * risen 24dp at no worse than a 2:1 corridor, and the emission sends Gboard's UNDO. The values are
- * the ones a device diagnostic validated — most real flicks met them mid-swipe (`6m`). See
- * SwipeUpUndoEmitter.kt for the mechanism and docs/undo-autocorrect-plan.md for how it was reached.
+ * Built in stages from the diagnostic that measured the gesture, because the previous attempt —
+ * which went straight to taking the gesture over and sending an undo — crashed the keyboard on a
+ * swipe up, while the diagnostic it was built beside never did. One capability per release, so a
+ * failure names its own cause:
  *
- * It replaces a key-pipeline design that could never fire: its claim point was unreachable for a
- * flick from the top row, and its "does this key own an upward action" check always passed.
+ *  1. **detect, and type a single "6"** — the current stage; nothing in Gboard is called;
+ *  2. take the gesture over, so the swiped key is not typed;
+ *  3. send an undo in place of the "6";
+ *  4. undo only when an autocorrection is armed, as Gboard's own backspace revert does.
  *
- * The keycode is Gboard's general UNDO, so with no autocorrection pending a swipe undoes the last
- * edit. Accepted as the design.
+ * It runs in the motion-event-handler layer, beside swipe left to delete and swipe right to undo.
+ * See SwipeUpEmitter.kt, SwipeUp.java and docs/undo-autocorrect-plan.md.
  *
- * Known limit: a key that binds its own swipe-up action is not spared. No Latin layout does — letter
- * keys bind none, and flick-for-symbols binds swipe *down* — but a layout that did would lose it.
+ * Replaces "Swipe up diagnostic (temporary)", whose measuring code this now is.
  */
 @Suppress("unused")
 val undoAutocorrectPatch = bytecodePatch(
     name = "Swipe up to undo autocorrect",
-    description = "Swipe up on the keyboard to undo the last autocorrection — or, with none " +
-        "pending, the last edit — without the swiped key being typed. Off by default until it has " +
-        "been confirmed on a device.",
+    description = "Work in progress, being built in stages. This build only detects the gesture: " +
+        "swipe up on the keyboard and it types a 6. It does not undo anything yet, and the swiped " +
+        "key is still typed. Off by default.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -35,6 +35,6 @@ val undoAutocorrectPatch = bytecodePatch(
     dependsOn(basePatch)
 
     execute {
-        emitSwipeUpUndo()
+        emitSwipeUp()
     }
 }
