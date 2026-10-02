@@ -4,6 +4,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLa
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.util.smali.ExternalLabel
+import com.android.tools.smali.dexlib2.AccessFlags
 import dev.jz6.flexboard.patches.features.swipetodelete.scrubHandleMotionEventFingerprint
 import dev.jz6.flexboard.patches.shared.InvokeKind
 import dev.jz6.flexboard.patches.shared.callsMethod
@@ -30,7 +31,12 @@ private const val SCRUB_HANDLER =
 private const val HANDLER_ROUTE_FIELD = "$SCRUB_HANDLER->p:Lpvo;"
 private const val TAKE_OVER = "Lpvo;->m()V"
 
-/** The route's only implementation, and how to ask it who owns the gesture now. */
+/**
+ * The route's only implementation, and how to ask it who owns the gesture now.
+ *
+ * Both are package-private in the unnamed package, and the emission runs as code of
+ * `ScrubMotionEventHandler`, in another package. See [openRouteToTheScrub].
+ */
 private const val ROUTE_IMPL = "Lozi;"
 private const val ROUTE_MANAGER_FIELD = "Lozi;->b:Lozj;"
 private const val GESTURE_OWNER_FIELD = "Lozj;->k:Lpvn;"
@@ -71,6 +77,15 @@ private const val REPORT = "flexboard_swipe_up_report"
  *
  * v0-v3 are the only registers written, and v0-v10 are dead at both the insertion point and the jump
  * target (`preflight.live_free`, pinned).
+ *
+ * **Why `Lozi;` is made public first.** 2.5.1-dev.7 and dev.9 crashed on every swipe up, from every
+ * row, before the report could type anything. Reading the owner back means `instance-of`,
+ * `check-cast` and `iget` on `Lozi;`, which is package-private, as is its field `b`, and the code
+ * doing it belongs to a class in another package. ART does not refuse the class for that: an access
+ * failure is a soft verification failure, so the keyboard opened, and the instruction threw
+ * `IllegalAccessError` the first time it ran. `tools/apk/verify.py` now checks every reference a
+ * patched method makes against its class's access rights, and flags the dev.9 build at exactly
+ * those three instructions.
  */
 internal fun BytecodePatchContext.emitSwipeUp() {
     val method = scrubHandleMotionEventFingerprint().method
@@ -102,6 +117,8 @@ internal fun BytecodePatchContext.emitSwipeUp() {
         registerCount = registerCount,
     )
 
+    openRouteToTheScrub()
+
     method.addInstructionsWithLabels(
         insertAt,
         """
@@ -128,4 +145,23 @@ internal fun BytecodePatchContext.emitSwipeUp() {
         ExternalLabel(STOCK, body[insertAt]),
         ExternalLabel(END, body[endOfCall]),
     )
+}
+
+/**
+ * Makes `Lozi;` and its manager field public, so code in `ScrubMotionEventHandler` may read them.
+ *
+ * Widening access changes nothing that already runs: no stock code is refused anything it was
+ * allowed before, and virtual dispatch does not depend on a class's visibility. The alternative —
+ * reading the owner reflectively from the extension — would trade a checked emission for names the
+ * constant checks cannot see.
+ */
+private fun BytecodePatchContext.openRouteToTheScrub() {
+    val route = mutableClassDefBy(ROUTE_IMPL)
+    route.setAccessFlags(route.accessFlags or AccessFlags.PUBLIC.value)
+
+    val name = ROUTE_MANAGER_FIELD.substringAfter("->").substringBefore(":")
+    val type = ROUTE_MANAGER_FIELD.substringAfter(":")
+    val manager = route.fields.singleOrNull { it.name == name && it.type == type }
+        ?: error("$ROUTE_MANAGER_FIELD is not declared by $ROUTE_IMPL; the route has changed shape")
+    manager.setAccessFlags(manager.accessFlags or AccessFlags.PUBLIC.value)
 }

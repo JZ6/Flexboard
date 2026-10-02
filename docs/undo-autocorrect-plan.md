@@ -530,6 +530,30 @@ removed: one patch, one capability added per release.
    (2.5.1-dev.8) detected and typed from every row without crashing, so the difference that
    crashes is what stage 2 added and runs every time: the takeover call and the resets it sets off
    in the other handlers, the scrub's own takeover, and skipping the rest of the gesture.
+
+   **Nothing was typed before the crash.** So it happened before the report, and the only
+   instructions between the takeover call and the report are the owner read-back: `instance-of`
+   and `check-cast` on `Lozi;`, then `iget Lozi;->b`.
+
+   **The cause: an illegal access.** `Lozi;` is package-private, in the unnamed package, and so is
+   its field `b`. The read-back is code of `ScrubMotionEventHandler`, in
+   `com.google...scrubmove`. ART does not refuse the class for that, because an access failure is a
+   soft verification failure. So the keyboard opened, and the `instance-of` threw
+   `IllegalAccessError` the first time it ran: on every swipe up, from every row, one instruction
+   before the report. dev.7 had the same read-back. The takeover call itself was fine:
+   `invoke-interface` on the public `Lpvo;`, the same call the scrub makes.
+
+   **Nothing could see it.** `verify.py` checked type merges and extension references; nothing
+   checked what a patched class is allowed to reach. It does now, using ART's rules, and on the dev.9
+   build it flags exactly those three instructions and nothing else. It is unit-tested, and
+   mutation-tested over nine ways of getting the rules wrong.
+
+   **The fix keeps the read-back.** The patch widens `Lozi;` and `Lozi;->b` to public before
+   emitting. The emission is byte-identical to dev.9's, and the 6/x report stays, which the later
+   stages need so they do not undo while some other handler owns the swipe. Applied to Gboard with a
+   hybrid bundle (dev.9's, with today's compiled patches): both are public in the swipe-up build,
+   untouched in the default build, and `verify` passes the access check on both. That is static
+   verification; whether a swipe up now types a 6 is the next install.
 3. Send the undo in place of the 6.
 4. Undo only when an autocorrection is armed. Gboard's own revert checks the edit tracker's `d` flag
    before sending -10045; gating on the same state makes this "undo autocorrect" rather than general
@@ -542,6 +566,9 @@ exception with a synchronous `commit()` — `apply()` writes on a background thr
 about to be killed — hands it on to Android's own handler so crash handling is unchanged, and on the
 next start copies it to the clipboard and forgets it. A report that cannot be delivered because the
 clipboard is unreachable is kept, not lost.
+
+In the event, the stage 2 crash was found statically before the recorder ever shipped (see stage 2
+above). It ships anyway, as a net: the next crash in this feature names itself.
 
 It is temporary, tied to the swipe-up patch so only testers get it, and overwrites the clipboard
 after a crash, which the patch description and README say. Everything in it catches `Throwable`: a
