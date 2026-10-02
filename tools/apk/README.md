@@ -16,7 +16,7 @@ Everything the `docs/` findings rest on was produced with these three files.
 | `preflight.py` | Runs every patch-time assertion against a dex, so a moved binding fails here instead of on a phone |
 | `check_patch_resources.py` | Dress rehearsal of the resource half of a release: decodes the APK with arsclib (once, cached), replays the bundle's resource writes onto the tree, DOM-parses every touched file, then rebuilds the whole resource table. Fails on the desk exactly where Morphe would fail on the phone (bad type names, malformed XML). Cache: `~/.cache/flexboard`. |
 | `patched.py` | Reads a *patched* APK and diffs one method against the stock one. The only thing here that looks at what the patcher produced rather than at what Gboard ships |
-| `verify.py` | Type-merge and extension-reference check over every method a patch changed — the class of bug ART rejects at class load |
+| `verify.py` | Type-merge, extension-reference and access checks over every method a patch changed — the bugs ART only reports on a phone |
 | `ArsclibRoundTrip.java` | 60-line java shim used by `check_patch_resources.py` (`decode`/`encode` modes); compiles on demand, needs only the pinned arsclib jar |
 
 ## Setup
@@ -229,6 +229,21 @@ diffing against stock, so nothing has to be named. It is deliberately quiet: typ
 instructions that state one, unknowns are never reported, and a conflict in a register nobody reads
 is legal and ignored. On the APK that crashed it names one method; across 3,001 untouched Gboard
 methods it finds nothing.
+
+It also checks every class, field and method a changed method references against **the access
+rights of the class the code was injected into**, using ART's rules. An emission is code of its host
+class: `instance-of Lozi;` written into `ScrubMotionEventHandler` is a package-private class reached
+from another package. ART does not refuse the class for that, because an access failure is a soft
+verification failure. The keyboard opens and the instruction throws `IllegalAccessError` when it runs,
+which is how `2.5.1-dev.7` and `dev.9` crashed on every swipe up. References that lead into the
+framework cannot be judged without `android.jar` and are counted, not passed.
+
+**A Kotlin-only patch change can be applied without a push.** `:patches:jar` needs the SDK because
+it builds the extension, but `:patches:compileKotlin` does not, and a bundle is a plain jar: take any
+CI bundle, replace every `.class` and `.kotlin_module` entry with `patches/build/classes/kotlin/main`,
+keep its resources and `extensions/extension.mpe`, and hand it to `:driver:run`. The extension is
+then the old one, so a call into an extension member added since will show in `verify` as
+undeclared, which is correct for that hybrid and not a finding about the change.
 
 ## What these deliberately do not do
 

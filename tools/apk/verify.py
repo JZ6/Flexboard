@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""A register type-merge check over a patched method — the class of bug ART rejects at load.
+"""Checks over every method a patch changed, for the bugs ART only reports on a phone.
+
+Three of them: a register type-merge conflict (rejected at class load), a call into the extension
+that nothing declares (throws when the call runs), and a reference the patched class is not allowed
+to make (throws when the instruction runs). The first is most of this file; the other two are
+sections at the end.
 
 ## Why
 
@@ -31,6 +36,21 @@ reads is legal and common.
 
 False negatives are the accepted trade. A checker that cries wolf gets switched off, and this
 project has enough checks that pass without meaning something.
+
+## Access
+
+An emission runs as code *of the class it is injected into*, and ART holds it to that class's
+access rights. `2.5.1-dev.9` emitted `instance-of Lozi;` and `iget Lozi;->b` into
+`ScrubMotionEventHandler`, in `com.google...scrubmove`; `Lozi;` is package-private and lives in the
+unnamed package. ART does not reject the class for that — an access failure is a *soft* verification
+failure — so the keyboard opened, and the instruction threw `IllegalAccessError` the first time it
+ran, on every swipe up. Nothing here could see it, and the device had no logcat to say so.
+
+The rule checked is ART's: a class is accessible when it is public or in the host's package; a
+member when it is public, private to the host itself, in the host's package, or protected and the
+host is a subclass. The class named in the reference is checked, then the member where resolution
+finds it, which is the order ART uses. A reference whose class or member is outside the APK —
+anything in the framework — cannot be judged and is counted as unchecked, never as passed.
 
 ## Use
 
@@ -350,7 +370,7 @@ def declared_members(dexes):
             for m, _maf, _co in d.class_methods(cd):
                 methods.add(m)
             try:
-                for descriptor, _static in _class_fields(d, cd):
+                for descriptor, _static, _af in _class_fields(d, cd):
                     fields.add(descriptor)
             except Exception:
                 pass
@@ -358,7 +378,8 @@ def declared_members(dexes):
 
 
 def _class_fields(d, cd):
-    """(descriptor, is_static) per field — the encoded_field walk dexlib does not expose."""
+    """(descriptor, is_static, access_flags) per field — the encoded_field walk dexlib does not
+    expose."""
     if not cd:
         return
     from dexlib import uleb
@@ -371,9 +392,9 @@ def _class_fields(d, cd):
         idx = 0
         for _ in range(count):
             delta, o = uleb(b, o)
-            _af, o = uleb(b, o)
+            af, o = uleb(b, o)
             idx += delta
-            yield d.field(idx), static
+            yield d.field(idx), static, af
 
 
 def unresolved_extension_references(ins, methods, fields):
@@ -415,6 +436,157 @@ def _is_framework(descriptor):
         "Landroid/", "Ljava/", "Ljavax/", "Lkotlin/", "Ldalvik/", "Lorg/w3c/", "Lorg/xml/",
         "Lorg/json/", "Lorg/apache/", "Lj$/", "Lsun/",
     ))
+
+
+PUBLIC, PRIVATE, PROTECTED, INTERFACE = 0x1, 0x2, 0x4, 0x200
+
+FIELD_OPS = ("iget", "iput", "sget", "sput")
+TYPE_OPS = ("check-cast", "instance-of", "new-instance", "const-class", "new-array",
+            "filled-new-array")
+
+
+def package_of(descriptor):
+    """`com/a/b` for `Lcom/a/b/C;`, and `""` for an obfuscated class in the unnamed package."""
+    body = descriptor[1:-1]
+    return body.rsplit("/", 1)[0] if "/" in body else ""
+
+
+class Access:
+    """The access rules ART applies to an instruction, over the classes the APK declares.
+
+    Members are decoded per class on first use: indexing every field and method of sixty thousand
+    classes up front would cost more than the rest of verify put together, for the dozen classes a
+    patch actually names.
+    """
+
+    def __init__(self, dexes):
+        import struct
+        self.flags, self.parent, self.interfaces, self._data = {}, {}, {}, {}
+        self._members = {"field": {}, "method": {}}
+        for d in dexes:
+            for i in range(d.cls_n):
+                ci, af, su, io, _sf, _ao, cd, _sv = struct.unpack_from(
+                    "<8I", d.b, d.cls_o + 32 * i)
+                name = d.type(ci)
+                if name in self.flags:
+                    continue  # the first definition is the one that loads
+                self.flags[name] = af
+                self.parent[name] = d.type(su) if su != 0xFFFFFFFF else None
+                self.interfaces[name] = []
+                if io:
+                    n = struct.unpack_from("<I", d.b, io)[0]
+                    self.interfaces[name] = [
+                        d.type(struct.unpack_from("<H", d.b, io + 4 + 2 * k)[0]) for k in range(n)]
+                self._data[name] = (d, cd)
+
+    def knows(self, descriptor):
+        """True when the class is in the APK, or is a primitive array that needs no access."""
+        element = descriptor.lstrip("[")
+        return not element.startswith("L") or element in self.flags
+
+    def members(self, cls, kind):
+        cache = self._members[kind]
+        if cls not in cache:
+            d, cd = self._data[cls]
+            if kind == "field":
+                cache[cls] = {desc.split("->", 1)[1]: af for desc, _s, af in _class_fields(d, cd)}
+            else:
+                cache[cls] = {m.split("->", 1)[1]: af for m, af, _co in d.class_methods(cd)}
+        return cache[cls]
+
+    def resolve(self, cls, signature, kind):
+        """(declaring class, flags) for a member, or None when the search leaves the APK first.
+
+        The superclass chain, then every interface it reaches. ART interleaves a class's interfaces
+        before its superclass for fields; the two orders differ only for a name and type declared
+        in both an interface and a superclass, which nothing in Gboard does.
+        """
+        chain, cur, seen = [], cls, set()
+        while cur in self.flags and cur not in seen:
+            seen.add(cur)
+            chain.append(cur)
+            cur = self.parent[cur]
+        for c in chain:
+            flags = self.members(c, kind).get(signature)
+            if flags is not None:
+                return c, flags
+        queue = [i for c in chain for i in self.interfaces[c]]
+        while queue:
+            i = queue.pop(0)
+            if i in seen or i not in self.flags:
+                continue
+            seen.add(i)
+            flags = self.members(i, kind).get(signature)
+            if flags is not None:
+                return i, flags
+            queue.extend(self.interfaces[i])
+        return None
+
+    def extends(self, host, ancestor):
+        cur, seen = host, set()
+        while cur and cur not in seen:
+            if cur == ancestor:
+                return True
+            seen.add(cur)
+            cur = self.parent.get(cur)
+        return False
+
+    def class_problem(self, host, target):
+        element = target.lstrip("[")
+        if not element.startswith("L"):
+            return None
+        if self.flags[element] & PUBLIC or package_of(element) == package_of(host):
+            return None
+        return f"class {element} is package-private, and {host} is in another package"
+
+    def member_problem(self, host, declarer, flags):
+        if flags & PUBLIC:
+            return None
+        if flags & PRIVATE:
+            return None if host == declarer else f"it is private to {declarer}"
+        if package_of(host) == package_of(declarer):
+            return None
+        if (flags & PROTECTED and not self.flags.get(host, 0) & INTERFACE
+                and self.extends(host, declarer)):
+            return None
+        if flags & PROTECTED:
+            return f"it is protected in {declarer}, and {host} is neither a subclass nor in its package"
+        return f"it is package-private in {declarer}, and {host} is in another package"
+
+
+def inaccessible_references(host, ins, access):
+    """References [host] may not make, as (index, reference, why), and how many were undecidable.
+
+    Every instruction in the method is checked, stock ones included. Those were compiled against
+    the same rules and pass, so a finding is always the emission's; checking them anyway means
+    nobody has to decide where the emission starts.
+    """
+    findings, unchecked = [], 0
+    for index, (_pc, mnemonic, args) in enumerate(ins):
+        base = mnemonic.split("/")[0]
+        if base.startswith(FIELD_OPS):
+            kind = "field"
+        elif base.startswith("invoke-") and base not in ("invoke-polymorphic", "invoke-custom"):
+            kind = "method"
+        elif base in TYPE_OPS:
+            kind = "type"
+        else:
+            continue
+        reference = (args or "").rsplit(", ", 1)[-1].strip()
+        owner = reference.split("->", 1)[0]
+        if not access.knows(owner):
+            unchecked += 1
+            continue
+        problem = access.class_problem(host, owner)
+        if problem is None and kind != "type" and owner.startswith("L"):
+            found = access.resolve(owner, reference.split("->", 1)[1], kind)
+            if found is None:
+                unchecked += 1  # inherited from a framework class, whose flags are not here
+                continue
+            problem = access.member_problem(host, *found)
+        if problem:
+            findings.append((index, reference, problem))
+    return findings, unchecked
 
 
 def extract(apk, into):
@@ -477,6 +649,23 @@ def changed_methods(stock_tree, patched_dexes):
     return sorted(m for m, body in patched.items() if m in stock and stock[m] != body)
 
 
+def added_methods(stock_tree, patched_dexes):
+    """Methods a patch added to one of Gboard's own classes.
+
+    Excluded from the merge check, which needs a stock path to conflict with, but not from the
+    access check: a method added to `ScrubMotionEventHandler` runs with exactly its access rights.
+
+    Only classes Gboard already has. Whole new classes — the extension, and the Kotlin standard
+    library the bundle carries with it — are this project's own, compiled by javac and kotlinc
+    against rules they already enforce, and there are twenty thousand methods of them.
+    """
+    stock_dexes = dexlib.load(stock_tree)
+    gboard = {name for d in stock_dexes for name, _af, _cd in d.classes()}
+    stock = method_bodies(stock_dexes)
+    patched = method_bodies(patched_dexes)
+    return sorted(m for m in patched if m not in stock and m.split("->")[0] in gboard)
+
+
 def differing_methods(patched_apk, baseline_apk):
     """Methods whose body differs between two patched builds of the same APK.
 
@@ -500,24 +689,32 @@ def check_all(apk, stock_tree):
         extract(apk, tmp)
         dl = dexlib.load(tmp)
         hierarchy = Hierarchy(dl)
+        access = Access(dl)
         targets = changed_methods(stock_tree, dl)
+        added = added_methods(stock_tree, dl)
         methods, fields = declared_members(dl)
 
-        print(f"  {len(targets)} method(s) changed by the patch")
-        bad = 0
-        for descriptor in targets:
+        print(f"  {len(targets)} method(s) changed by the patch, "
+              f"{len(added)} added to Gboard's own classes")
+        bad = unchecked = 0
+        for descriptor in targets + added:
             d, c, maf = ddis.find(descriptor, dl)
             if not c:
                 continue
             ins = ddis.disasm(d, c)
-            findings = check_method(ins, c["registers"],
-                                    parameters_of(descriptor, bool(maf & 0x8)), hierarchy)
+            findings = [] if descriptor in added else check_method(
+                ins, c["registers"], parameters_of(descriptor, bool(maf & 0x8)), hierarchy)
             # A member that moved is a NoSuchMethodError when the call runs, not when the class
             # loads, so the merge check above cannot see it: the patch applies, verifies, and
             # fails under a finger.
             missing = unresolved_extension_references(ins, methods, fields)
-            mark = "FAIL" if (findings or missing) else "ok  "
-            print(f"    {mark} {descriptor[:92]}")
+            # Neither can an access the host is not allowed: the class loads and the instruction
+            # throws IllegalAccessError when it runs. See "Access" at the top.
+            denied, undecided = inaccessible_references(descriptor.split("->")[0], ins, access)
+            unchecked += undecided
+            failed = findings or missing or denied
+            mark = "FAIL" if failed else "ok  "
+            print(f"    {mark} {descriptor[:92]}{'  (added)' if descriptor in added else ''}")
             for index, register, required, _nm in findings:
                 pc, nm, a = ins[index]
                 print(f"         pc {pc}: v{register} conflicts, `{nm}` requires {required}")
@@ -525,7 +722,11 @@ def check_all(apk, stock_tree):
             for index, reference in missing:
                 pc = ins[index][0]
                 print(f"         pc {pc}: nothing in the APK declares {reference}")
-            bad += 1 if (findings or missing) else 0
+            for index, reference, why in denied:
+                pc, nm = ins[index][0], ins[index][1]
+                print(f"         pc {pc}: `{nm}` may not reach {reference}: {why}")
+            bad += 1 if failed else 0
+        print(f"  access: {unchecked} reference(s) lead outside the APK and were not judged")
     return bad
 
 
@@ -560,11 +761,13 @@ def main():
         bad = check_all(args[0], stock_tree)
         print()
         if bad:
-            print(f"  {bad} method(s) have a conflicting merge or an unresolved reference")
-            print("  (a merge conflict is rejected at class load; an unresolved reference throws "
-                  "when the call runs)")
+            print(f"  {bad} method(s) have a conflicting merge, an unresolved reference or an "
+                  f"inaccessible one")
+            print("  (a merge conflict is rejected at class load; the other two throw when the "
+                  "instruction runs)")
             return 1
-        print("  no changed method has a conflicting register reaching a typed use")
+        print("  no changed method has a conflicting register reaching a typed use, an "
+              "unresolved extension call, or a reference its class may not make")
         return 0
 
     if len(args) != 2:
@@ -583,11 +786,13 @@ def main():
         ins = ddis.disasm(d, c)
         params = parameters_of(descriptor, bool(maf & 0x8))
         findings = check_method(ins, c["registers"], params, hierarchy)
+        denied, undecided = inaccessible_references(descriptor.split("->")[0], ins, Access(dl))
         registers, count = c["registers"], len(ins)
 
     print(f"=== {descriptor}  registers={registers}  instructions={count}")
-    if not findings:
-        print("  no conflicting register reaches a use site that requires a type.")
+    if not findings and not denied:
+        print("  no conflicting register reaches a use site that requires a type, and every")
+        print(f"  reference is one this class may make ({undecided} outside the APK not judged).")
         print("  (a quiet result is not a proof: unknown types are never reported)")
         return 0
     for index, register, required, mnemonic in findings:
@@ -595,6 +800,9 @@ def main():
         print(f"  FAIL pc {pc}: v{register} holds conflicting types here and `{nm}` requires "
               f"{required}")
         print(f"       {nm} {a}")
+    for index, reference, why in denied:
+        pc, nm = ins[index][0], ins[index][1]
+        print(f"  FAIL pc {pc}: `{nm}` may not reach {reference}: {why}")
     return 1
 
 

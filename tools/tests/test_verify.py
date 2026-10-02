@@ -297,6 +297,144 @@ class ExtensionReferences(unittest.TestCase):
         self.assertEqual(self.flag(rows), {0})
 
 
+def fake_access(classes):
+    """An `Access` over hand-written classes, so the tests do not need an APK.
+
+    `classes` maps a descriptor to (flags, parent, interfaces, fields, methods), the last two as
+    `{"name:Type": flags}` and `{"name(Args)Ret": flags}`. Anything not listed is a framework class.
+    """
+    a = V.Access.__new__(V.Access)
+    a.flags, a.parent, a.interfaces, a._data = {}, {}, {}, {}
+    a._members = {"field": {}, "method": {}}
+    for name, (flags, parent, interfaces, fields, methods) in classes.items():
+        a.flags[name] = flags
+        a.parent[name] = parent
+        a.interfaces[name] = list(interfaces)
+        a._members["field"][name] = dict(fields)
+        a._members["method"][name] = dict(methods)
+    return a
+
+
+SCRUB = "Lcom/google/scrubmove/ScrubMotionEventHandler;"
+PUBLIC, PRIVATE, PROTECTED, FINAL, SYNTHETIC = 0x1, 0x2, 0x4, 0x10, 0x1000
+
+
+class Access(unittest.TestCase):
+    """References a patched method's class is not allowed to make.
+
+    ART does not refuse a class for these. An access failure is a soft verification failure: the
+    class loads, the keyboard opens, and the instruction throws IllegalAccessError when it runs.
+    That is how 2.5.1-dev.7 and dev.9 crashed on every swipe up with nothing in any lane to say so.
+    """
+
+    def route(self, class_flags=FINAL, field_flags=FINAL | SYNTHETIC):
+        # Lozi; as Gboard ships it: package-private, unnamed package, field `b` package-private.
+        return fake_access({
+            SCRUB: (PUBLIC, "Ljava/lang/Object;", [], {}, {}),
+            "Lozi;": (class_flags, "Ljava/lang/Object;", [], {"b:Lozj;": field_flags}, {}),
+            "Lozj;": (PUBLIC | FINAL, "Ljava/lang/Object;", [], {"k:Lpvn;": PUBLIC}, {}),
+        })
+
+    EMISSION = [
+        (20, "instance-of", "v2, v1, Lozi;"),
+        (25, "check-cast", "v2, Lozi;"),
+        (27, "iget-object", "v2, v2, Lozi;->b:Lozj;"),
+        (29, "iget-object", "v2, v2, Lozj;->k:Lpvn;"),
+    ]
+
+    def flagged(self, access, rows=None, host=SCRUB):
+        findings, _ = V.inaccessible_references(host, rows or self.EMISSION, access)
+        return [rows[i][0] if rows else self.EMISSION[i][0] for i, _r, _w in findings]
+
+    def test_the_shipped_crash(self):
+        self.assertEqual(self.flagged(self.route()), [20, 25, 27],
+                         "a package-private class in another package, at every use")
+
+    def test_widening_the_class_alone_still_leaves_the_field(self):
+        # Half a fix. The class becomes reachable; its package-private field does not.
+        findings, _ = V.inaccessible_references(SCRUB, self.EMISSION, self.route(class_flags=PUBLIC | FINAL))
+        self.assertEqual([self.EMISSION[i][0] for i, _r, _w in findings], [27])
+        self.assertIn("package-private in Lozi;", findings[0][2])
+
+    def test_widening_both_is_the_fix(self):
+        access = self.route(class_flags=PUBLIC | FINAL, field_flags=PUBLIC | FINAL | SYNTHETIC)
+        self.assertEqual(self.flagged(access), [])
+
+    def test_the_same_package_may_use_package_private(self):
+        # Stock Gboard code in the unnamed package reads Lozi;->b all the time. Quiet.
+        self.assertEqual(self.flagged(self.route(), host="Lozz;"), [])
+
+    def test_a_private_member_of_another_class(self):
+        access = fake_access({
+            "Lapp/A;": (PUBLIC, None, [], {}, {}),
+            "Lapp/B;": (PUBLIC, None, [], {"x:I": PRIVATE}, {}),
+        })
+        rows = [(0, "iget", "v0, v1, Lapp/B;->x:I")]
+        self.assertEqual(self.flagged(access, rows, host="Lapp/A;"), [0],
+                         "private means the class itself, not its package")
+        self.assertEqual(self.flagged(access, rows, host="Lapp/B;"), [])
+
+    def test_protected_reaches_a_subclass_in_another_package(self):
+        access = fake_access({
+            "Lbase/Handler;": (PUBLIC, None, [], {"p:Lpvo;": PROTECTED}, {}),
+            "Lother/Scrub;": (PUBLIC, "Lbase/Handler;", [], {}, {}),
+            "Lother/Stranger;": (PUBLIC, None, [], {}, {}),
+        })
+        rows = [(0, "iget-object", "v1, v0, Lother/Scrub;->p:Lpvo;")]
+        self.assertEqual(self.flagged(access, rows, host="Lother/Scrub;"), [],
+                         "inherited and protected, which is how the stock scrub reads its route")
+        rows = [(0, "iget-object", "v1, v0, Lbase/Handler;->p:Lpvo;")]
+        self.assertEqual(self.flagged(access, rows, host="Lother/Stranger;"), [0])
+
+    def test_an_inherited_member_is_judged_where_it_is_declared(self):
+        # Referenced through a public subclass, declared package-private in its parent. A
+        # resolution that stopped at the named class would call this unknowable and stay quiet.
+        access = fake_access({
+            "Lbase/Parent;": (PUBLIC, None, [], {"secret:I": 0}, {}),
+            "Lbase/Child;": (PUBLIC, "Lbase/Parent;", [], {}, {}),
+            SCRUB: (PUBLIC, None, [], {}, {}),
+        })
+        findings, unchecked = V.inaccessible_references(
+            SCRUB, [(0, "iget", "v0, v1, Lbase/Child;->secret:I")], access)
+        self.assertEqual(([i for i, _r, _w in findings], unchecked), ([0], 0))
+        self.assertIn("Lbase/Parent;", findings[0][2])
+
+    def test_a_public_member_of_a_hidden_class_is_still_hidden(self):
+        # The class named in the reference is checked first, as ART does.
+        access = fake_access({
+            "Lhidden;": (FINAL, None, [], {}, {"m()V": PUBLIC}),
+            SCRUB: (PUBLIC, None, [], {}, {}),
+        })
+        self.assertEqual(self.flagged(access, [(0, "invoke-virtual", "{v0}, Lhidden;->m()V")]), [0])
+
+    def test_an_interface_method_resolves_through_a_superinterface(self):
+        access = fake_access({
+            "Lapi/Route;": (PUBLIC | 0x200, None, ["Lapi/Base;"], {}, {}),
+            "Lapi/Base;": (PUBLIC | 0x200, None, [], {}, {"m()V": PUBLIC | 0x400}),
+            SCRUB: (PUBLIC, None, [], {}, {}),
+        })
+        findings, unchecked = V.inaccessible_references(
+            SCRUB, [(0, "invoke-interface", "{v1}, Lapi/Route;->m()V")], access)
+        self.assertEqual((findings, unchecked), ([], 0), "resolved and judged, not skipped")
+
+    def test_the_framework_is_counted_never_passed_or_failed(self):
+        access = fake_access({SCRUB: (PUBLIC, "Landroid/view/View;", [], {}, {})})
+        rows = [(0, "invoke-virtual", "{v12}, Landroid/view/MotionEvent;->getActionMasked()I"),
+                (1, "invoke-virtual", "{v0}, Lcom/google/scrubmove/ScrubMotionEventHandler;->invalidate()V")]
+        findings, unchecked = V.inaccessible_references(SCRUB, rows, access)
+        self.assertEqual(findings, [])
+        self.assertEqual(unchecked, 2, "a framework class, and a member inherited from one")
+
+    def test_a_primitive_array_needs_no_access(self):
+        access = fake_access({SCRUB: (PUBLIC, None, [], {}, {})})
+        findings, unchecked = V.inaccessible_references(SCRUB, [(0, "new-array", "v0, v1, [I")], access)
+        self.assertEqual((findings, unchecked), ([], 0))
+
+    def test_packages(self):
+        self.assertEqual(V.package_of("Lozi;"), "")
+        self.assertEqual(V.package_of("Lcom/a/B$C;"), "com/a")
+
+
 class Parameters(unittest.TestCase):
     def test_instance_method_gets_its_receiver(self):
         self.assertEqual(V.parameters_of("Lfoo;->m(Lbar;)V", False), ["Lfoo;", "Lbar;"])

@@ -32,7 +32,8 @@ FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate        # applies it, then ver
 
 That turns on two lanes. `driver` applies the bundle; `verify` reads the result and type-checks
 **every method the patch changed** — seventeen on the current bundle, found by diffing against
-stock rather than by anyone naming them. Nothing has to be remembered.
+stock rather than by anyone naming them — and checks every reference in them against the access
+rights of the class they are in. Nothing has to be remembered.
 
 **Test a patch change before shipping it, not by shipping it.** Until the artifact step existed the
 only way to get a bundle was to cut a release, which is how two builds of a keyboard that would not
@@ -77,6 +78,14 @@ control-flow graph. A linear scan from an index is wrong in both directions and 
 twice from this repo: once in `assertNotReadBeforeWritten`, once in `handoverFor`, days apart, in
 the same file. The second reported every register as available and silently disabled the fix it was
 part of.
+
+**An emission runs with its host class's access rights.** Code written into
+`ScrubMotionEventHandler` is that class's code, so it may not touch a package-private class or member
+in another package, and most of Gboard's obfuscated classes are package-private in the unnamed
+package. ART does not reject the class: it loads, the keyboard opens, and the instruction throws
+`IllegalAccessError` when it first runs. `2.5.1-dev.7` and `dev.9` shipped that, crashing on every
+swipe up. When an emission must reach such a class, widen it in the patch (`setAccessFlags`) and
+let `verify` confirm the output.
 
 ## Reading Gboard's dex
 
