@@ -1,3 +1,10 @@
+# [2.5.1-dev.10](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.9...v2.5.1-dev.10) (2026-10-02)
+
+* **Gboard:** fix(swipe-up): make Lozi; public so the takeover read-back can run
+* **Gboard:** feat(verify): check what a patched class is allowed to reach
+* **Gboard:** docs: the swipe-up crash happens from every row
+* **Gboard:** feat: a crash recorder, so the next crash names its own cause
+
 # [2.5.1-dev.9](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.8...v2.5.1-dev.9) (2026-10-01)
 
 * **Gboard:** feat: swipe up stage 2 — take the gesture over, and say whether it took
