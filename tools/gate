@@ -25,7 +25,7 @@ run_resources=1
 for arg in "$@"; do
     case "$arg" in
         --no-resources) run_resources=0 ;;
-        -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "gate: unknown option $arg" >&2; exit 2 ;;
     esac
 done
@@ -48,34 +48,6 @@ lane() {
     fi
 }
 
-# A lane that passes when the command *fails*. For checks whose whole point is that something is
-# refused: a guard that is never seen to fire is indistinguishable from a guard that has quietly
-# stopped firing, which is exactly how the mutual exclusion below decayed into a comment.
-# The message is required, not just the failure. Any command can fail -- a typo in a patch name, a
-# missing bundle, a Gradle hiccup -- and all of those would light this lane green while the thing it
-# guards quietly stopped working. It has to fail *for the stated reason*.
-lane_must_fail() {
-    name=$1
-    expected=$2
-    shift 2
-    printf '\n=== %s ===\n' "$name"
-    # Guarded by `if`, because a bare `out=$(...)` of a failing command exits the whole gate under
-    # `set -e` -- which this lane runs into by construction, since it only ever runs failing things.
-    if out=$("$@" 2>&1); then status=0; else status=$?; fi
-    printf '%s\n' "$out" | tail -20
-    if [ "$status" -eq 0 ]; then
-        printf '  the command succeeded, and this lane exists because it must not\n'
-        record "$name" FAIL
-        failed=$((failed + 1))
-    elif ! printf '%s' "$out" | grep -qF "$expected"; then
-        printf '  it failed, but not for the stated reason: expected %s\n' "$expected"
-        record "$name" FAIL
-        failed=$((failed + 1))
-    else
-        record "$name" PASS
-    fi
-}
-
 # A lane that fails with a stated reason and runs nothing. For configuration that was asked for and
 # cannot be honoured -- which must not read as "not asked for".
 fail_lane() {
@@ -92,7 +64,7 @@ skip() {
 
 have_apk() { [ -e gboard.apk ] && [ -d gboard-apk ]; }
 
-# Which interpreter is about to run seven of these lanes, and is it new enough.
+# Which interpreter is about to run the Python lanes, and is it new enough.
 #
 # Not a pinned version: demanding an exact build means demanding that build be installed, and the
 # floor is what the code actually needs. But the version is printed, because during one session
@@ -109,10 +81,9 @@ if sys.version_info[:len(floor)] < floor:
 print(f"python3 {sys.version.split()[0]}")
 PYEOF
 
-# First, because it is the only lane that tests the tooling rather than the APK, it needs nothing
-# from the filesystem, and it runs in milliseconds. Every other lane here trusts code that this one
-# checks: four defects in the register analysis and two dead rules in the emission linter all
-# shipped while the lanes built on them reported PASS.
+# First, because it tests the tooling the remaining lanes trust and needs no Gboard APK. It runs
+# in milliseconds; defects in register analysis and dead emission-lint rules once shipped while
+# the lanes built on them reported PASS.
 lane "unit tests"     python3 -m unittest discover -s tools/tests -t tools/tests -q
 lane "compile"        ./gradlew :patches:compileKotlin :extension-check:compileJava -q
 # The extension's own logic -- the blob parser, the label clamp, the icon resolution -- run on a
@@ -122,7 +93,7 @@ lane "extension"      ./gradlew :extension-check:extensionTests -q
 # The patch helpers themselves. Every check in this gate reads Python or the APK; the patches were
 # untested, and three shipped bugs lived in these helpers rather than in the APK reading.
 lane "patch helpers"  ./gradlew :patches-check:run -q
-# The eleven one-line delegates the helpers are reached through. No test covers them and none can:
+# The ten one-line delegates the helpers are reached through. No test covers them and none can:
 # constructing a BytecodePatchContext needs an APK, which is why the helpers stopped taking one.
 lane "delegates"      python3 .github/scripts/check_delegates.py
 lane "constants"      python3 .github/scripts/check_shared_constants.py
@@ -142,8 +113,8 @@ fi
 # the outside; this applies a real bundle to the real APK the way Morphe Manager does, so a
 # patch-time failure surfaces here in a minute instead of after CI, an install and a phone.
 #
-# It needs a built .mpp, which needs the Android SDK, which is not here -- but CI attaches one to
-# every release, so `gh release download` is enough. Point FLEXBOARD_BUNDLE at it. Deliberately
+# It needs a built .mpp, which needs the Android SDK, which is not here -- but CI uploads one on
+# every push, so `gh run download --name patches-bundle` is enough. Point FLEXBOARD_BUNDLE at it. Deliberately
 # opt-in rather than auto-downloading: a gate lane that reaches the network is a gate lane that
 # fails for reasons unrelated to the code.
 #
@@ -173,12 +144,17 @@ if [ -n "${FLEXBOARD_BUNDLE:-}" ]; then
         stale_reason="gboard.apk and gboard-apk/ are needed to apply a bundle, and are not here"
     else
         FLEXBOARD_BUNDLE="$(cd "$(dirname "$match")" && pwd)/$(basename "$match")"
-        patched_out="$(mktemp -d)/patched.apk"
+        work_dir="$(mktemp -d)"
+        if [ "${FLEXBOARD_KEEP_OUTPUT:-0}" != 1 ]; then
+            trap 'rm -rf "$work_dir"' EXIT
+        else
+            printf '  keeping patched APKs in %s\n' "$work_dir"
+        fi
+        patched_out="$work_dir/patched.apk"
         apk_path="$(python3 -c "import os;print(os.path.realpath('gboard.apk'))")"
 
-        # Version, build time against the last commit touching the patch sources, and whether those
-        # sources are even committed. The filename was the first attempt and was not enough: two
-        # bundles can both be called 2.5.0-dev.3 and differ by every commit in between.
+        # Version, source SHA/tree and whether sources have uncommitted edits. Build time alone
+        # allowed an older CI artifact to finish after a newer local commit and look current.
         if freshness=$(python3 tools/bundle_freshness.py "$FLEXBOARD_BUNDLE" 2>&1); then
             printf '%s\n' "$freshness"
             bundle_ready=1
@@ -194,19 +170,16 @@ if [ -n "${FLEXBOARD_BUNDLE:-}" ]; then
 fi
 
 if [ "${bundle_ready:-0}" = 1 ]; then
-    # Three runs, because one is a lie. The driver applies the default selection; the two swipe-up
-    # patches ship default-off and are mutually exclusive, so they get a run each alongside the
-    # defaults. Applying all fifteen at once -- what this did until dev.3 -- is a combination no
-    # install can produce, and it fails on a guard behaving correctly.
+    # Three runs: defaults, and the two default-off patches (+undo, +hidden) each alongside them.
+    # Applying every patch at once would test a selection nobody asked for.
     lane "driver" ./gradlew :driver:run -q \
         --args="$apk_path $FLEXBOARD_BUNDLE $patched_out"
-    undo_out="$(mktemp -d)/undo.apk"
+    undo_out="$work_dir/undo.apk"
     lane "driver +undo" ./gradlew :driver:run -q \
         --args="$apk_path $FLEXBOARD_BUNDLE $undo_out +Swipe up to undo autocorrect"
-    # The third default-off patch. Nothing selects it either, so without a run of its own it is
-    # applied by no lane at all -- which it was, between narrowing the driver to defaults and now.
+    hidden_out="$work_dir/hidden.apk"
     lane "driver +hidden" ./gradlew :driver:run -q \
-        --args="$apk_path $FLEXBOARD_BUNDLE $(mktemp -d)/hidden.apk +Hidden Features (unconfirmed)"
+        --args="$apk_path $FLEXBOARD_BUNDLE $hidden_out +Hidden Features (unconfirmed)"
 
 
     # The driver proves the patches *apply*. It writes a dex and never loads one, so a method ART
@@ -215,8 +188,13 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     # seventeen and takes a couple of seconds.
     if [ -e "$patched_out" ]; then
         lane "verify" python3 tools/apk/verify.py "$patched_out" --changed-from gboard-apk
+        # Bypass Gboard Signature changes only Lmm's self-check call site. Its other caller is an
+        # exported debug provider: widening Lrpv itself must fail this lane even if type checks pass.
+        lane "provider guard" python3 tools/apk/verify.py "$patched_out" \
+            --unchanged-from gboard-apk 'Lrpv;->a(Landroid/content/Context;Ljava/lang/String;)Z'
     else
         skip "verify" "the driver produced no APK, so there is nothing to check"
+        skip "provider guard" "needs the default driver's patched APK"
     fi
 
     # And the undo build, which is the emission that most needs it: the newest, the largest, and
@@ -232,6 +210,11 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     else
         skip "verify +undo" "the +undo driver run produced no APK"
     fi
+    if [ -e "$hidden_out" ]; then
+        lane "verify +hidden" python3 tools/apk/verify.py "$hidden_out" --changed-from gboard-apk
+    else
+        skip "verify +hidden" "the +hidden driver run produced no APK"
+    fi
 
     # And that each opt-in patch changed anything at all. `verify` checks what was emitted; it
     # cannot notice that nothing was, and an emission that produces nothing applies cleanly and
@@ -243,10 +226,15 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     else
         skip "undo emits" "needs both the defaults and the +undo build"
     fi
+    if [ -e "$hidden_out" ] && [ -e "$patched_out" ]; then
+        lane "hidden emits" python3 tools/apk/verify.py "$hidden_out" --differs-from "$patched_out"
+    else
+        skip "hidden emits" "needs both the defaults and the +hidden build"
+    fi
 elif [ -n "${bundle_error:-}" ]; then
     # Asked for and unusable: one lane fails so the gate does, and the rest say why they did not run.
     fail_lane "bundle" "$bundle_error"
-    for name in "driver" "driver +undo" "driver +hidden" "verify" "verify +undo" "undo emits"; do
+    for name in "driver" "driver +undo" "driver +hidden" "verify" "provider guard" "verify +undo" "verify +hidden" "undo emits" "hidden emits"; do
         skip "$name" "FLEXBOARD_BUNDLE is set but unusable"
     done
 elif [ -n "${stale_reason:-}" ]; then
@@ -254,20 +242,26 @@ elif [ -n "${stale_reason:-}" ]; then
     skip "driver +undo" "$stale_reason"
     skip "driver +hidden" "$stale_reason"
     skip "verify" "needs a bundle built from this tree"
+    skip "provider guard" "needs a bundle built from this tree"
     skip "verify +undo" "needs a bundle built from this tree"
+    skip "verify +hidden" "$stale_reason"
     skip "undo emits" "needs a bundle built from this tree"
+    skip "hidden emits" "$stale_reason"
 else
     skip "driver" "set FLEXBOARD_BUNDLE to a built .mpp to execute the patches (gh run download --name patches-bundle)"
     skip "driver +undo" "set FLEXBOARD_BUNDLE to a built .mpp"
     skip "driver +hidden" "set FLEXBOARD_BUNDLE to a built .mpp"
     skip "verify" "needs the driver's output; set FLEXBOARD_BUNDLE"
+    skip "provider guard" "needs the driver's output; set FLEXBOARD_BUNDLE"
     skip "verify +undo" "needs the driver's output; set FLEXBOARD_BUNDLE"
+    skip "verify +hidden" "needs the driver's output; set FLEXBOARD_BUNDLE"
     skip "undo emits" "needs the driver's output; set FLEXBOARD_BUNDLE"
+    skip "hidden emits" "needs the driver's output; set FLEXBOARD_BUNDLE"
 fi
 
 if [ "$run_resources" -eq 0 ]; then
     skip "resources" "--no-resources given — nothing checked what the bundle actually writes"
-elif have_apk; then
+elif [ -e gboard.apk ]; then
     lane "resources" python3 tools/apk/check_patch_resources.py gboard.apk
 else
     skip "resources" "gboard.apk absent — the resource replay and table rebuild cannot run"
@@ -280,8 +274,7 @@ done
 
 if [ "$skipped" -gt 0 ]; then
     printf '\n  %s lane(s) SKIPPED. A skipped lane is not a passed lane: the checks that need the\n' "$skipped"
-    printf '  Gboard APK are the whole defence against a bump, and the resource lane is the only\n'
-    printf '  one that sees the patched output at all.\n'
+    printf '  Gboard APK and current bundle verify the patch output, not just stock bindings.\n'
 fi
 
 if [ "$failed" -gt 0 ]; then

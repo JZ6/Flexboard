@@ -13,12 +13,35 @@
 # the thing being avoided.
 #
 # Install:  git config core.hooksPath tools/hooks
-# Bypass:   git push --no-verify
 
 set -eu
 
 root=$(git rev-parse --show-toplevel)
 cd "$root"
+
+head=$(git rev-parse HEAD)
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Git passes each pushed ref on stdin. A tag can be annotated, so peel it to the commit the
+    # gate would need to test. A deletion has no source tree and needs no build verification.
+    case "$local_sha" in
+        0000000000000000000000000000000000000000) continue ;;
+    esac
+    target=$(git rev-parse "$local_sha^{commit}" 2>/dev/null) || {
+        printf 'pre-push: cannot resolve %s to a commit\n' "$local_ref" >&2
+        exit 1
+    }
+    if [ "$target" != "$head" ]; then
+        printf 'pre-push: %s pushes %s but the gate would inspect HEAD %s; check out the pushed ref first\n' \
+            "$local_ref" "$target" "$head" >&2
+        exit 1
+    fi
+done
+
+if [ -n "$(git status --porcelain)" ]; then
+    printf 'pre-push: working tree is dirty; the gate would inspect changes not being pushed\n' >&2
+    git status --short >&2
+    exit 1
+fi
 
 echo "pre-push: running tools/gate"
 exec tools/gate
