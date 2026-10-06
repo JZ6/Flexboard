@@ -8,9 +8,11 @@
 > verified. Read them for the reasoning, and take current names from
 > [`gboard-bindings.md`](gboard-bindings.md) and offsets from the APK.
 
-Flexboard implements its gesture from scratch: pointer hooks on `Lpbl;`, a dispatch veto on
-`Lpbj;`, its own distance/drift/duration thresholds and its own settings rows. Gboard has its own
-mechanism for exactly this kind of gesture, and already ships a word-scrub delete built on it.
+The original design used pointer hooks on `Lpbl;` and a dispatch veto on `Lpbj;`. That design was
+replaced: **Swipe Left to Delete** now widens Gboard's own word-scrub handler, and **Swipe up to undo
+autocorrect** is staged in `ScrubMotionEventHandler->g`. The old proposal below (especially its
+instruction to patch `p()`) is historical; patching `p()` caused a VerifyError and was replaced by
+a hold-delay substitution in the constructor. See [the current review ledger](code-review-2026-10-02.md).
 
 This is the record of what that mechanism is. It is a lead, not a plan — the parts that are
 verified and the parts that are guesswork are marked as such throughout.

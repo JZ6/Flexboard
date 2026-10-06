@@ -1,8 +1,14 @@
 # Swipe up to undo autocorrect — replanning after two broken releases
 
 > Written after `2.5.0-dev.0` and `dev.1` both shipped a keyboard that would not open. This
-> supersedes the design in [`undo-autocorrect.md`](undo-autocorrect.md), which is kept because its
-> research is still correct — only its *architecture* is wrong.
+> supersedes the design in [`undo-autocorrect.md`](undo-autocorrect.md), which is kept as historical
+> research. Some of its conclusions (null SLIDE_UP action, revert-only -10045, hover path) were wrong.
+>
+> **Current as of dev.10:** stage 2 in `SwipeUp.java`/`SwipeUpEmitter.kt` takes the swipe over and
+> types 6 (or x if refused). dev.9's crash was an illegal-access owner read-back; the patch widens
+> Lozi and its manager field. This is not yet a device confirmation of dev.10. The 0.6 slide ratio
+> does not control this gesture; Suggested Settings no longer seeds it. The sections below preserve
+> the reasoning and intermediate attempts, including plans since superseded.
 
 ## The goal, stated properly
 
@@ -18,7 +24,7 @@ keyboard recognises as its own thing.
 Point 2 is the one every attempt so far has failed, and it is the one that decides the
 architecture.
 
-## Why the current approach cannot deliver that
+## Why the old key-up approach could not deliver that (historical)
 
 The emission hooks `Lpvf;->t` — `TouchActionBundle.handleActionUp` — at the point where the
 `ActionDef` lookup comes back null. That is **after Gboard has already decided this pointer is a
@@ -576,7 +582,7 @@ crash reporter that can crash the keyboard, or swallow a crash so the process is
 keyboard freezes instead of restarting, is worse than none. Both of those are tested, and
 mutation-tested.
 
-## The rebuild: swipe up in the handler layer
+## The dev.7 handler-layer attempt (historical; superseded by the staged rebuild above)
 
 The diagnostic answered the question the design depended on. On a device, most real flicks came back
 `6m`: the 24dp threshold and the 2:1 corridor were met *during* the swipe. The occasional `3m` was a
@@ -654,7 +660,7 @@ reports on every release. The real patch should follow once the diagnostic answe
 on UP the key handler commits the letter before the scrub handler sees the event, so a claim has to
 happen mid-gesture. Does a real flick cross the threshold before the finger lifts?
 
-## The thing that has to be fixed first
+## The tooling gap that had to be fixed first (now fixed)
 
 **Nothing here reads what the patcher produced.** `preflight.py` takes the *stock* dex tree and the
 *stock* APK. `tools/gate` compiles the patches and pins Gboard. No lane has ever looked at a patched
@@ -710,7 +716,7 @@ taste instead of behaviour:
 The last one is not a joke. It is the one two releases failed, and it should be checked first every
 time.
 
-## Blast radius while this is in progress
+## Blast radius, recorded during the old fall-through build (historical)
 
 - The patch stays **default off** until it has been watched working, per `AGENTS.md`. Two releases
   reached only people who ticked it, which was luck rather than design.
@@ -718,7 +724,7 @@ time.
 - The currently shipped fall-through version works and types the key. That is a known, documented
   limitation and is a better state than broken — it stays until the replacement is confirmed.
 
-## Phases
+## Earlier phases, superseded by the staged rebuild above
 
 Each is a release on its own, smallest first, so a failure names itself.
 
@@ -751,7 +757,7 @@ gesture probe; fold the findings into `undo-autocorrect.md`.
 Phases 1 and 3 are the ones that can fail cheaply and informatively. Phase 0 is the one that makes
 all the others debuggable.
 
-## Open questions
+## Open questions as they stood in the earlier plan (some now answered above)
 
 - ~~Does Gboard instantiate handlers by reflection from the class name?~~ **Answered: no.** A
   44-entry compile-time map from name to provider, and a switch that constructs. See above. The

@@ -5,6 +5,11 @@ bundle that fails to apply, with an error that names nothing relevant. This is t
 failure, because the symptom gives no hint of the cause and it will happen again on any emitter
 written from scratch.
 
+> **Historical incident:** `SwipeDeletePointerPatch` and `installPointerHooks` below were removed.
+> Current emitters may use `pN` in a 35c invoke **only when their asserted register frame proves**
+> `registerCount - parameterWords + N <= 15`. For example, `SwipeUpEmitter` asserts 13 registers,
+> two parameter words, so p0=v11 and p1=v12 fit. No global `fits35c` helper or textual ban exists.
+
 ## The symptom
 
 ```
@@ -53,8 +58,8 @@ assumed it was small.
 
 ## The fix
 
-An emitter cannot resolve `pN` — it does not know the target method's frame. Only a `vN` token
-can be *proven* to fit. So parameter registers always take the range form:
+An emitter can resolve `pN` **after pinning the target method's frame**. The conceptual old
+`fits35c` rule was:
 
 ```kotlin
 val fits35c = words.size <= MAX_35C_WORDS && words.all { word ->
@@ -62,16 +67,17 @@ val fits35c = words.size <= MAX_35C_WORDS && words.all { word ->
 }
 ```
 
-This costs nothing. **35c and 3rc are both three code units** — the range form is not larger,
-slower, or in any way worse. There is no reason to prefer 35c beyond readability.
+The shown `fits35c` function is historical and does not exist in this repo. **35c and 3rc are both
+three code units**; `/range` is useful when the arguments are consecutive and their absolute
+register numbers are above v15. A proven low `pN` also works in 35c.
 
 Where a mixed expression is unavoidable — passing a parameter alongside a local, which cannot be
 a contiguous range — resolve the parameter to a concrete `vN` at patch time instead, from a
 register count the patch has asserted:
 
 ```kotlin
-private const val RESOURCE_ID_REGISTER =
-    PREFERENCE_READ_REGISTER_COUNT - PREFERENCE_READ_PARAMETER_WORDS + 1
+val registerCount = method.assertRegisterCount(13, "ScrubMotionEventHandler->g")
+val receiver = registerCount - 2  // p0 == v11, encodable in 35c
 ```
 
 and assert the frame rather than adapting to it, so a Gboard change fails loudly instead of
@@ -91,18 +97,7 @@ it.
 
 ## Guarding it
 
-A shape test asserting the emitted text contains no `pN` at all is enough, and it is cheap:
-
-```kotlin
-val parameterRegister = Regex("""\bp\d+""")
-assertNull(parameterRegister.find(delegate())?.value)
-```
-
-Plus one asserting no non-range invoke carries a parameter register:
-
-```kotlin
-Regex("""invoke-\w+(?!/range)\s*\{[^}]*\bp\d+""")
-```
-
-None of this can be caught by the compiler on either side — the smali is a string until the
-patcher assembles it — so a text assertion is the only automated check available.
+There is no global rule banning `pN`: such a ban would reject safe existing emitters. Each emitter
+pins its frame with `assertRegisterCount` before using a parameter in 35c, checks scratch ranges,
+and the local driver assembles the bundle before installation. `verify.py` then checks the resulting
+DEX; the driver is what catches an instruction the smali assembler cannot encode.

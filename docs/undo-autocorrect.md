@@ -1,7 +1,10 @@
 # Undoing an autocorrect, and the gesture layer underneath it
 
-Research for a swipe-up-to-undo-autocorrect patch, on 18.0.3. Nothing here is implemented yet. The
-gesture-layer half is general and applies to any future gesture, not just this one.
+> **Historical research, superseded by [the staged plan](undo-autocorrect-plan.md).** The current
+> stage 2 runs in `ScrubMotionEventHandler->g` (`SwipeUp.java`/`SwipeUpEmitter.kt`). Several early
+> conclusions below proved wrong: the Basic handler call site was a **hover** path, a letter key's
+> `j(SLIDE_UP)` falls back to PRESS rather than null, and `-10045` is general UNDO, not a
+> revert-only no-op when unarmed. Keep the derivation as history, not as implementation guidance.
 
 ## Gboard's own revert, and the action code
 
@@ -25,7 +28,7 @@ invoke-static  {v0}, Lnur;->d(Lpnu;)Lnur;
 invoke-virtual {v7, v0}, Lokm;->h(Lnur;)V
 ```
 
-**`-10045` is the revert-autocorrect action code.** It is not ours and not invented: it has four
+**Correction to the historical reading:** `-10045` is Gboard's general UNDO code. It is not ours: it has four
 consumers (`Lfbl;`, `Lhuw;`, `Lrjv;`, `Lhkr;`, all `m(Lnur;)Z`) and several producers besides
 backspace, including a click handler (`Lkbv;->onClick`) and two `Runnable`s. Firing it from a
 gesture is the same shape as firing it from a tap.
@@ -33,7 +36,7 @@ gesture is the same shape as firing it from a tap.
 `LatinIme->q`'s `packed-switch` does **not** carry `-10045` — the event travels a different dispatch
 path, via `Lokm;->h`.
 
-## Dispatching it cold is safe
+## Dispatching it cold was assumed safe (not established)
 
 The main safety question was what happens on a swipe when there is nothing to revert, since a
 gesture bypasses the `->d` arming that gates backspace. Answered by reading the consumers:
@@ -46,7 +49,8 @@ Lrja;->t   iget Lrjq;->d:Integer ; if-eqz → 114
 ```
 
 `Lrja;->s(I)` has the same shape, bailing to 147 and `return-void`. Two independent guards, both
-ending in a clean return. **An unarmed `-10045` is a no-op.**
+ending in a clean return. This traces only two consumers, not all undo handling. An unarmed
+`-10045` can undo a previous edit; the current plan gates on the armed autocorrect state.
 
 ## It does not need Gboard's toggle
 
@@ -186,7 +190,7 @@ removed that separation ourselves.** Stock scrub was a press-and-drag; `ScrubTun
 the hold delay so it registers on a flick. A fast upward flick and a fast scrub now start
 identically in time.
 
-## The plan
+## The old Lpvf plan (not shipped)
 
 **Hook:** `Lpvf;->t(Lpvi;Landroid/view/MotionEvent;I)V`, at the ActionDef fall-through. Frame is 16
 registers, and it is **static** — no `this`.

@@ -121,10 +121,11 @@ Zhuyin and Korean decode processors. It is not on the English glide path.
 > the tree. It documented a design that was never built, or was replaced before release.
 
 `forceScrubPreferencesPatch` inserts a call at Gboard's Application start, and
-`GboardSettings.forceScrubPreferences` does the write through Gboard's own preference store. It is
-a bytecode patch, not reflection.
+`GboardSettings.forceScrubPreferences` writes through framework `SharedPreferences` to the same
+device-protected file Gboard's own store reads. It is not an obfuscated Gboard setter or reflection.
 
-Both writes are unconditional. They used to be gated on a `flexboard_enabled` preference, so that
+Both available keys are written on every start (and errors are caught to preserve keyboard startup).
+They used to be gated on a `flexboard_enabled` preference, so that
 turning Flexboard off stopped it re-forcing glide typing at every launch; that switch is gone, so
 the writes now happen on every start for as long as the patch is applied. There is no record of the
 previous value and no restore.
