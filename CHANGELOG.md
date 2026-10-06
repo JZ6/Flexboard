@@ -55,7 +55,37 @@
 
 * **Gboard:** feat: claim the pointer in Lpvi;->G instead of un-deciding a keypress
 
-# [2.4.2](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.3...v2.5.0-dev.4) (2026-09-18)
+# [2.4.2](https://github.com/JZ6/Flexboard/compare/v2.4.1...v2.4.2) (2026-09-19)
+
+* **Gboard:** fix: a flag scan that failed on another bundle's merged extension
+* **Gboard:** docs: draft option B against the dex, and verify the claim it rests on
+* **Gboard:** docs: read out the handler registry's consumer, and reverse the recommendation
+* **Gboard:** docs: Gboard does not instantiate motion event handlers by reflection
+* **Gboard:** fix: act on an independent review of the four unpushed commits
+* **Gboard:** refactor: the resolution helpers take a class lookup, not the patcher
+* **Gboard:** test: cover the register helpers, which is where the crashes came from
+* **Gboard:** test: lock in the mutual exclusion, and ask whether the bundle is current
+* **Gboard:** fix: the driver applied a combination no install can produce
+* **Gboard:** test: cover the patch helpers, document the output tools, assert the Python floor
+* **Gboard:** ci: catch drift in the generated inventory and README table
+* **Gboard:** feat: check extension references, and admit the general case needs the SDK
+* **Gboard:** test: run the extension's logic, not just compile it
+* **Gboard:** feat: verify invoke arguments and catch-handler merges
+* **Gboard:** docs: correct development.md, which was three beliefs out of date
+* **Gboard:** feat: verify every method the patch changed, automatically
+* **Gboard:** ci: upload the bundle on every push, so a patch can be tested before it ships
+* **Gboard:** feat: a type-merge check for the bug ART rejects at class load
+* **Gboard:** docs: what the driver covers, and what it does not
+* **Gboard:** feat: run the patches locally — :driver:run was never blocked
+* **Gboard:** docs: the dev.1 crash, diagnosed by reading the output
+* **Gboard:** feat: read the patched APK, not just the stock one
+* **Gboard:** docs: improve the replan — the cause is unknown and the tooling is the gap
+* **Gboard:** docs: replan swipe up to undo autocorrect
+* **Gboard:** revert: drop the consume branch, it ships a keyboard that will not open
+* **Gboard:** fix: the consume branch shipped a keyboard that would not open
+* **Gboard:** fix: swipe up consumes the gesture and lowers the slide threshold
+
+# [2.5.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.5.0-dev.3...v2.5.0-dev.4) (2026-09-18)
 
 * **Gboard:** fix: a flag scan that failed on another bundle's merged extension
 * **Gboard:** docs: draft option B against the dex, and verify the claim it rests on
@@ -215,6 +245,35 @@
 * **Gboard:** 2.3.0-dev.1
 * **Gboard:** docs: finish counting the ids the slot raise changed
 * **Gboard:** feat: raise the hotkey slots from six to eight
+* **Gboard:** refactor: separate the two biggest patches from their emitters
+* **Gboard:** refactor: give every feature's fingerprints one place to live
+* **Gboard:** refactor: name ToolbarIdAdmissionPatch.kt for what it declares
+* **Gboard:** docs: stop three patch descriptions describing a build nobody gets
+* **Gboard:** fix: restore the seventh feature to the Hidden Features description
+* **Gboard:** feat: let a hoisted flag default be overridden per call site
+* **Gboard:** refactor: fold Grammar Check Row into Hidden Features
+* **Gboard:** feat: Hidden Features — five flags a resigned build can never receive
+
+# [2.3.0-dev.4](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.3...v2.3.0-dev.4) (2026-09-06)
+
+* **Gboard:** feat: default-on the two flags that were watched working
+
+# [2.3.0-dev.3](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.2...v2.3.0-dev.3) (2026-09-06)
+
+* **Gboard:** fix: drop on-device proofread, the flag that would not let Gboard start
+
+# [2.3.0-dev.2](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.1...v2.3.0-dev.2) (2026-09-06)
+
+* **Gboard:** fix: split Hidden Features into one patch per flag, all opt-in
+
+# [2.3.0-dev.1](https://github.com/JZ6/Flexboard/compare/v2.3.0-dev.0...v2.3.0-dev.1) (2026-09-06)
+
+* **Gboard:** 2.3.0-dev.1
+* **Gboard:** docs: finish counting the ids the slot raise changed
+* **Gboard:** feat: raise the hotkey slots from six to eight
+
+# [2.3.0-dev.0](https://github.com/JZ6/Flexboard/compare/v2.2.1...v2.3.0-dev.0) (2026-09-05)
+
 * **Gboard:** refactor: separate the two biggest patches from their emitters
 * **Gboard:** refactor: give every feature's fingerprints one place to live
 * **Gboard:** refactor: name ToolbarIdAdmissionPatch.kt for what it declares
@@ -867,4 +926,3 @@
 * **Gboard:** Init flexboard
 * **Gboard:** chore: name the bundle Flexboard rather than the template placeholder
 * **Gboard:** Initial commit
-
