@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The patcher-side delegates forward their arguments unchanged.
 
-Eleven resolution helpers take a `ClassLookup` so they can be tested without a patcher, and each has
-a one-line overload on `BytecodePatchContext` that supplies the context's own lookup. Those eleven
+Ten resolution helpers take a `ClassLookup` so they can be tested without a patcher, and each has
+a one-line overload on `BytecodePatchContext` that supplies the context's own lookup. Those ten
 lines are the only part of the arrangement no test covers, and they cannot be covered: constructing
 a `BytecodePatchContext` needs a `PatcherConfig` and an APK, which is the whole reason the helpers
 were refactored away from it.
@@ -43,6 +43,9 @@ ALLOWED_TRANSFORMS = {
     # register number to the description. Forwarding unchanged would defeat the point of it.
     ("checkAssignable", "register, target, what"),
 }
+
+# This one traverses patcher classes rather than delegating to a pure ClassLookup helper.
+ALLOWED_BLOCKS = {"methodsMatching"}
 
 PURE = re.compile(
     r"internal fun (\w+)\(\s*lookup: ClassLookup\s*,\s*(.*?)\s*\)\s*[:{=]",
@@ -89,7 +92,9 @@ def delegates(text):
         tail = text[cursor:cursor + 200]
         equals, brace = tail.find("="), tail.find("{")
         if equals == -1 or (brace != -1 and brace < equals):
-            # A block body. Not a delegate, and not this script's business.
+            # Keep it in the scan: if a pure delegate gains a block body, skipping it would let
+            # a swapped-arguments bug silently drop under the old count floor.
+            found.append((name, params, "{"))
             at = text.find(DELEGATE_START, cursor)
             continue
 
@@ -151,6 +156,7 @@ def check(path):
     pure = {name: parameters(params) for name, params in PURE.findall(text)}
     problems = []
     seen = 0
+    signatures = set()
 
     for name, params, body in delegates(text):
         body = " ".join(body.split())
@@ -158,6 +164,13 @@ def check(path):
         signature = ", ".join(n for n, _ in own)
 
         if (name, signature) in ALLOWED_TRANSFORMS:
+            continue
+        if (name, signature) in signatures:
+            problems.append(f"{path.name}: duplicate context overload {name}({signature})")
+        signatures.add((name, signature))
+        if body == "{":
+            if name not in ALLOWED_BLOCKS or name in pure:
+                problems.append(f"{path.name}: {name} has a block body instead of a checked delegate")
             continue
         if "classLookup" not in body:
             # Not a lookup delegate at all. Left alone deliberately -- but it must be declared, so
@@ -211,11 +224,11 @@ def main():
         problems += found
 
     # A parser that stops matching reports nothing and looks like success, which is the failure this
-    # whole file exists to prevent elsewhere. There are eleven delegates; require most of them.
-    minimum = 9
-    if total < minimum:
+    # whole file exists to prevent elsewhere. Ten pure helpers currently require ten delegates.
+    minimum = 10
+    if total != minimum:
         problems.append(
-            f"only {total} delegates were recognised, fewer than the {minimum} expected — the "
+            f"{total} delegates were recognised, expected {minimum} — the "
             f"patterns in this script have probably stopped matching, which would make it pass "
             f"by checking nothing")
 

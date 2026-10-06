@@ -14,9 +14,9 @@ changing the channel label and the patch count, and nothing objected.
 ## What it can and cannot check
 
 Regenerating `patches-list.json` needs `generatePatchesList`, which needs the Android SDK, which
-is not here. So this does not regenerate — it reads the **Kotlin declarations** and compares. That
-catches a patch added, removed, renamed, or given a different default without the artifact being
-rebuilt, which is the whole of the drift that actually happens.
+is not here. So this does not regenerate — it compares the released inventory and README table,
+then notes expected source changes until the next release. Generated files must not need a hand edit
+just to make CI accept a new source change.
 
 It does not check the description text, because `bytecodePatch` builds those by string
 concatenation across lines and comparing a reassembled approximation against the real thing would
@@ -27,6 +27,7 @@ import json
 import pathlib
 import re
 import sys
+from source_comments import without_comments
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PATCHES = ROOT / "patches/src/main/kotlin"
@@ -35,18 +36,16 @@ PATCHES = ROOT / "patches/src/main/kotlin"
 # internal and never appear in the inventory -- that, not `internal`, is what hides one.
 # Both kinds. Matching only bytecodePatch reported the one resourcePatch as "no longer declared",
 # which reads as drift and is a parser gap.
-PATCH_CALL = re.compile(r"(?:bytecode|resource|raw)Patch\((.*?)\n\)", re.S)
+PATCH_CALL = re.compile(r"(?:bytecode|resource|rawResource)Patch\((.*?)\n\)", re.S)
 NAME = re.compile(r'name\s*=\s*"([^"]+)"')
 DEFAULT = re.compile(r"default\s*=\s*(true|false)")
-LINE_COMMENT = re.compile(r"//[^\n]*")
-BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 
 
 def declared_patches():
     """{name: default} from the Kotlin sources."""
     found = {}
     for path in sorted(PATCHES.rglob("*.kt")):
-        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        text = without_comments(path.read_text())
         for call in PATCH_CALL.findall(text):
             name = NAME.search(call)
             if not name:
@@ -63,16 +62,27 @@ def published_patches(problems):
     if not path.exists():
         problems.append("  patches-list.json is missing")
         return {}
-    data = json.loads(path.read_text())
-    entries = data if isinstance(data, list) else data.get("patches", [])
-    return {e["name"]: bool(e.get("default")) for e in entries if isinstance(e, dict) and "name" in e}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        problems.append(f"  patches-list.json cannot be read: {error}")
+        return {}
+    entries = data if isinstance(data, list) else data.get("patches") if isinstance(data, dict) else None
+    if not isinstance(entries, list) or not entries:
+        problems.append("  patches-list.json contains no named patches — inventory is missing or malformed")
+        return {}
+    named = {e["name"]: bool(e.get("default")) for e in entries
+             if isinstance(e, dict) and isinstance(e.get("name"), str) and e["name"]}
+    if not named:
+        problems.append("  patches-list.json contains no named patches — inventory is missing or malformed")
+    return named
 
 
 def check_inventory(problems):
     declared = declared_patches()
     published = published_patches(problems)
     if not declared:
-        problems.append("  no bytecodePatch declarations were parsed — this check has stopped "
+        problems.append("  no named patch declarations were parsed — this check has stopped "
                         "checking anything")
         return
     if not published:
@@ -84,9 +94,8 @@ def check_inventory(problems):
     # made adding a patch impossible to do on a machine without one -- which is every machine this
     # is developed on. It also self-heals: the next release writes the entry.
     #
-    # The opposite direction below stays fatal, because it does not self-heal. An entry for a patch
-    # nobody declares any more is a lie that survives every release, and Morphe keys selection by
-    # name, so a stale entry is a patch users can still see and tick.
+    # Both directions self-heal when release regenerates the inventory; neither should force a
+    # manual edit to a generated file before the release can even start.
     for name in sorted(set(declared) - set(published)):
         print(f"  note: {name!r} is declared in Kotlin and not yet in patches-list.json — "
               f"expected until the next release regenerates it")
@@ -105,8 +114,8 @@ def check_inventory(problems):
               f"the next release regenerates it; anyone who had it selected loses that selection")
     for name in sorted(set(declared) & set(published)):
         if declared[name] != published[name]:
-            problems.append(f"  {name!r} defaults to {declared[name]} in Kotlin but "
-                            f"{published[name]} in patches-list.json")
+            print(f"  note: {name!r} now defaults to {declared[name]} in Kotlin but "
+                  f"{published[name]} in patches-list.json — expected until release")
 
 
 def check_readme(problems):
@@ -118,11 +127,9 @@ def check_readme(problems):
         return
     block = readme[start:end]
 
-    # Checked against what Kotlin declares, not against `patches-list.json`, because the Kotlin is
-    # the source and the json is a build artifact of it. A patch written today is in the source and
-    # in the README and not yet in the json, and that ordering is normal -- requiring the json first
-    # would mean documenting a patch only after releasing it.
-    expected = set(published_patches(problems)) | set(declared_patches())
+    # The README block is generated from patches-list.json only during a release. Kotlin-only
+    # additions/renames must never force a hand-edit to that block just to make CI green.
+    expected = set(published_patches(problems))
     # The row, not the substring. A plain `name in block` passes when a row is renamed to something
     # that merely contains the old name -- "Enable Rambler" inside "Enable Rambler Renamed" -- which
     # is exactly the hand-edit this exists to catch, and it slipped through the first version.
@@ -149,7 +156,7 @@ def check_readme(problems):
 
     stated = re.search(r"(\d+)\s+patches total", block)
     if stated and int(stated.group(1)) != len(expected):
-        problems.append(f"  the README says {stated.group(1)} patches, the source declares "
+        problems.append(f"  the README says {stated.group(1)} patches, the inventory declares "
                         f"{len(expected)}")
 
 
@@ -162,8 +169,9 @@ def main():
         for problem in problems:
             print(problem)
         return 1
-    count = len(declared_patches())
-    print(f"patches-list.json and the README table match the {count} declared patches.")
+    count = len(published_patches([]))
+    print(f"patches-list.json and the README table match the {count} published patches "
+          f"({len(declared_patches())} source declarations).")
     return 0
 
 

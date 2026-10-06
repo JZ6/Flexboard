@@ -1,6 +1,6 @@
 """The smali emission linter.
 
-Two of its five rules matched zero items for their whole existence, because every label in this
+Two of its label rules matched zero items for their whole existence, because every label in this
 project is interpolated (`:$SKIP_LABEL`) and the patterns used `\\w+`, which does not include `$`.
 The lane passed on every run while checking nothing. These tests exercise the rules against
 payloads written here, so a pattern that stops matching fails immediately rather than going quiet.
@@ -127,6 +127,27 @@ class CallSurface(unittest.TestCase):
 
     def test_does_not_match_an_unrelated_call(self):
         self.assertIsNone(L.CALL.search("addInstrumentation("))
+
+    def test_payload_is_second_argument_not_an_external_label_string(self):
+        self.assertEqual(L.call_arguments('i, payload, ExternalLabel("x", foo)'),
+                         ['i', 'payload', 'ExternalLabel("x", foo)'])
+
+    def test_parentheses_inside_plain_payload_do_not_end_the_call(self):
+        calls = list(L.collect_calls('addInstruction(0, "nop )")'))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][2], '0, "nop )"')
+
+    def test_plain_string_escapes_become_real_instruction_lines(self):
+        problems = []
+        L.lint_block(problems, "T.kt", 1, L.plain_value(r'const/4 v0, 0x1\n:tail'),
+                     set(), {}, True)
+        self.assertTrue(any("R1" in message for message in problems), problems)
+
+    def test_composition_takes_the_last_literal_in_source_order(self):
+        bad = 'buildString { append("nop\\n"); append("""nop\n:tail\n""") }'
+        self.assertFalse(L.terminator_is_instruction(bad))
+        good = 'buildString { append("""nop\n:tail\n"""); append("nop\\n") }'
+        self.assertTrue(L.terminator_is_instruction(good))
 
 
 if __name__ == "__main__":

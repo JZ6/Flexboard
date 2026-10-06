@@ -27,14 +27,13 @@ PIN_LESS with the reason; the lane then fails if an exemption stops being used.
 import pathlib
 import re
 import sys
+from source_comments import without_comments
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PATCHES = ROOT / "patches/src/main/kotlin"
 PREFLIGHT = ROOT / "tools/apk/preflight.py"
 
-BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-LINE_COMMENT = re.compile(r"//[^\n]*")
-STRING_LITERAL = re.compile(r'"([^"\n]*)"')
+STRING_LITERAL = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 
 # Obfuscated-Gboard-shaped literals: a single package segment, R8's output shape. Longer chains
 # (Ljava/util/List;, Lapp/morphe/...;) and our own classes (Ldev/jz6/...) are excluded by the
@@ -63,25 +62,29 @@ PIN_LESS = {
 pins_text = PREFLIGHT.read_text()
 problems = []
 seen_refs = set()
+seen_owners = set()
 
 for path in sorted(PATCHES.rglob("*.kt")):
-    text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+    text = path.read_text().replace("${'$'}", "$")
+    text = without_comments(text)
     for line_no, line in enumerate(text.splitlines(), 1):
         for literal in STRING_LITERAL.findall(line):
+            literal = literal.replace(r"\$", "$")
             if not (CLASS_REF.match(literal) or MEMBER_REF.match(literal)):
                 continue
             seen_refs.add(literal)
             owner = literal.split("->", 1)[0]
+            seen_owners.add(owner)
             if owner in PIN_LESS:
                 continue
             if owner not in pins_text:
                 problems.append(
-                    f"  {path.name}:{line_no} references {literal} — its class {owner} is "
+                    f"  {path.relative_to(ROOT)}:{line_no} references {literal} — its class {owner} is "
                     f"not an anchor in tools/apk/preflight.py"
                 )
 
 for exempt in PIN_LESS:
-    if exempt not in seen_refs:
+    if exempt not in seen_owners:
         problems.append(f"  PIN_LESS exemption {exempt} is no longer referenced anywhere")
 
 if len(seen_refs) < MINIMUM_REFS:

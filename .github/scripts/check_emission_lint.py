@@ -28,12 +28,11 @@ cannot be resolved statically are ignored by name-checks (R1/R2/R3) rather than 
 import pathlib
 import re
 import sys
+from source_comments import without_comments
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PATCHES = ROOT / "patches/src/main/kotlin"
 
-BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-LINE_COMMENT = re.compile(r"//[^\n]*")
 RAW_STRING = re.compile(r'"""(.*?)"""', re.S)
 KOTLIN_CONST = re.compile(r'const\s+val\s+(\w+)\s*=\s*"([^"]+)"')
 # Every emission entry point, not just the two that take a list. replaceInstruction and
@@ -65,15 +64,22 @@ def collect_calls(text):
         start_line = text.count("\n", 0, m.start()) + 1
         while depth and i < len(text):
             c = text[i]
+            if text.startswith('"""', i):
+                end = text.find('"""', i + 3)
+                if end < 0:
+                    raise ValueError('unterminated raw string at an emission site')
+                i = end + 3
+                continue
+            if c == '"':
+                match = PLAIN_STRING.match(text, i)
+                if match is None:
+                    raise ValueError('unterminated quoted string at an emission site')
+                i = match.end()
+                continue
             if c == "(":
                 depth += 1
             elif c == ")":
                 depth -= 1
-            elif text.startswith('"""', i):
-                end = text.find('"""', i + 3)
-                if end < 0:
-                    break
-                i = end + 2
             i += 1
         yield start_line, m.group(1), text[m.end():i - 1], m.start()
 
@@ -95,7 +101,7 @@ def canon(token, consts):
 
 
 def lint_block(problems, name, line_no, payload, externals, consts, labeled):
-    lines = [ln for ln in payload.split("\n")]
+    lines = payload.split("\n")
     useful = [ln for ln in lines if ln.strip() and not ln.strip().startswith("#")]
     if not any(LABEL_DEF.match(ln) or re.match(r"^\s*[a-z/{}-]+", ln) for ln in useful):
         problems.append(f"  {name}:{line_no} emits an empty block (R5)")
@@ -168,7 +174,47 @@ def lint_widths(problems, name, line_no, payload):
 
 
 PLAIN_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
-IDENTIFIER_ARG = re.compile(r",\s*([A-Za-z_]\w*)\s*$", re.S)
+ANY_STRING = re.compile(r'"""(.*?)"""|"((?:[^"\\\n]|\\.)*)"', re.S)
+
+
+def plain_value(text):
+    """Only the escapes relevant to a smali payload; preserve non-ASCII text verbatim."""
+    return re.sub(r'\\([nrt\\"])',
+                  lambda m: {"n": "\n", "r": "\r", "t": "\t", "\\": "\\", '"': '"'}[m.group(1)],
+                  text)
+
+
+def call_arguments(text):
+    """Arguments separated at depth zero, so strings in ExternalLabel aren't payloads."""
+    out, start, i, depth = [], 0, 0, 0
+    while i < len(text):
+        if text.startswith('"""', i):
+            end = text.find('"""', i + 3)
+            if end < 0:
+                raise ValueError("unterminated smali raw string")
+            i = end + 3
+            continue
+        if text[i] == '"':
+            i += 1
+            while i < len(text):
+                if text[i] == "\\":
+                    i += 2
+                elif text[i] == '"':
+                    i += 1
+                    break
+                else:
+                    i += 1
+            continue
+        if text[i] in "([{":
+            depth += 1
+        elif text[i] in ")]}":
+            depth -= 1
+        elif text[i] == "," and depth == 0:
+            out.append(text[start:i].strip())
+            start = i + 1
+        i += 1
+    out.append(text[start:].strip())
+    return out
 
 
 def initializer_of(text, name, before):
@@ -186,6 +232,17 @@ def initializer_of(text, name, before):
         return None
     i, depth = best.end(), 0
     while i < len(text):
+        if text.startswith('"""', i):
+            end = text.find('"""', i + 3)
+            if end < 0:
+                return None
+            i = end + 3
+            continue
+        if text[i] == '"':
+            match = PLAIN_STRING.match(text, i)
+            if match:
+                i = match.end()
+                continue
         c = text[i]
         if c in "([{":
             depth += 1
@@ -205,11 +262,11 @@ def terminator_is_instruction(initializer):
     751b0d0 crash waiting to be reassembled. The last string literal in source order is the
     composition's tail; require its final non-blank line to be an instruction.
     """
-    literals = [m.group(1) for m in re.finditer(r'"""(.*?)"""', initializer, re.S)]
-    literals += [m.group(1) for m in PLAIN_STRING.finditer(re.sub(r'""".*?"""', "", initializer, flags=re.S))]
+    literals = [(m.group(1) if m.group(1) is not None else plain_value(m.group(2)))
+                for m in ANY_STRING.finditer(initializer)]
     if not literals:
         return False
-    tail = literals[-1].encode().decode("unicode_escape")
+    tail = literals[-1]
     useful = [ln.strip() for ln in tail.split("\n") if ln.strip()]
     return bool(useful) and not useful[-1].startswith(":")
 
@@ -221,8 +278,7 @@ def main():
         # Block comments collapse to their own newlines rather than vanishing, so every line
         # number this linter reports still refers to the real file. Reporting a finding against
         # a line that moved is worse than reporting no line at all.
-        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub(
-            lambda m: "\n" * m.group(0).count("\n"), path.read_text()))
+        text = without_comments(path.read_text())
         texts[path] = text
         consts.update(KOTLIN_CONST.findall(text))
 
@@ -238,7 +294,6 @@ def main():
         for fragment in RAW_STRING.finditer(text):
             line_no = text.count("\n", 0, fragment.start()) + 1
             lint_widths(problems, path.name, line_no, fragment.group(1))
-    swept = set(problems)
 
     for path, text in sorted(texts.items(), key=lambda kv: kv[0].name):
         for line_no, variant, args, end in collect_calls(text):
@@ -248,22 +303,29 @@ def main():
             externals = {canon(consts.get(t, t), consts)
                          for t in EXTERNAL_LABEL.findall(args)}
 
-            raw = RAW_STRING.search(args)
+            operands = call_arguments(args)
+            if len(operands) < 2:
+                problems.append(f"  {path.name}:{line_no} has no analysable payload argument (R7)")
+                continue
+            payload_expr = operands[1].strip()
+
+            raw = RAW_STRING.match(payload_expr)
             if raw:
                 lint_block(problems, path.name, line_no, raw.group(1), externals, consts, labeled)
                 continue
 
             # A payload handed over as an ordinary string is still a payload. These used to fall
             # through the raw-string search and go unlinted entirely.
-            plain = PLAIN_STRING.search(args)
+            plain = PLAIN_STRING.match(payload_expr)
             if plain:
-                lint_block(problems, path.name, line_no, plain.group(1), externals, consts, labeled)
+                lint_block(problems, path.name, line_no, plain_value(plain.group(1)),
+                           externals, consts, labeled)
                 continue
 
             # Composed elsewhere and passed by name. The fragments cannot be assembled here, but
             # the property that actually crashes Morphe — how the composition ends — can be.
-            named = IDENTIFIER_ARG.search(args)
-            initializer = initializer_of(text, named.group(1), end) if named else None
+            named = re.fullmatch(r"[A-Za-z_]\w*", payload_expr)
+            initializer = initializer_of(text, named.group(0), end) if named else None
             if initializer is None:
                 problems.append(
                     f"  {path.name}:{line_no} passes a payload this linter cannot analyse (R7); "
@@ -274,7 +336,7 @@ def main():
                 lint_widths(problems, path.name, line_no, fragment.group(1))
             if labeled and not terminator_is_instruction(initializer):
                 problems.append(
-                    f"  {path.name}:{line_no} builds `{named.group(1)}` with no demonstrable "
+                    f"  {path.name}:{line_no} builds `{named.group(0)}` with no demonstrable "
                     f"instruction at the end (R7) — Morphe resolves a terminal label as external "
                     f"and dies at `length=0; index=0`"
                 )

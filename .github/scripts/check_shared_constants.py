@@ -19,6 +19,7 @@ import os
 import pathlib
 import re
 import sys
+from source_comments import without_comments
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PATCHES = ROOT / "patches/src/main/kotlin"
@@ -133,9 +134,9 @@ EMITTED_CALL = re.compile(
 # the ordinary pattern sees, so the helper entry went with the emitter.
 HELPER_CALLS = {"callAtAppStart": "static"}
 
-# Either `helper(CONST)` or `helper(named = CONST)`.
+# Either `helper(CONST)` or `helper(named = CONST)`. Every unmatched helper call must be flagged.
 HELPER_CALL = re.compile(
-    rf"\b({'|'.join(HELPER_CALLS)})\s*=?\s*\(?\s*([A-Z_][A-Z0-9_]*)\s*\)?")
+    rf"\b({'|'.join(HELPER_CALLS)})\s*\(\s*(?:\w+\s*=\s*)?([A-Z_][A-Z0-9_]*)\s*\)")
 
 # A second helper shape: `emitNativeToolbarButtons(builder, listOf(NativeToolbarButton(...)))`.
 # There is no single call-site descriptor to extract, because the button is a data-class spec —
@@ -155,28 +156,26 @@ MEMBER = re.compile(
 
 
 def _expand(text):
-    """Substitute Kotlin string constants into the source, to a fixpoint."""
+    """Expand complete Kotlin interpolation names, never prefixes of longer constants."""
     constants = dict(CONST_STRING.findall(text))
-    for _ in range(5):
-        changed = False
-        for key in list(constants):
-            value = constants[key]
-            for other, replacement in constants.items():
-                if f"${other}" in value:
-                    value = value.replace(f"${other}", replacement)
-                    changed = True
-            constants[key] = value
-        if not changed:
-            break
-    for key, value in constants.items():
-        text = text.replace(f"${key}", value)
-    return text
+    interpolation = re.compile(r"\$(?:\{([A-Z_][A-Z0-9_]*)\}|([A-Z_][A-Z0-9_]*))")
+
+    def resolve(name, visiting):
+        if name not in constants:
+            return None
+        if name in visiting:
+            raise ValueError(f"cyclic Kotlin string constant: {name}")
+        return interpolation.sub(
+            lambda m: resolve(m.group(1) or m.group(2), visiting | {name}) or m.group(0),
+            constants[name],
+        )
+
+    return interpolation.sub(
+        lambda m: resolve(m.group(1) or m.group(2), set()) or m.group(0), text)
 
 PRIMITIVES = {"V": "void", "Z": "boolean", "B": "byte", "S": "short", "C": "char",
               "I": "int", "J": "long", "F": "float", "D": "double"}
 
-BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-LINE_COMMENT = re.compile(r"//[^\n]*")
 
 
 def _java_types(descriptor):
@@ -253,7 +252,7 @@ def _check_extension_references(problems):
         # Comments first: KDoc talking about a member descriptor is not an emission of it, and
         # the "silently stopped checking anything" guard has false-fired on patches that
         # referenced an extension class only to explain it in prose.
-        text = _expand(LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text())))
+        text = _expand(without_comments(path.read_text()))
 
         sources = {}
         for descriptor in sorted(set(re.findall(EXTENSION_TYPE, text))):
@@ -268,7 +267,7 @@ def _check_extension_references(problems):
             # *declared*, and an unstripped file lets a sentence describing the member stand in
             # for the member.
             sources[descriptor] = (
-                source, LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", source.read_text()))
+                source, without_comments(source.read_text())
             )
 
         # A helper's call site names the member through a constant, so resolve it back to the same
@@ -276,7 +275,8 @@ def _check_extension_references(problems):
         # declarations in it carry their final values.
         constants = dict(CONST_STRING.findall(text))
         emitted = list(EMITTED_CALL.findall(text))
-        for helper, name in HELPER_CALL.findall(text):
+        helper_matches = list(HELPER_CALL.finditer(text))
+        for helper, name in (m.groups() for m in helper_matches):
             descriptor = constants.get(name)
             if descriptor is None:
                 problems.append(
@@ -292,6 +292,15 @@ def _check_extension_references(problems):
                 )
                 continue
             emitted.append((HELPER_CALLS[helper], *match.groups()))
+
+        for call in re.finditer(r"\bcallAtAppStart\s*\(", text):
+            # Ignore the helper's own declaration in AppStart.kt, not calls into it.
+            line_prefix = text[text.rfind("\n", 0, call.start()) + 1:call.start()]
+            if re.search(r"\bfun\b", line_prefix):
+                continue
+            if not any(m.start() == call.start() for m in helper_matches):
+                problems.append(f"  {path.name} has a callAtAppStart call whose argument could not "
+                                "be resolved to a checked extension descriptor")
 
         # The button helper has no one-call descriptor to parse; each NativeToolbarButton's
         # `actionCtor = X` named arg declares what gets emitted as `invoke-direct X` (a
@@ -490,22 +499,35 @@ def _check_admitted_ids(problems):
         problems.append("  admitted id check cannot find flexboard_toolbar_slots.xml or ToolbarHotkeys.kt")
         return
     kt = hotkeys_kt.read_text()
+    actions_kt = PATCHES / "dev/jz6/flexboard/patches/features/toolbar/ToolbarButtonsPatch.kt"
     slots = re.search(r'HOTKEY_SLOTS\s*=\s*(\d+)', kt)
     prefix = re.search(r'HOTKEY_ID_PREFIX\s*=\s*"([^"]+)"', kt)
     if not slots or not prefix:
         problems.append("  admitted id check cannot read HOTKEY_SLOTS/HOTKEY_ID_PREFIX")
         return
     count, pre = int(slots.group(1)), prefix.group(1)
-    admitted = set(re.findall(r'name="(flexboard_\w+)"', slots_xml.read_text()))
+    entries = re.findall(r'<string name="(flexboard_\w+)"[^>]*>([^<]*)</string>',
+                         slots_xml.read_text())
+    admitted = {name for name, _value in entries}
+    if len(admitted) != len(entries) or any(name != value for name, value in entries):
+        problems.append("  flexboard_toolbar_slots.xml has duplicate ids or values that differ "
+                        "from their names")
     expected = {f"{pre}{i}" for i in range(1, count + 1)}
     missing, extra = expected - admitted, {a for a in admitted if a.startswith(pre)} - expected
     if missing or extra:
         problems.append(
-            f"  flexboard_toolbar_slots.xml admits {sorted(admitted & set(admitted))} but the "
+            f"  flexboard_toolbar_slots.xml admits {sorted(admitted)} but the "
             f"hotkey emission registers {sorted(expected)}"
             + (f"; missing {sorted(missing)}" if missing else "")
             + (f"; unregistered {sorted(extra)}" if extra else "")
         )
+    action_source = actions_kt.read_text() if actions_kt.exists() else ""
+    actions = {value for name, value in re.findall(
+        r'internal const val (SELECT_ALL_ID|COPY_ID|PASTE_ID)\s*=\s*"([^"]+)"', action_source)}
+    other = admitted - expected
+    if len(actions) != 3 or other != actions:
+        problems.append(f"  action ids admitted by flexboard_toolbar_slots.xml are {sorted(other)}, "
+                        f"but ToolbarButtonsPatch registers {sorted(actions)}")
 
 
 def _check_stock_package_name(problems):
@@ -772,7 +794,7 @@ DOTTED_EXTENSION_CLASS = re.compile(r"dev\.jz6\.flexboard\.extension(?:\.\w+)*\.
 # Any register spelling, not just an interpolated one. `const-string v$key, "$SOME_KEY"` was
 # matched and `const-string v3, "$SOME_KEY"` was not, so the ordinary form staged a key the screen
 # never wrote and this rule said nothing.
-EMITTED_KEY_READ = re.compile(r'const-string\s+[vp][\w${}]+\s*,\s*"\$\{?(\w+)\}?"')
+EMITTED_KEY_READ = re.compile(r'const-string\s+[^\s,]+\s*,\s*"\$\{?(\w+)\}?"')
 
 
 def _check_screen_contract(problems, kotlin):
@@ -831,7 +853,7 @@ def _check_screen_contract(problems, kotlin):
     stage_only = {"HOLD_DELAY_KEY"}
     staged = set()
     for path in PATCHES.rglob("*.kt"):
-        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        text = without_comments(path.read_text())
         for const_name in EMITTED_KEY_READ.findall(text):
             # The register spelling is no longer part of the match, so filter on the name here
             # instead: this rule is about preference keys, not every interpolated constant.
@@ -850,6 +872,10 @@ def _check_screen_contract(problems, kotlin):
         if const_name in stage_only:
             continue
         key = kotlin.get(const_name)
+        if key is None:
+            problems.append(f"  {file_name} stages {const_name} but its string value is not "
+                            "declared as a checked patch constant")
+            continue
         if key and key not in entries:
             problems.append(
                 f"  {file_name}'s smali stages {key!r} for {const_name}, but the screen "
@@ -904,7 +930,12 @@ def _check_screen_contract(problems, kotlin):
             f"hotkey rows ({java_prefix}1..{slot_count}{java_suffix}); "
             f"missing {sorted(want - got)}, extra {sorted(got - want)}"
         )
-    icon_rows = sorted(k for k in keys if re.fullmatch(r"flexboard_hotkey_\d+_icon", k))
+    icon_suffix = _java_string_constant("PREF_ICON_SUFFIX")
+    if not icon_suffix:
+        problems.append("  Hotkeys.PREF_ICON_SUFFIX could not be parsed")
+        icon_suffix = "_icon"
+    icon_pattern = re.compile(re.escape(java_prefix) + r"\d+" + re.escape(icon_suffix))
+    icon_rows = sorted(k for k in keys if icon_pattern.fullmatch(k))
     if icon_rows:
         problems.append(
             f"  flexboard_settings.xml carries icon rows {icon_rows} — icon editing lives in "
@@ -914,7 +945,7 @@ def _check_screen_contract(problems, kotlin):
 
 def _check_dotted_extension_classes(problems):
     for path in PATCHES.rglob("*.kt"):
-        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        text = without_comments(path.read_text())
         for name in sorted(set(DOTTED_EXTENSION_CLASS.findall(text))):
             source = EXTENSION_ROOT / (name.replace(".", os.sep) + ".java")
             if not source.is_file():
@@ -930,7 +961,7 @@ def main():
         # Comments carry prose shaped like constants ("`internal const val X = 0`" in a KDoc
         # paragraph) and would poison the same-name lookup on the Java side. Strip them here the
         # same way the reference check does it.
-        text = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", path.read_text()))
+        text = without_comments(path.read_text())
         for name, value in _collect(KOTLIN_CONST, text).items():
             if name in kotlin and kotlin[name] != value:
                 problems.append(

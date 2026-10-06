@@ -13,7 +13,6 @@ python3 generate_patches_readme.py <owner/repo> <branch> [patches-list.json] [RE
 import json
 import re
 import sys
-import os
 from pathlib import Path
 
 
@@ -71,7 +70,9 @@ for patch in data["patches"]:
 
 def anchor(name):
     """Convert a patch name to a GitHub-compatible anchor slug."""
-    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", name.lower())).strip("-")
+    # GitHub removes punctuation, preserves underscores and Unicode letters, and replaces every
+    # space independently; collapsing hyphens turns "A & B" into a link to the wrong heading.
+    return re.sub(r"[^\w\- ]", "", name.lower()).replace(" ", "-")
 
 
 def existing_anchors(readme_path):
@@ -82,11 +83,14 @@ def existing_anchors(readme_path):
     entries silently went nowhere. Patches without prose render as plain text instead, which is
     honest and stops being true the moment someone writes the section.
     """
-    try:
-        text = Path(readme_path).read_text()
-    except OSError:
-        return None  # unknown: fall back to linking everything, as before
-    return {anchor(h) for h in re.findall(r"^## (.+)$", text, re.M)}
+    text = Path(readme_path).read_text(encoding="utf-8")
+    counts, found = {}, set()
+    for heading in re.findall(r"^## (.+)$", text, re.M):
+        base = anchor(heading)
+        count = counts.get(base, 0)
+        found.add(f"{base}-{count}" if count else base)
+        counts[base] = count + 1
+    return found
 
 
 def patches_table(patches, anchors=None):
@@ -118,11 +122,10 @@ def versions_table(targets):
     if not targets:
         return ""
 
+    displayed = [t for t in targets if t.get("version") is not None]
     cells = []
-    for t in targets:
-        ver   = t["version"]
-        if ver is None:
-            continue
+    for t in displayed:
+        ver = t["version"]
         label = f"🧪&nbsp;{ver}" if t.get("isExperimental") else ver
         cells.append(label)
 
@@ -134,7 +137,7 @@ def versions_table(targets):
     rows = [header, sep]
 
     # Optional description row — only rendered if at least one target has one
-    descs = [(t.get("description") or "").replace("\n", "<br>") for t in targets]
+    descs = [(t.get("description") or "").replace("\n", "<br>") for t in displayed]
     if any(descs):
         rows.append("| " + " | ".join(descs) + " |")
 
@@ -195,7 +198,7 @@ def build_content(expanded=False):
 raw_ver = data["version"]
 # Strip leading "v" if present
 ver   = raw_ver.lstrip("v")
-total = sum(len(e["patches"]) for e in by_pkg.values()) + len(universal)
+total = len({patch["name"] for patch in data["patches"]})
 
 readme = readme_path.read_text(encoding="utf-8")
 
@@ -236,7 +239,7 @@ readme = readme.replace("https://github.com/xyz-user/xyz-patches", f"https://git
 
 new_readme = re.sub(
     rf"{START_PATTERN}.*?{re.escape(END_MARKER)}",
-    f"{actual_start}\n{generated}\n{END_MARKER}",
+    lambda _match: f"{actual_start}\n{generated}\n{END_MARKER}",
     readme,
     flags=re.DOTALL,
 )
