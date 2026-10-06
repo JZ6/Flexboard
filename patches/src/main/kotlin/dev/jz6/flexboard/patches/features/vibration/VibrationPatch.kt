@@ -4,11 +4,11 @@ import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import com.android.tools.smali.dexlib2.iface.instruction.OffsetInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.NarrowLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.SwitchPayload
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
-import dev.jz6.flexboard.patches.shared.fieldOwnerType
 import dev.jz6.flexboard.patches.shared.opcodeName
 
 /**
@@ -66,9 +66,8 @@ val vibrationSliderPatch = bytecodePatch(
 private const val SDK_INT = "Landroid/os/Build\$VERSION;->SDK_INT:I"
 
 /**
- * The mode selector reads `SDK_INT` once and returns one of three distinct small constants — the
- * 1/2/3 the settings fragment switches on. A recycled `Lphn;` with an unrelated `b(Context)I`
- * will not have that shape.
+ * The mode selector reads `SDK_INT` once, has at least three return sites, and loads its three
+ * mode literals 1/2/3. These checks are a shape veto, not a full proof of every return path.
  */
 private fun MutableMethod.assertModeSelectorShape() {
     val body = implementation?.instructions?.toList()
@@ -85,6 +84,12 @@ private fun MutableMethod.assertModeSelectorShape() {
         "$VIBRATION_MODE_CLASS->b(Context)I has $returns return sites, expected at least 3 (one " +
             "per mode) — this is not the mode selector, so refusing to blank it"
     }
+    val modes = body.filter { it.opcodeName() == "CONST_4" || it.opcodeName() == "CONST_16" }
+        .mapNotNull { (it as? NarrowLiteralInstruction)?.narrowLiteral }
+        .toSet()
+    check((1..3).all { it in modes }) {
+        "$VIBRATION_MODE_CLASS->b(Context)I no longer loads the three expected mode values: $modes"
+    }
 }
 
 /**
@@ -92,7 +97,7 @@ private fun MutableMethod.assertModeSelectorShape() {
  *
  * The tail is left in place and becomes unreachable, which is fine, but only under conditions the
  * caller cannot eyeball: nothing may branch back into the two instructions being replaced, no try
- * block may cover them, and `v0` has to exist. Those were true of both vibration gates on 18.0.3
+ * block may cover them, and `v0` has to exist. Those are true of the mode selector on 18.0.3
  * when this was written; asserting them means a build where they stop being true fails loudly
  * rather than emitting a method the verifier rejects.
  */

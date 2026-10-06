@@ -10,9 +10,9 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  *
  * Phenotype registers flags per package **and signing identity**. A Morphe build is resigned, so
  * GMS never attributes the flags to Gboard, the sync never lands, and every flag keeps the default
- * compiled into the APK. On 18.0.3 that is 666 booleans shipping `false`. Where Google enables one
- * server-side, a patched build simply loses the feature — no error, no setting, nothing to notice
- * beyond a row that used to be there.
+ * compiled into the APK. The corrected 18.0.3 scan finds 662 booleans shipping `false`. Where
+ * Google enables one server-side, a patched build simply loses the feature — no error, no setting,
+ * nothing to notice beyond a row that used to be there.
  *
  * This began as `Grammar Check Row`, which fixed a single instance: the grammar checker's settings
  * row vanished on patched builds and nobody could say why. The mechanism turned out to be general,
@@ -55,7 +55,7 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  *
  *  - `enable_on_device_proofread` fronts the Writing Tools / SAPI stack — an AICore LLM
  *    (`ON_DEVICE_LLM_INFERENCE_PROOFREAD`), a downloaded model (`Proofreader.downloadFeature`) and
- *    a version gate gate (`sapi_proofreader_version` against `sapi_proofreader_allowed_versions`),
+ *    a version gate (`sapi_proofreader_version` against `sapi_proofreader_allowed_versions`),
  *    with roughly 170 `writing_tools_*` parameters behind the one boolean.
  *  - `enable_emoji_kitchen_browse` needs Mobile Data Download groups
  *    (`emoji_kitchen_mdd_data_file_group`, `emoji_kitchen_scam_index_data_file_group`).
@@ -65,7 +65,7 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  *  - `enable_settings_search` has no companion parameters in the dex at all, which is its own kind
  *    of answer: there is nothing here for it to switch on.
  *
- * Every one of those companions is server-delivered too, so forcing the parent on does not supply
+ * The companions that exist are server-delivered too, so forcing the parent on does not supply
  * the configuration — it skips it. A boolean that reveals finished *local* code is safe to force.
  * A boolean that is the entry point to server-*configured* machinery is not, however public the
  * feature is. The two that are default-on are the two that gate code already sitting in the APK,
@@ -108,9 +108,8 @@ val hiddenFeaturesPatch = bytecodePatch(
             // enable_auto_fill_pk_fallback_ui both. Rewriting it would turn on an unrelated
             // autofill surface, so this one gets a constant scoped to its own call.
             "enable_close_proactive_suggestions_access_point",
-            // Both share their default with later flags in the same <clinit>, so both get a
-            // constant scoped to their own call. "enable_grammar_checker" was rewriting the shared
-            // zero in Ljpf; and taking three flags with it, one of them the LLM grammar checker.
+            // Grammar checker's own zero is read by three later flags in Ljpf;. Close proactive
+            // suggestions instead inherits the zero written for an earlier flag in Lqjx;.
             isolating = setOf(
                 "enable_grammar_checker",
                 "enable_close_proactive_suggestions_access_point",
@@ -138,9 +137,9 @@ val hiddenFeaturesPatch = bytecodePatch(
  * | `offline_translate` | the translate bar continuing to work with the network off |
  * | `enable_settings_search` | a search affordance inside Gboard's own settings |
  *
- * The dex says all four are gated on data a resigned build never receives — download groups, an
- * empty locale allowlist, language packs — so the expected result is still nothing. Off by default
- * for exactly that reason: a patch that probably does nothing must not claim otherwise in the
+ * Three depend on data a resigned build may not receive — download groups, an empty locale
+ * allowlist, language packs — and settings search has no companion parameters in the dex. Off by
+ * default for exactly that reason: a patch that probably does nothing must not claim otherwise in the
  * picker.
  */
 @Suppress("unused")
@@ -149,7 +148,7 @@ val hiddenFeaturesUnconfirmedPatch = bytecodePatch(
     description = "Turns on four finished Gboard features that a resigned build can never " +
         "receive: Emoji Kitchen browse, the custom sticker tab, offline translation, and search " +
         "in Gboard's settings. Off by default because none of the four has been seen working on " +
-        "a device — the flags flip, but each also depends on data Google only sends to an " +
+        "a device — the flags flip, but some also need data Google only sends to an " +
         "unpatched install. Safe to try: none of them crashes.",
     default = false,
 ) {
@@ -163,8 +162,8 @@ val hiddenFeaturesUnconfirmedPatch = bytecodePatch(
             "enable_custom_sticker_tab",
             "offline_translate",
             "enable_settings_search",
-            // Sticker tab shares its zero with allow_u18_for_custom_sticker, and emoji kitchen
-            // browse with three of its own search flags.
+            // Sticker tab shares its zero with allow_u18_for_custom_sticker and its loading
+            // indicator; emoji kitchen browse shares with three of its own search flags.
             isolating = setOf("enable_custom_sticker_tab", "enable_emoji_kitchen_browse"),
         )
     }

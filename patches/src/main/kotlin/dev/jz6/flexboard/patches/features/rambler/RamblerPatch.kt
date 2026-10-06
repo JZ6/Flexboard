@@ -6,9 +6,14 @@ import app.morphe.patcher.patch.bytecodePatch
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.basePatch
+import dev.jz6.flexboard.patches.shared.callsMethod
+import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.flagHolderClinit
 import dev.jz6.flexboard.patches.shared.forceFlagsOn
+import dev.jz6.flexboard.patches.shared.invokeRegisterAt
+import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.registersRead
 import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.stringOrNull
 
@@ -26,6 +31,7 @@ private const val AGENTIC_ACTIVATION = 2L
 
 /** Ships as this. Asserted, so a build that already moved on fails loudly rather than being re-set. */
 private const val STOCK_ACTIVATION = 1L
+private const val LONG_FLAG_FACTORY = "Lnxs;->c(Ljava/lang/String;J)Lnxp;"
 
 /**
  * Turns on Google Rambler — Gboard's agentic dictation, internally *jetson*.
@@ -112,8 +118,8 @@ val ramblerPatch = bytecodePatch(
 /**
  * Rewrites [AD_ACTIVATION_TYPE]'s declared default from [STOCK_ACTIVATION] to [AGENTIC_ACTIVATION].
  *
- * A literal rewrite rather than an override, because the value is read once at class initialisation
- * and compared, not consulted per call. Like-for-like: a `const-wide/16` is replaced by a
+ * A literal rewrite rather than an override: the default is baked into `<clinit>`; the accessor
+ * is consulted on each use. Like-for-like: a `const-wide/16` is replaced by a
  * `const-wide/16`, so the register pair is preserved.
  */
 private fun app.morphe.patcher.patch.BytecodePatchContext.raiseActivationType() {
@@ -137,6 +143,9 @@ private fun app.morphe.patcher.patch.BytecodePatchContext.raiseActivationType() 
 
     val literal = (body[defaultIndex] as com.android.tools.smali.dexlib2.iface.instruction
         .WideLiteralInstruction).wideLiteral
+    check(body[defaultIndex].opcodeName() == "CONST_WIDE_16") {
+        "$AD_ACTIVATION_TYPE's default no longer fits the like-for-like const-wide/16 rewrite"
+    }
     check(literal == STOCK_ACTIVATION) {
         "\"$AD_ACTIVATION_TYPE\" already defaults to $literal, not $STOCK_ACTIVATION — Gboard has " +
             "changed the activation mode it ships, and forcing $AGENTIC_ACTIVATION over the top " +
@@ -144,5 +153,32 @@ private fun app.morphe.patcher.patch.BytecodePatchContext.raiseActivationType() 
     }
 
     val register = (body[defaultIndex] as OneRegisterInstruction).registerA
-    method.replaceInstruction(defaultIndex, "const-wide/16 v$register, 0x$AGENTIC_ACTIVATION")
+    val nameRegister = (body[nameIndex] as OneRegisterInstruction).registerA
+    val call = (defaultIndex + 1 until minOf(nameIndex + 6, body.size))
+        .filter { body[it].callsMethod(LONG_FLAG_FACTORY) }
+        .sole { "$AD_ACTIVATION_TYPE has $it nearby long-flag factories, expected one" }
+    check(body[call].invokeRegisterCount() == 3 &&
+          body[call].invokeRegisterAt(0) == nameRegister &&
+          body[call].invokeRegisterAt(1) == register &&
+          body[call].invokeRegisterAt(2) == register + 1) {
+        "$AD_ACTIVATION_TYPE no longer passes this literal as the factory's long default"
+    }
+    check((nameIndex + 1 until call).all { i ->
+        i == defaultIndex ||
+            (register !in body[i].destinationRegistersOrEmpty() &&
+                register + 1 !in body[i].destinationRegistersOrEmpty())
+    }) { "$AD_ACTIVATION_TYPE's long default was overwritten before its factory call" }
+    // Any branch into this span (or through the following reads) invalidates the linear proof.
+    check(body.none { it.opcodeName().startsWith("GOTO") || it.opcodeName().startsWith("IF_") }) {
+        "$AD_ACTIVATION_TYPE holder has control flow; constant sharing needs a CFG check"
+    }
+    val nextWrite = (call + 1 until body.size).firstOrNull { i ->
+        register in body[i].destinationRegistersOrEmpty() ||
+            register + 1 in body[i].destinationRegistersOrEmpty()
+    } ?: body.size
+    check((call + 1 until nextWrite).none { i ->
+        register in body[i].registersRead() || register + 1 in body[i].registersRead()
+    }) { "$AD_ACTIVATION_TYPE shares its long default with a later flag; do not flip siblings" }
+    method.replaceInstruction(defaultIndex,
+        "const-wide/16 v$register, 0x${AGENTIC_ACTIVATION.toString(16)}")
 }

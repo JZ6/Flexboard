@@ -8,12 +8,18 @@ import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.basePatch
+import dev.jz6.flexboard.patches.shared.callsMethod
+import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.flagHolderClinit
+import dev.jz6.flexboard.patches.shared.invokeRegisterAt
+import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
+import dev.jz6.flexboard.patches.shared.registersRead
 import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.stringOrNull
 
 private const val VIBRATION_EFFECT_MIN_SDK = "vibration_effect_min_sdk"
+private const val LONG_FLAG_FACTORY = "Lnxs;->c(Ljava/lang/String;J)Lnxp;"
 
 /**
  * What Gboard ships: an API level no device will ever report, which is a disabled feature written
@@ -42,7 +48,7 @@ private const val COMPOSITION_MIN_SDK = 30L
  *
  * 1. `SDK_INT >= 30`
  * 2. `SDK_INT >= vibration_effect_min_sdk`
- * 3. `Vibrator.areAllEffectsSupported(...)` says the hardware can do it
+ * 3. `Vibrator.areAllPrimitivesSupported(...)` says the hardware can do it
  *
  * The flag in (2) ships as **1024**. No Android version is or will be 1024, so (2) can never hold
  * and the primitive arm is dead code on every device. This patch rewrites that literal to 30.
@@ -74,7 +80,7 @@ private const val COMPOSITION_MIN_SDK = 30L
  * handshake — and the failure mode is a keyboard that will not start.
  *
  * None of that applies here. The code behind the flag is `android.os.VibrationEffect`, already on
- * the device, and Gboard's own `areAllEffectsSupported` check is untouched by this patch, so
+ * the device, and Gboard's own `areAllPrimitivesSupported` check is untouched by this patch, so
  * hardware that cannot do primitives keeps the legacy path. The worst outcome is that keypresses
  * feel the same as before.
  *
@@ -120,6 +126,9 @@ private fun BytecodePatchContext.lowerHapticMinimumSdk() {
         )
 
     val literal = (body[defaultIndex] as WideLiteralInstruction).wideLiteral
+    check(body[defaultIndex].opcodeName() == "CONST_WIDE_16") {
+        "$VIBRATION_EFFECT_MIN_SDK is no longer a const-wide/16; the like-for-like edit moved"
+    }
     check(literal == STOCK_MIN_SDK) {
         "\"$VIBRATION_EFFECT_MIN_SDK\" is $literal, not $STOCK_MIN_SDK. Gboard has changed the " +
             "minimum it ships, and a value that is no longer an impossible sentinel is a rollout " +
@@ -127,5 +136,26 @@ private fun BytecodePatchContext.lowerHapticMinimumSdk() {
     }
 
     val register = (body[defaultIndex] as OneRegisterInstruction).registerA
+    val nameRegister = (body[nameIndex] as OneRegisterInstruction).registerA
+    val call = (defaultIndex + 1 until minOf(nameIndex + 6, body.size))
+        .filter { body[it].callsMethod(LONG_FLAG_FACTORY) }
+        .sole { "$VIBRATION_EFFECT_MIN_SDK has $it nearby long-flag factory calls, expected one" }
+    check(body[call].invokeRegisterCount() == 3 &&
+          body[call].invokeRegisterAt(0) == nameRegister &&
+          body[call].invokeRegisterAt(1) == register &&
+          body[call].invokeRegisterAt(2) == register + 1) {
+        "$VIBRATION_EFFECT_MIN_SDK no longer hands this literal to the long factory"
+    }
+    check((defaultIndex + 1 until call).none { i ->
+        register in body[i].destinationRegistersOrEmpty() ||
+            register + 1 in body[i].destinationRegistersOrEmpty()
+    }) { "$VIBRATION_EFFECT_MIN_SDK's long default was overwritten before its factory call" }
+    val nextWrite = (call + 1 until body.size).firstOrNull { i ->
+        register in body[i].destinationRegistersOrEmpty() ||
+            register + 1 in body[i].destinationRegistersOrEmpty()
+    } ?: body.size
+    check((call + 1 until nextWrite).none { i ->
+        register in body[i].registersRead() || register + 1 in body[i].registersRead()
+    }) { "$VIBRATION_EFFECT_MIN_SDK shares its default with a later flag; do not flip siblings" }
     method.replaceInstruction(defaultIndex, "const-wide/16 v$register, 0x${COMPOSITION_MIN_SDK.toString(16)}")
 }
