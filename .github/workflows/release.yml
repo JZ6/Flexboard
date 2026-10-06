@@ -30,8 +30,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify-pr:
+    name: Verify pull request
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: gradle/actions/wrapper-validation@v6
+      - uses: actions/setup-java@v6.0.0
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Run the gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: tools/gate
+      - name: Build the bundle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew buildAndroid --no-daemon
+
   release:
     name: Release
+    if: github.event_name != 'pull_request'
     permissions:
       contents: write
       packages: read
@@ -43,6 +69,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Validate Gradle wrapper JAR
+        uses: gradle/actions/wrapper-validation@v6
 
       - name: Setup Java
         uses: actions/setup-java@v6.0.0
@@ -64,6 +93,14 @@ jobs:
             exit 1
           fi
 
+          # The full check_version.sh runs on new releases, but an already-tagged dev version
+          # fast-forwarded onto main would otherwise skip it and leave the stable channel serving
+          # a prerelease. Apply this branch invariant even on compile-only/repair runs.
+          if [ "$GITHUB_REF_NAME" = "main" ] && [[ "$VERSION" == *-* ]]; then
+            echo "::error::main cannot serve a prerelease version: $VERSION"
+            exit 1
+          fi
+
           # A pull request verifies and never publishes. Without this the version-not-yet-tagged
           # rule would make a PR from a fork tag and release the repository.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -81,15 +118,27 @@ jobs:
           # green -- a green run reachable by doing nothing, masking the failure it followed.
           if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null \
              && gh release view "v$VERSION" --json assets --jq '.assets | length' 2>/dev/null \
-                | grep -qE '^[1-9]'; then
+                 | grep -qE '^[1-9]'; then
             echo "v$VERSION is already released with assets. Compiling only."
             echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "resume=false" >> "$GITHUB_OUTPUT"
           elif git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-            echo "::warning::v$VERSION is tagged but has no published assets — completing the release."
+            echo "::warning::v$VERSION is tagged but has no published assets — rebuilding from its tag."
+            git merge-base --is-ancestor "v$VERSION^{commit}" HEAD || {
+              echo "::error::v$VERSION is not an ancestor of this branch; refusing to publish it."
+              exit 1
+            }
+            if [ "$(git show "v$VERSION:gradle.properties" | sed -nE 's/^version *= *(.+)$/\1/p' | tr -d '[:space:]')" != "$VERSION" ]; then
+              echo "::error::v$VERSION does not describe the branch's version."
+              exit 1
+            fi
+            git checkout --quiet --detach "v$VERSION^{commit}"
             echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "resume=true" >> "$GITHUB_OUTPUT"
           else
             echo "v$VERSION is new. This push releases it."
             echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "resume=false" >> "$GITHUB_OUTPUT"
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -111,7 +160,7 @@ jobs:
       # Rejected before the build, so a bad version costs seconds. Same script the local helper
       # runs, so there is one definition of "valid" rather than two that drift.
       - name: Validate the version
-        if: steps.decide.outputs.release == 'true'
+        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.resume != 'true'
         run: .github/scripts/check_version.sh "${{ steps.decide.outputs.version }}" "$GITHUB_REF_NAME"
 
       # tools/gate is the gate, and running it here is the whole point: the three script lanes
@@ -151,6 +200,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew buildAndroid --no-daemon
 
+      # Manifest Timestamp is when a build finished, not the commit it contains. An artifact of A
+      # can finish after a local commit B and look current by time alone. Stamp the checked-out
+      # source SHA inside the bundle so bundle_freshness.py compares trees rather than clocks.
+      - name: Stamp bundle source commit
+        env:
+          MPP: ${{ steps.decide.outputs.mpp }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$(git rev-parse HEAD)" > flexboard_source_commit.txt
+          jar uf "$MPP" flexboard_source_commit.txt
+          rm flexboard_source_commit.txt
+
       # The bundle, on every push, whether or not this is a release.
       #
       # Building one needs the Android SDK, which no desk here has; applying one does not. Until
@@ -185,7 +246,7 @@ jobs:
       # This re-runs `jar` and so DESTROYS the classes.dex that `buildAndroid` merged in — see the
       # re-merge step below, which must stay after it.
       - name: Regenerate the patch inventory
-        if: steps.decide.outputs.release == 'true'
+        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.resume != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.decide.outputs.version }}
@@ -212,7 +273,13 @@ jobs:
         if: steps.decide.outputs.release == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew buildAndroid --no-daemon
+        run: |
+          set -euo pipefail
+          ./gradlew buildAndroid --no-daemon
+          # generatePatchesList may rebuild the jar, discarding the first stamp.
+          printf '%s\n' "$(git rev-parse HEAD)" > flexboard_source_commit.txt
+          jar uf "${{ steps.decide.outputs.mpp }}" flexboard_source_commit.txt
+          rm flexboard_source_commit.txt
 
       # The one check that would have caught the above. Everything else about a DEX-less bundle
       # looks correct, including the post-publish verification, which compared the uploaded asset
@@ -224,17 +291,17 @@ jobs:
           EXPECTED_PACKAGE: com.google.android.inputmethod.latin
         run: |
           set -euo pipefail
-          if ! unzip -l "$MPP" | grep -qE '[[:space:]]classes\.dex$'; then
+          ENTRIES=$(unzip -Z1 "$MPP")
+          if ! grep -qx 'classes.dex' <<< "$ENTRIES"; then
             echo "::error::$MPP contains no classes.dex, so Morphe would load zero patches from it."
-            unzip -l "$MPP" | head -20
+            printf '%s\n' "$ENTRIES"
             exit 1
           fi
-          echo "classes.dex present:"
-          unzip -l "$MPP" | grep -E '[[:space:]]classes\.dex$'
+          echo "classes.dex present"
 
           # Everything below fails the same way classes.dex did: the bundle loads, reports the right
           # name and version, and simply does nothing useful. All three are one command each.
-          if ! unzip -l "$MPP" | grep -qE '[[:space:]]extensions/extension\.mpe$'; then
+          if ! grep -qx 'extensions/extension.mpe' <<< "$ENTRIES"; then
             echo "::error::$MPP has no extensions/extension.mpe. The settings screen and every" \
                  "call a patch makes into the extension would fail at patch time."
             exit 1
@@ -262,7 +329,7 @@ jobs:
       # the .mpp lives. created_at must carry no timezone — the manager parses it as a kotlinx
       # LocalDateTime, and a trailing Z fails deserialisation with no useful error.
       - name: Write patches-bundle.json
-        if: steps.decide.outputs.release == 'true'
+        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.resume != 'true'
         env:
           VERSION: ${{ steps.decide.outputs.version }}
           TAG: ${{ steps.decide.outputs.tag }}
@@ -319,7 +386,7 @@ jobs:
       # heading it does not recognise. The template's @MorpheApp/changelog plugin wrote this; the
       # hand-written pipeline has to do it too.
       - name: Prepend the changelog entry
-        if: steps.decide.outputs.release == 'true'
+        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.resume != 'true'
         env:
           VERSION: ${{ steps.decide.outputs.version }}
           TAG: ${{ steps.decide.outputs.tag }}
@@ -368,7 +435,7 @@ jobs:
                        --invert-grep -E --grep='^chore: (release|bump)|^bump to')
           fi
           BULLETS=$(printf '%s\n' "$SUBJECTS" \
-            | sed -E 's/^([a-z]+)(\([^)]*\))?!: /\1: /' \
+            | sed -E 's/^([a-z]+)(\([^)]*\))?!?: /\1: /' \
             | sed -E "s|^|* **$SCOPE:** |")
           [ -n "$SUBJECTS" ] || BULLETS="* **$SCOPE:** No changes recorded."
 
@@ -379,7 +446,7 @@ jobs:
 
       # Commit and tag together, then push together, so the tag can never be left behind.
       - name: Commit and tag
-        if: steps.decide.outputs.release == 'true'
+        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.resume != 'true'
         env:
           TAG: ${{ steps.decide.outputs.tag }}
         run: |
@@ -403,6 +470,23 @@ jobs:
           PRERELEASE: ${{ steps.decide.outputs.prerelease }}
         run: |
           set -euo pipefail
+          if [ "${{ steps.decide.outputs.resume }}" = "true" ]; then
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "$MPP" --clobber
+              if [ "$(gh release view "$TAG" --json isDraft --jq '.isDraft')" = "true" ]; then
+                gh release edit "$TAG" --draft=false
+              fi
+            else
+              # The original tag already contains the inventory and changelog.
+              jq -r '.description' patches-bundle.json > release-notes.md
+              FLAG=""
+              [ "$PRERELEASE" = "true" ] && FLAG="--prerelease"
+              # shellcheck disable=SC2086
+              gh release create "$TAG" "$MPP" --title "$TAG" \
+                --notes-file release-notes.md --target "$GITHUB_REF_NAME" $FLAG
+            fi
+            exit 0
+          fi
           # Labelled for the humans reading the releases page. Morphe ignores this and goes by the
           # branch, but the page disagreeing with the channel would be odd.
           FLAG=""
@@ -422,7 +506,7 @@ jobs:
       # caller without a credential — that's the whole mechanism of "private" — so the curl below
       # would fail forever, for the same reason Morphe itself cannot load from this repo at all.
       - name: Verify the release
-        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.private != 'true'
+        if: github.event_name != 'pull_request' && steps.decide.outputs.private != 'true'
         env:
           VERSION: ${{ steps.decide.outputs.version }}
           TAG: ${{ steps.decide.outputs.tag }}
@@ -464,19 +548,33 @@ jobs:
           URL=$(printf '%s' "$PUBLISHED" | jq -r '.download_url')
           curl -fsSL "$URL" -o downloaded.mpp || {
             echo "::error::download_url does not resolve: $URL"; exit 1; }
-          cmp -s downloaded.mpp "$MPP" || {
-            echo "::error::The published asset differs from the bundle that was built."; exit 1; }
+          if [ "${{ steps.decide.outputs.release }}" = "true" ]; then
+            cmp -s downloaded.mpp "$MPP" || {
+              echo "::error::The published asset differs from the bundle that was built."; exit 1; }
+          fi
           rm -f downloaded.mpp
 
-          echo "Verified: $RAW serves $VERSION and its download_url matches the built bundle."
+          echo "Verified: $RAW serves $VERSION and its download_url is reachable."
+
+      # A manual retry after attestation failed must attest the asset that was published, not
+      # whatever the current branch happened to build after the release tag.
+      - name: Download published asset for re-attestation
+        if: github.event_name == 'workflow_dispatch' && steps.decide.outputs.release != 'true' && steps.decide.outputs.private != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.decide.outputs.tag }}
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/published"
+          gh release download "$TAG" --pattern "patches-$VERSION.mpp" --dir "$RUNNER_TEMP/published"
 
       # Build-provenance attestations are gated off on user-owned private repos for the same
       # reason verify is: the attestation API refuses ("Feature not available for user-owned
       # private repositories") before the artifact even matters. On the public origin this runs
       # as before; on Flexboard1 it skips.
       - name: Attest
-        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.private != 'true'
+        if: (steps.decide.outputs.release == 'true' || github.event_name == 'workflow_dispatch') && steps.decide.outputs.private != 'true'
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: 'Morphe Patches ${{ steps.decide.outputs.tag }}'
-          subject-path: ${{ steps.decide.outputs.mpp }}
+          subject-path: ${{ steps.decide.outputs.release == 'true' && steps.decide.outputs.mpp || format('{0}/published/patches-{1}.mpp', runner.temp, steps.decide.outputs.version) }}

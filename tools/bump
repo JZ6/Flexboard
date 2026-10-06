@@ -32,18 +32,24 @@ if [ -n "$(git status --porcelain)" ]; then
     exit 1
 fi
 
+# Fetch tags before validation so a CI-created tag that is missing locally cannot be reused.
+git fetch --quiet --tags origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
 .github/scripts/check_version.sh "$VERSION" "$BRANCH"
 
-# An unpushed commit would be released by a later push, at a moment you were not expecting.
-git fetch --quiet origin "$BRANCH"
-if [ -n "$(git rev-list "origin/$BRANCH..HEAD")" ]; then
-    printf 'error: %s has commits that are not pushed. Push them first, so the release is of what is on the remote.\n' "$BRANCH" >&2
-    git --no-pager log --oneline "origin/$BRANCH..HEAD" >&2
+# CI's release commit commonly leaves a local checkout behind origin. Require an exact tip, not
+# merely "nothing unpushed", or this script makes a bump commit and the push rejects it afterwards.
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$BRANCH")" ]; then
+    printf 'error: %s is not at origin/%s. Pull or push before releasing.\n' "$BRANCH" "$BRANCH" >&2
+    git --no-pager log --oneline --left-right "origin/$BRANCH...HEAD" >&2
     exit 1
 fi
 
 CURRENT=$(sed -nE 's/^version *= *(.+)$/\1/p' gradle.properties)
-PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
+if [ "$BRANCH" = "main" ]; then
+    PREVIOUS=$(git describe --tags --abbrev=0 --exclude='*-dev.*' --exclude='*-beta.*' --exclude='*-rc.*' --exclude='*-alpha.*' --exclude='*-preview.*' 2>/dev/null || true)
+else
+    PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
+fi
 if [ "$BRANCH" = "dev" ]; then CHANNEL="pre-release"; else CHANNEL="stable"; fi
 
 printf '\n'
@@ -54,7 +60,7 @@ printf '  %-12s https://github.com/%s/releases/download/v%s/patches-%s.mpp\n' \
     "download" "$(git remote get-url origin | sed -E 's#.*github\.com[:/]##; s#\.git$##')" "$VERSION" "$VERSION"
 printf '\n  including:\n'
 if [ -n "$PREVIOUS" ]; then
-    git --no-pager log --no-merges --format='    %s' "$PREVIOUS..HEAD" | head -20
+    git --no-pager log --max-count=20 --no-merges --format='    %s' "$PREVIOUS..HEAD"
 else
     git --no-pager log --no-merges --format='    %s' -10
 fi
@@ -67,8 +73,11 @@ case "$reply" in
 esac
 
 sed -i.bak -E "s/^version *=.*/version = $VERSION/" gradle.properties && rm -f gradle.properties.bak
+sed -i.bak -E "s/^# chore: bump to .*/# chore: bump to $VERSION/" gradle.properties && rm -f gradle.properties.bak
 git add gradle.properties
-git commit -m "chore: bump to $VERSION"
+git commit -F- <<EOF
+chore: bump to $VERSION
+EOF
 git push origin "$BRANCH"
 
-printf '\nPushed. CI is building v%s; watch it with:\n  gh run watch\n' "$VERSION"
+printf '\nPushed. CI is building v%s; check its Actions run URL.\n' "$VERSION"

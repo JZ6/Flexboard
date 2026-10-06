@@ -13,7 +13,8 @@ import support  # noqa: F401  -- puts tools/ on the path
 import bundle_freshness
 
 
-def write_bundle(path, version="2.5.0-dev.3", timestamp=1_789_699_652_610, manifest=None):
+def write_bundle(path, version="2.5.0-dev.3", timestamp=1_789_699_652_610,
+                 manifest=None, source="a" * 40):
     """A zip carrying just enough manifest to be read as a bundle."""
     if manifest is None:
         manifest = "Manifest-Version: 1.0\nName: Flexboard\n"
@@ -23,12 +24,16 @@ def write_bundle(path, version="2.5.0-dev.3", timestamp=1_789_699_652_610, manif
             manifest += f"Timestamp: {timestamp}\n"
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("META-INF/MANIFEST.MF", manifest)
+        if source is not None:
+            z.writestr("flexboard_source_commit.txt", source + "\n")
     return str(path)
 
 
 class ManifestReading(unittest.TestCase):
     def setUp(self):
-        self.dir = __import__("tempfile").mkdtemp()
+        temp = __import__("tempfile").TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.dir = temp.name
 
     def path(self, name="b.mpp"):
         return f"{self.dir}/{name}"
@@ -51,7 +56,8 @@ class ManifestReading(unittest.TestCase):
 
     def test_a_file_that_is_not_a_zip(self):
         p = self.path("not.mpp")
-        open(p, "w").write("plain text")
+        with open(p, "w") as out:
+            out.write("plain text")
         self.assertEqual(bundle_freshness.manifest_fields(p), (None, None))
 
     def test_a_zip_with_no_manifest(self):
@@ -73,39 +79,47 @@ class GitParsing(unittest.TestCase):
     """
 
     def test_dirty_sources_keeps_the_whole_path(self):
-        for line in [" M patches/src/a.kt", "?? patches/src/b.kt", "MM patches/src/c.kt"]:
-            with self.subTest(line=line):
-                parsed = line.split(maxsplit=1)[1]
-                self.assertTrue(parsed.startswith("patches/"), parsed)
-
-    def test_last_source_commit_reads_this_repo(self):
-        epoch, subject = bundle_freshness.last_source_commit()
-        self.assertGreater(epoch, 1_600_000_000)
-        self.assertTrue(subject)
+        original = bundle_freshness._git
+        try:
+            bundle_freshness._git = lambda *args: "M patches/src/a.kt\n?? patches/src/b.kt\nMM patches/src/c.kt"
+            self.assertEqual(bundle_freshness.dirty_sources(),
+                             ["patches/src/a.kt", "patches/src/b.kt", "patches/src/c.kt"])
+        finally:
+            bundle_freshness._git = original
 
     def test_git_raises_rather_than_returning_empty(self):
         with self.assertRaises(bundle_freshness.GitUnavailable):
             bundle_freshness._git("log", "--no-such-flag")
+
+    def test_the_real_git_tree_compares_equal_to_itself(self):
+        sha = bundle_freshness._git("rev-parse", "HEAD")
+        self.assertEqual(bundle_freshness.source_changes(sha), [])
+
+    def test_invalid_source_commit_does_not_turn_into_fresh(self):
+        with self.assertRaises(bundle_freshness.GitUnavailable):
+            bundle_freshness.source_changes("A" * 40)
 
 
 class Reasons(unittest.TestCase):
     """`reasons()` with git and gradle.properties stubbed, so the answers are deterministic."""
 
     def setUp(self):
-        self.dir = __import__("tempfile").mkdtemp()
+        temp = __import__("tempfile").TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.dir = temp.name
         self._saved = (bundle_freshness.tree_version,
-                       bundle_freshness.last_source_commit,
+                       bundle_freshness.source_changes,
                        bundle_freshness.dirty_sources)
-        self.stub(version="2.5.0-dev.3", commit=(1_789_699_000, "some commit"), dirty=[])
+        self.stub(version="2.5.0-dev.3", moved=[], dirty=[])
 
     def tearDown(self):
         (bundle_freshness.tree_version,
-         bundle_freshness.last_source_commit,
+         bundle_freshness.source_changes,
          bundle_freshness.dirty_sources) = self._saved
 
-    def stub(self, version, commit, dirty):
+    def stub(self, version, moved, dirty):
         bundle_freshness.tree_version = lambda: version
-        bundle_freshness.last_source_commit = lambda: commit
+        bundle_freshness.source_changes = lambda commit: moved
         bundle_freshness.dirty_sources = lambda: dirty
 
     def bundle(self, **kw):
@@ -119,41 +133,44 @@ class Reasons(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("gradle.properties says 2.5.0-dev.3", found[0])
 
-    def test_sources_committed_after_the_build(self):
-        # The hole the version check alone leaves: both say dev.3, built an hour apart.
-        self.stub("2.5.0-dev.3", (1_789_699_652 + 3600, "fix: weaken the guard"), [])
+    def test_sources_changed_even_if_the_bundle_finished_later(self):
+        # Build of A may finish after B was committed. Timestamp doesn't prove it includes B.
+        self.stub("2.5.0-dev.3", ["patches/src/b.kt"], [])
         found = bundle_freshness.reasons(self.bundle())
         self.assertEqual(len(found), 1)
-        self.assertIn("moved 60 minute(s) after", found[0])
-        self.assertIn("weaken the guard", found[0])
+        self.assertIn("patches/src/b.kt", found[0])
 
     def test_a_commit_before_the_build_is_fine(self):
-        self.stub("2.5.0-dev.3", (1_789_699_652 - 3600, "earlier"), [])
+        self.stub("2.5.0-dev.3", [], [])
         self.assertEqual(bundle_freshness.reasons(self.bundle()), [])
 
     def test_uncommitted_sources(self):
-        self.stub("2.5.0-dev.3", (1_789_699_000, "c"), ["patches/src/a.kt"])
+        self.stub("2.5.0-dev.3", [], ["patches/src/a.kt"])
         found = bundle_freshness.reasons(self.bundle())
         self.assertEqual(len(found), 1)
         self.assertIn("patches/src/a.kt", found[0])
 
     def test_many_dirty_files_are_summarised(self):
-        self.stub("2.5.0-dev.3", (1_789_699_000, "c"), [f"patches/src/{i}.kt" for i in range(9)])
+        self.stub("2.5.0-dev.3", [], [f"patches/src/{i}.kt" for i in range(9)])
         self.assertIn("and more", bundle_freshness.reasons(self.bundle())[0])
 
     def test_reasons_accumulate(self):
-        self.stub("2.4.0", (1_789_699_652 + 60, "later"), ["patches/src/a.kt"])
+        self.stub("2.4.0", ["patches/src/b.kt"], ["patches/src/a.kt"])
         self.assertEqual(len(bundle_freshness.reasons(self.bundle())), 3)
 
-    def test_a_missing_timestamp_is_itself_a_reason(self):
-        # Silently skipping the age comparison would leave the check nominal again.
+    def test_a_missing_timestamp_is_fine_with_an_exact_source_stamp(self):
         found = bundle_freshness.reasons(self.bundle(timestamp=None))
+        self.assertEqual(found, [])
+
+    def test_a_bundle_without_a_source_commit_is_not_accepted_on_a_timing_guess(self):
+        found = bundle_freshness.reasons(self.bundle(source=None))
         self.assertEqual(len(found), 1)
-        self.assertIn("no Timestamp", found[0])
+        self.assertIn("no source commit stamp", found[0])
 
     def test_an_unreadable_bundle_short_circuits(self):
         p = f"{self.dir}/x.mpp"
-        open(p, "w").write("nope")
+        with open(p, "w") as out:
+            out.write("nope")
         found = bundle_freshness.reasons(p)
         self.assertEqual(len(found), 1)
         self.assertIn("may not be a patch bundle", found[0])
@@ -166,7 +183,7 @@ class Reasons(unittest.TestCase):
         def boom():
             raise bundle_freshness.GitUnavailable("no such path")
 
-        bundle_freshness.last_source_commit = boom
+        bundle_freshness.source_changes = lambda commit: boom()
         found = bundle_freshness.reasons(self.bundle())
         self.assertEqual(len(found), 1)
         self.assertIn("could not say", found[0])

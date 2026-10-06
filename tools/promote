@@ -5,8 +5,8 @@
 #   tools/promote 0.0.1
 #
 # Builds the bump commit on top of `origin/dev` and pushes it to main, so main ends up carrying
-# exactly the code dev was serving plus the version bump. One push, one CI run, and no window where
-# main advertises a `-dev.N` version.
+# exactly the code dev was serving plus the version bump. The branch's gradle.properties changes in
+# one push; patches-bundle.json is updated by CI afterwards, so consumers must wait for that release.
 #
 # This exists because `git push origin dev:main` is one keystroke away from being wrong. It pushes
 # the *local* dev, which is behind `origin/dev` every single time CI has written its release commit
@@ -87,7 +87,7 @@ printf '  %-12s %s\n'       "tag"      "v$VERSION"
 printf '  %-12s https://github.com/%s/releases/download/v%s/patches-%s.mpp\n' \
     "download" "$REPO" "$VERSION" "$VERSION"
 printf '\n  main gains:\n'
-git --no-pager log --no-merges --format='    %s' origin/main..origin/dev | head -20
+git --no-pager log --max-count=20 --no-merges --format='    %s' origin/main..origin/dev
 printf '\n'
 
 read -r -p "Promote to stable? [y/N] " reply
@@ -97,13 +97,15 @@ case "$reply" in
 esac
 
 # Built on origin/dev, never on a local branch — see the header.
-git checkout --quiet -B main origin/dev
+git checkout --quiet --no-track -B main origin/dev
 sed -i.bak -E "s/^version *=.*/version = $VERSION/" gradle.properties && rm -f gradle.properties.bak
 git add gradle.properties
-git commit --quiet -m "chore: bump to $VERSION"
+git commit --quiet -F- <<EOF
+chore: bump to $VERSION
+EOF
 git push origin main
 
-printf '\nPushed. CI is building v%s; watch it with:\n  gh run watch\n' "$VERSION"
+printf '\nPushed. CI is building v%s; check the run URL in GitHub Actions.\n' "$VERSION"
 printf '\nOnce it finishes, put dev back in step with main so the two keep identical history:\n'
 printf '  git fetch origin && git push origin origin/main:dev\n'
 printf '\nThe next pre-release then starts at the version above %s — Morphe ranks every\n' "$VERSION"

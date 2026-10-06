@@ -7,7 +7,7 @@
 #
 #   check_version.sh 1.0.1-dev.1 dev
 #
-# Exits non-zero with an explanation if not. Reads only; changes nothing.
+# Exits non-zero with an explanation if not. May fetch origin/main to check dev's rank.
 
 set -euo pipefail
 
@@ -32,7 +32,7 @@ if [ "$BRANCH" != "dev" ] && [ "$BRANCH" != "main" ]; then
     fail "Releasing from '$BRANCH'. Morphe only reads patches-bundle.json from 'dev' (pre-release) or 'main' (stable)."
 fi
 
-if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(dev|beta|rc|alpha|preview)\.[0-9]+)?$'; then
     fail "'$VERSION' is not a version. Expected MAJOR.MINOR.PATCH, optionally with a -suffix, and no leading v."
 fi
 
@@ -41,8 +41,8 @@ fi
 # compare when it will not parse — under which "1.0.0-pr9" outranks "1.0.0-pr10". The dot is
 # load-bearing, and getting it wrong inverts the order silently. See compare_versions.py.
 if printf '%s' "$VERSION" | grep -q -- '-'; then
-    if ! printf '%s' "$VERSION" | grep -Eq -- '-(dev|beta|rc|alpha|preview)\.[0-9]+$'; then
-        fail "Pre-release '$VERSION' must end in -<dev|beta|rc|alpha|preview>.<number>, e.g. ${VERSION%%-*}-dev.1. Without the dot before the number, Morphe orders the tenth pre-release below the ninth."
+    if [ "$BRANCH" = "main" ]; then
+        fail "'$VERSION' has a pre-release suffix. main is the stable channel; promote a bare version."
     fi
 elif [ "$BRANCH" = "dev" ]; then
     # The mirror of tools/promote's rule that main takes no suffix. Only one direction was
@@ -65,8 +65,11 @@ if [ "$BRANCH" = "dev" ]; then
     # No `|| true`: the comment above says a guard that quietly skips itself is worse than no
     # guard, and that is exactly what the swallowed failure produced -- an unreachable origin/main
     # made the whole ranking check vanish and the script print success.
-    if ! git fetch --quiet --no-tags origin main 2>/dev/null; then
+    if ! git fetch --quiet --no-tags origin +refs/heads/main:refs/remotes/origin/main 2>/dev/null; then
         fail "cannot fetch origin/main, so the dev-beats-main ranking cannot be checked. A dev release that does not outrank main is never offered to anyone, silently."
+    fi
+    if ! git rev-parse -q --verify refs/remotes/origin/main >/dev/null; then
+        fail "origin/main is missing after fetch; dev's rank cannot be checked."
     fi
     if git cat-file -e "origin/main:patches-bundle.json" 2>/dev/null; then
         STABLE=$(git show origin/main:patches-bundle.json | jq -r '.version // ""')
@@ -79,7 +82,9 @@ if [ "$BRANCH" = "dev" ]; then
             "$SCRIPT_DIR/compare_versions.py" --selftest
             # Morphe breaks an exact tie toward dev, so a tie is not invisible — but shipping
             # one version string on both channels is a mistake regardless, so -le rather than -lt.
-            if [ "$("$SCRIPT_DIR/compare_versions.py" "$VERSION" "$STABLE")" -le 0 ]; then
+            RANK=$("$SCRIPT_DIR/compare_versions.py" "$VERSION" "$STABLE")
+            case "$RANK" in -1|0|1) ;; *) fail "version comparator returned '$RANK'" ;; esac
+            if [ "$RANK" -le 0 ]; then
                 fail "main is on $STABLE, and Morphe ranks $VERSION at or below it — a dev release of $VERSION would never be offered, because the manager fetches both channels and serves the higher."
             fi
         fi

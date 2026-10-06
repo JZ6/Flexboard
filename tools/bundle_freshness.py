@@ -13,9 +13,9 @@ Three questions, in order of how badly they catch you:
 
 1. Does the bundle's version match `gradle.properties`? Catches the obvious case -- last release's
    bundle against this release's tree.
-2. Was it built *after* the last commit touching the patch sources? Version is necessary and not
-   sufficient: two bundles can both say `2.5.0-dev.3` and differ by every commit in between, which
-   is the normal state of affairs while iterating on a release.
+2. Does its source commit have the same patch-source tree as HEAD? A build that finished after
+   another local commit can still have been built *from* an older commit. Compare the source trees,
+   not just the wall clocks. Bundles without a source commit cannot prove their provenance.
 3. Are those sources clean? An uncommitted edit cannot be in any bundle, so the answer is no before
    it is asked.
 
@@ -29,12 +29,13 @@ import sys
 import zipfile
 from pathlib import Path
 
-# Changing any of these changes what a bundle would contain, so a bundle older than the newest
-# commit touching them is out of date. `patches-list.json` is deliberately absent: it is generated
+# Changing any of these changes what a bundle would contain; compare their trees at HEAD and at
+# the stamped build commit. `patches-list.json` is deliberately absent: it is generated
 # *by* the release, so it is always newer than the bundle it describes.
 SOURCE_PATHS = [
     "patches/src",
     "extensions",
+    "stubs",
     "gradle/libs.versions.toml",
     # The bundle's MANIFEST is generated from the `about { }` block here, so a changed name or
     # description changes the artifact without touching a line of patch source.
@@ -45,7 +46,7 @@ SOURCE_PATHS = [
 
 
 def manifest_fields(bundle):
-    """`Version` and `Timestamp` from the bundle's MANIFEST.MF, or `(None, None)`."""
+    """`Version` and informational `Timestamp`; only the stamped source SHA proves freshness."""
     try:
         with zipfile.ZipFile(bundle) as z:
             raw = z.read("META-INF/MANIFEST.MF").decode("utf-8", "replace")
@@ -57,6 +58,15 @@ def manifest_fields(bundle):
     stamp = re.search(r"^Timestamp:\s*(\d+)$", unwrapped, re.M)
     return (version.group(1).strip() if version else None,
             int(stamp.group(1)) // 1000 if stamp else None)
+
+
+def source_commit(bundle):
+    """The source commit written into the bundle by CI, or None for an older bundle."""
+    try:
+        with zipfile.ZipFile(bundle) as z:
+            return z.read("flexboard_source_commit.txt").decode("ascii").strip()
+    except (OSError, KeyError, UnicodeError, zipfile.BadZipFile):
+        return None
 
 
 def tree_version():
@@ -88,19 +98,8 @@ def _git(*args):
     """
     done = subprocess.run(["git", *args], capture_output=True, text=True)
     if done.returncode != 0:
-        raise GitUnavailable(done.stderr.strip().splitlines()[:1] or [f"git {args[0]} failed"])
+        raise GitUnavailable((done.stderr.strip().splitlines() or [f"git {args[0]} failed"])[0])
     return done.stdout.strip()
-
-
-def last_source_commit():
-    """`(epoch, subject)` of the newest commit touching the patch sources."""
-    out = _git("log", "-1", "--format=%ct%x09%s", "--", *SOURCE_PATHS)
-    if not out:
-        # git answered, and the answer is that nothing has ever touched these paths. In a repo whose
-        # entire purpose is patching, that means the paths are wrong, not that the tree is pristine.
-        raise GitUnavailable(f"no commit has ever touched {', '.join(SOURCE_PATHS)}")
-    epoch, _, subject = out.partition("\t")
-    return int(epoch), subject
 
 
 def dirty_sources():
@@ -110,11 +109,19 @@ def dirty_sources():
     return [line.split(maxsplit=1)[1] for line in out.splitlines() if len(line.split(maxsplit=1)) > 1]
 
 
+def source_changes(commit):
+    """Tracked patch-source paths changed since the bundle commit (does not include dirty edits)."""
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise GitUnavailable(f"invalid source commit '{commit}' in bundle")
+    _git("cat-file", "-e", f"{commit}^{{commit}}")
+    return _git("diff", "--name-only", commit, "HEAD", "--", *SOURCE_PATHS).splitlines()
+
+
 def reasons(bundle):
     """Every reason this bundle cannot speak for the tree. Empty means it can."""
     found = []
 
-    version, built = manifest_fields(bundle)
+    version, _built = manifest_fields(bundle)
     if version is None:
         return [f"{bundle} has no readable MANIFEST.MF; it may not be a patch bundle"]
 
@@ -124,20 +131,20 @@ def reasons(bundle):
     elif version != want:
         found.append(f"bundle is {version} but gradle.properties says {want}")
 
+    stamped = source_commit(bundle)
+    if stamped is None:
+        found.append("the bundle has no source commit stamp; its build time cannot prove it contains this tree")
     try:
-        commit_at, subject = last_source_commit()
         dirty = dirty_sources()
+        moved = source_changes(stamped) if stamped is not None else []
     except GitUnavailable as why:
         # Loudly unknown rather than quietly fine.
-        return [f"git could not say whether this bundle is current ({why}), so it cannot be trusted"]
+        found.append(f"git could not say whether this bundle is current ({why}), so it cannot be trusted")
+        return found
 
-    if built is None:
-        found.append("the bundle's manifest carries no Timestamp, so its age cannot be checked")
-    elif commit_at > built:
-        ago = (commit_at - built) // 60
-        found.append(
-            f"the patch sources moved {ago} minute(s) after this bundle was built "
-            f'-- "{subject[:60]}"')
+    if moved:
+        shown = ", ".join(moved[:3]) + (" and more" if len(moved) > 3 else "")
+        found.append(f"patch sources differ from the bundle's commit {stamped[:12]}: {shown}")
 
     if dirty:
         shown = ", ".join(dirty[:3]) + (" and more" if len(dirty) > 3 else "")
