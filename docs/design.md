@@ -113,16 +113,16 @@ while both were set to the same text, and not harmless once hotkeys arrived — 
 
 ## Why a hotkey wears the user's own text as its name
 
-Eight hotkey slots need eight names, and there is no Gboard string that means "whatever you typed into
-slot four". Nor is there a numbered icon: matching all 2,170 published Material Icons against the
-APK found 29 bundled shapes and no digits, so the icons are arbitrary markers.
+Eight hotkey slots need names, and there is no Gboard string that means "whatever you typed into
+slot four". An older scan found no numbered icon among its matched Gboard shapes, so Flexboard
+ships its own vector pack, including digits, for the picker. A slot defaults to a distinct icon.
 
 The way out is that the access point carries **both** forms of its label — a resource id and a
 literal `String` — and its accessor returns the literal whenever the resource id is zero. So a
 hotkey sets the id to zero and writes the snippet into the literal.
 
 **Whether that is safe is a question about readers, and it was answered by sweeping for them.** The
-label resource id is read in exactly five places: the copy-constructor, `equals`, `hashCode`, and
+label resource id is read in exactly four places: the copy-constructor, `equals`, `hashCode`, and
 the accessor. Nothing renders from it directly, so zero cannot reach a rendering path. The content
 description is *not* like that — four rendering methods read its id straight off the access point —
 but every one of them guards with `if-eqz` before calling `getString`, so zero means "no resource"
@@ -152,12 +152,12 @@ avoided. `UndoDeletePatch.kt` has the full account.
 Undo is unconditional. It had a switch, outside the master switch's group because Gboard fills the
 same undo slot from the backspace key; both switches are now gone — see below.
 
-## Why flick keys has no runtime switch
+## Why Suggested Settings has no additional runtime switch
 
-It writes Gboard's own preference exactly once, only if it has never been set, so it behaves as a
-default rather than something forced. A runtime switch would therefore do nothing after the first
-run — and a control that silently stops working is worse than no control. Unticking the patch in
-Morphe is the honest way to turn it off.
+Suggested Settings writes each of Gboard's seven preferences only when it has never been set, so
+they behave as defaults rather than forced values. Turn a setting off in Gboard's own UI and it
+stays off. Unticking the patch prevents defaults being written on a fresh installation; it does
+not clear values saved before it was unticked.
 
 The same reasoning does not apply to the glide settings, which are rewritten on every start
 precisely because Gboard must not be left able to break the gesture.
@@ -181,9 +181,8 @@ None of that was buying much. Every one of those facts had to be re-established 
 between them the two switches accounted for most of the port. What they offered a user, Morphe
 already offers properly and for free.
 
-The sliders stay, because their values genuinely vary by thumb and by screen, and because two of
-the three are substitutions of a constructor argument read from a resource — the cheap shape, with
-no scratch registers and no control flow touched.
+The **word-cap slider** stays because its value varies by usage. Its bytecode insertion does use
+scratch registers and branches, so preflight checks liveness on each of the two insertion paths.
 
 The trade is real and worth naming: **glide typing can no longer be handed back from inside
 Gboard.** It is forced off for as long as the patch is applied.
@@ -205,14 +204,15 @@ A greyed row with no explanation is still worse than a tappable one, so a non-se
 above them saying what is doing it and that re-patching without Swipe Left to Delete is the way back.
 [`gboard-settings-ui.md`](gboard-settings-ui.md) covers how the rows are reached and disabled.
 
-## Why the signature bypass stays, though it gates nothing
+## Why the self-signature bypass stays, without changing the debug provider
 
-`docs/roadmap.md` asked whether the bypass patch is still needed. The answer is that nothing needs
-it, and it stays anyway.
+`docs/roadmap.md` asked whether the startup bypass is needed. The self-check gates no feature,
+but an unrelated caller **does** protect an exported debug provider. The patch now bypasses only
+the cold-start call site; it leaves `Lrpv;->a` intact for the provider.
 
 Gboard hashes its own signing certificate and compares it byte-for-byte against three baked-in
 digests. `Lrpv;->a` has exactly two callers. One is `WebDebugBridgeContentProvider;->call`, which
-checks the *caller* of a developer debug provider rather than Gboard. The other is `Lmm;->run()`
+checks the *caller* of an exported developer debug provider rather than Gboard. The other is `Lmm;->run()`
 case 8, scheduled from `LatinApp;->e()` on cold start in the main process — and its entire body is
 the check followed by `return-void`. It throws `IllegalStateException` on failure and does nothing
 on success, so a failing check skips no work, because there is none to skip. No Flexboard
@@ -236,7 +236,7 @@ return when a digest cannot be computed.
 
 ### The methodology note
 
-The static reading of this was that dropping the patch would stop the keyboard starting. Every
+The earlier static reading of this was that dropping the patch would stop the keyboard starting. Every
 individual link in that chain was verified and correct — the construction site, the switch key,
 the guard, the absence of try ranges — and the conclusion was still wrong, because whether an
 uncaught background throw kills the process was never established and could not be, since the

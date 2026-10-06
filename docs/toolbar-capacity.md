@@ -13,26 +13,30 @@ both failed, and the plan that follows from the difference.
 
 ## How Gboard computes the count
 
-`Lmku;->b(I)I` is the sole producer of the rendered count. Its whole body:
+`Lmku;->b(I)I` computes the count. Its full stock 18.0.3 body:
 
 ```
- 0 iget-object   Lmku;->e:Lmjv;
- 1 iget-object   Lmku;->h:Lnmm;      # device class
- 2 sget-object   Lnmm;->f:Lnmm;      # DEVICE_FOLDABLE
- 3 const         0x7f140a43          # foldable_access_points_count_on_bar
- 4 const         0x7f1409af          # access_points_count_on_bar
- 5 iget-object   Lmku;->b:Lqhy;      # preference store
- 6 const/4       -0x1                # default: unset
- 7 invoke-virtual Lcdl;->l(II)I      # read the user's preference
- 9 invoke-virtual Lmjv;->a(II)I      # the gate
-11 return
+ 0 iget-object    v0, v3, Lmku;->e:Lmjv;
+ 2 iget-object    v1, v3, Lmku;->h:Lnmm;       # device class
+ 4 sget-object    v2, Lnmm;->f:Lnmm;           # DEVICE_FOLDABLE
+ 6 if-ne          v1, v2, -> 12
+ 8 const          v1, #0x7f140a43             # foldable count preference key
+11 goto          -> 15
+12 const          v1, #0x7f1409af             # ordinary count preference key
+15 iget-object    v3, v3, Lmku;->b:Lqhy;
+17 const/4       v2, #-1                      # unset
+18 invoke-virtual {v3, v1, v2}, Lcdl;->l(II)I
+21 move-result    v3
+22 invoke-virtual {v0, v3, v4}, Lmjv;->a(II)I
+25 move-result    v3
+26 return         v3
 ```
 
 The gate (`docs/gboard-bindings.md` carries the row):
 
 ```
 Lmjv;->a(pref, cap) = pref >= 0 ? min(pref, cap) : Lmjv;->b(cap)
-Lmjv;->b(cap)       = m() ? min(3, cap) : cap        # reduced mode floors at 3
+Lmjv;->b(cap)       = m() ? min(3, cap) : cap        # reduced mode caps at 3
 ```
 
 and `Lmlh;->C(List)V` then takes `n = min(Lmku;->b(bar.i()), size)`.
@@ -127,9 +131,9 @@ rename:
 The first makes the flag supply a real value; the second lets it past the clamp. With the capacity
 raised and the count left alone:
 
-- an unset preference yields `count = capacity`, so the bar grows;
+- an unset preference yields `count = capacity` in ordinary mode, so the bar grows;
 - removing a button lowers Gboard's preference and `min(pref, capacity)` honours it;
-- reduced mode still floors at 3, as Gboard intends.
+- reduced mode still caps at 3, as Gboard intends.
 
 No insertions, no scratch registers, no liveness analysis, no extension code, and nothing on the
 write side to fight the user with.
@@ -180,7 +184,7 @@ to fill it. Dragging any icon off sets `pref` and hands control back.
 
 ### Pins
 
-Eleven, under `toolbar:` in `tools/apk/preflight.py`, plus three `EXPECTED` values
+Twelve capacity checks, under `toolbar:` in `tools/apk/preflight.py`, plus three `EXPECTED` values
 (`toolbar_capacity_flag`, `toolbar_stock_flag_default`, `toolbar_stock_ceiling`):
 
 - the bar's `<clinit>` and constructor both exist;
@@ -196,7 +200,8 @@ Every one negative-tested by perturbing the pinned value and confirming the fail
 
 ## Verification note
 
-The disassembly above came from `tools/apk/dis.py`. Earlier passes over this code used
-`dexlib.walk`, which silently omits `const-wide` and every `if-*` — it rendered this constructor's
+The disassembly above came from `tools/apk/dalvik_dis.py`. Earlier passes over this code used
+`dexlib.walk` as if it fully decoded `const-wide` and every `if-*` — it rendered this constructor's
 clamp as three unrelated constants and no branches, which is how the ceiling was briefly mistaken
-for unreachable. Use `dis.show()` for anything that reasons about control flow.
+for unreachable. `walk` now yields undecoded rows with None operands; use `dalvik_dis.show()` for
+anything that reasons about control flow.

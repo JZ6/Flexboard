@@ -148,8 +148,9 @@ Rows also cannot refresh at bind time — no bind-hook letter is known to the st
 settings fragment re-paints the rows from the store (icon, and the summary showing the committed
 text) from a **main-looper post inside `aB()`**: inflation finishes synchronously right after
 `aB()` returns the screen id, and a posted runnable necessarily lands after that — after the
-rows exist, before any tap. If the pass finds no rows or no context (cold open before the
-keyboard's first run) it no-ops and the first tap repaints instead (`syncRowIconsOnce`).
+rows exist, before any tap. A cold open can get the Application context through
+`ActivityThread.currentApplication()` even before the IME service exists. If the pass finds a
+missing row or the paint fails, the latch stays unset so a later tap can retry.
 The hotkey rows are deliberately **plain** Preferences: a DialogPreference's onClick shows the
 stock dialog ahead of `aA` (the two-dialogs bug), so no dialog-backed row may sit on this
 screen. Plain rows also own `n()` — the provider-guarded throw only exists on
@@ -172,7 +173,8 @@ doesn't matter to the read; its *name* does, which is what the preflight pin ass
   appcompat/M3 dialog classes (checked 18.0.3); Gboard's own dialogs are built from the same
   primitives. The theme (`alertDialogTheme`, colours, corner shapes) inherits from the host
   Activity, so the chrome reads native; only the content is ours.
-- Every dialog path is wrapped in a typed catch. Any failure — no field, no activity, a
+- Dialog construction and deferred Save/Apply callbacks are wrapped in `catch(Throwable)`. Any
+  failure — no field, no activity, a
   `BadTokenException` — falls back to the no-dialog behavior (a hotkey row reports it in its
   summary instead of showing an editor; import reads the clipboard; export is
   clipboard + summary). The popups are layered on top of the screen, never instead of it.
@@ -192,9 +194,8 @@ doesn't matter to the read; its *name* does, which is what the preflight pin ass
   findPreference — the first is absent, the second is protected (see "Intercepting row clicks").
 - A hotkey edit doesn't reach the toolbar → the write went to a key the toolbar emission does
   not read. `Hotkeys.textKey`/`iconKey` are the single source; the row's XML key must equal
-  `textKey`, and the composite dialog commits from its dismiss hook (Save/back/outside-tap
-  write; Cancel sets the discard flag the hook checks first), then the row's summary is
-  repainted from the store.
+  `textKey`. Only the composite dialog's **Save** callback commits text and icon; Cancel, Back
+  and outside-tap discard. Afterwards the row summary is repainted from the store.
 - Row tap crashes with `Fragment$InstantiationException` → the class name on the row does not
   match the extension class, or the constructor/visibility contract broke.
 - Screen opens blank → `aB()` returned 0 (no Context, or the resource name in the XML and the

@@ -52,7 +52,7 @@ strips its own slider.
 > the second patch on that reading turned vibration off on a Pixel 6 — the slider appeared, moved,
 > and did nothing. What follows is what the method actually does.
 
-The key-release dispatch in `Lpho;->d(View;I)V` checks availability before vibrating:
+The basic-tap branch in `Lpho;->d(View;I)V` checks availability before vibrating:
 
 ```
 n()Z; if FALSE → skip (no vibration)
@@ -78,41 +78,39 @@ So on a modern Pixel with the keypress toggle on, `n()` already returns true and
 to clear. `d:Z` is the toggle itself, read via `Lqhy;->am(String, Z, Z)Z`, so overriding `n()`
 would also override the user's own switch.
 
-`d:Z` is set from a preference/flag observer (`Lfol;->fV`), so it too is server-driven. On a
-modern Pixel (SDK ≥ 33) with `d:Z` true, `n()` returns true and the vibrator path is skipped —
-meaning even forcing the slider visible would leave it inert unless this second gate is also
-cleared.
+`d:Z` follows the user's toggle. On a modern Pixel with that toggle on, `n()` returns **true** and
+vibration remains enabled. Nothing in `n()` needs to be overridden.
 
 ## `f(I)V` — the actual vibration
 
 Gets the `Vibrator`, then:
 
-- `k(Vibrator)` — device supports amplitude control (SDK ≥ 30, `hasAmplitudeControl`, gated by a
-  min-SDK flag `Lphi;->b`):
-  - **yes** → `VibrationEffect.Composition.addEffect(PRIMITIVE_CLICK, scale = duration/128)` —
-    the slider's milliseconds map onto a 0..1 strength scale (capped at 100 ms → 0.78).
+- `k(Vibrator)` — SDK ≥ 30, the minimum-SDK flag `Lphi;->b`, and
+  `Vibrator.areAllPrimitivesSupported(int[]{PRIMITIVE_CLICK})`:
+  - **yes** → `VibrationEffect.Composition.addPrimitive(PRIMITIVE_CLICK, scale = duration/100)` —
+    the slider's value maps onto a 0..1 intensity scale (capped at 100 → 1.0).
   - **no** → `VibrationEffect.createOneShot(duration, amplitude = -1)`.
 - Vibrate with `VibrationAttributes` on SDK ≥ 33, legacy call below.
 
-The press path `e(View;I)V` goes through `View.performHapticFeedback` instead — system-controlled
-regardless of mode; only the release path consumes the slider value.
+The key-release branch uses `View.performHapticFeedback`; the basic-tap branch consumes the
+slider value. Stock Gboard leaves the primitive arm unreachable with minimum SDK 1024, but the
+default-on **Modern keypress haptics** patch lowers it to 30. On devices supporting primitives,
+the slider therefore changes intensity rather than vibration duration.
 
-## Plan: "vibration everywhere" — two patches
+## Shipped: "Vibration Slider Everywhere" — one mode-selector edit
 
-Two binary patches, both "replace the method body with a constant return". Together they make
-the slider appear and work on every device, regardless of the Phenotype cohort or the suppression
-flag.
+Only `Lphn;->b(Context)I` is overwritten. The second edit described below was withdrawn: it turned
+vibration off. The existing user toggle still controls whether vibration runs.
 
 ### Patch 1 — show the slider: force `Lphn;->b(Context)I` → return 1
 
 Makes the settings fragment take the mode-1 branch on every device: toggle + slider stay, gear
 row goes. The key-release dispatch also sees mode 1.
 
-- Fingerprint by shape: the method is reached from `Lqod;->b` (the fragment setup) and from
-  `Lpho;->h()Z` / `Lpho;->e()` — anchored on the `(Landroid/content/Context;)I` static call they
-  make. Nothing else is named.
-- Edit, branchless: replace the first instructions with `const/4 v0, 0x1` / `return v0`. Register
-  count (7) asserted first. Unreachable tail is verifier-safe.
+- Fingerprint by `Lphn;->b(Context)I`, with shape checks before overwriting. Preflight pins its
+  seven-register frame and its opening `sget-object`.
+- Edit, branchless: replace the first instructions with `const/4 v0, 0x1` / `return v0`.
+  Unreachable tail is verifier-safe under the patch's no-try/no-branch-into-head assertions.
 
 ### Patch 2 — withdrawn
 
@@ -126,9 +124,9 @@ that feeds it.
 
 - The slider and "Vibrate on keypress" toggle appear in Gboard's settings on every device.
 - The gear row ("Keyboard vibration → system settings") is gone — Gboard owns vibration.
-- Dragging the slider changes the key-release vibration strength 1:1 (capped at 100 ms by
-  Gboard's own `Math.min(value, 100)` in `i()`).
-- The press tick (system `performHapticFeedback`) stays as Gboard already routes it — unchanged.
+- Dragging the slider changes Gboard's basic-tap effect. Its value is capped at 100; when Modern
+  keypress haptics also runs on supported hardware, it becomes primitive intensity (`value/100`).
+- The separate key-release `performHapticFeedback` branch keeps Gboard's own routing.
 
 ### Considered and rejected
 
@@ -147,15 +145,15 @@ that feeds it.
 ### Preflight pins
 
 - `Lphn;->b(Landroid/content/Context;)I` exists, returns `I`, register count 7.
-- `Lqod;->b` still references all three vibration resource ids (the fragment setup).
-- `Lpho;->d` still calls `n()Z` and `f(I)V` in the release branch.
+- The mode method still opens with `sget-object`. The fragment's three resource ids and tap/release
+  routing are research observations, not preflight pins.
 
 `Lpho;->n()Z` is deliberately no longer pinned: nothing patches it, and a pin in front of no edit
 can only fail a build that would otherwise have been fine.
 
 ### Device test
 
-- **Pixel 6** (the fix target): slider previously absent → now visible; dragging it changes the
-  felt key-release vibration; vibration survives an IME restart; "Vibrate on keypress" off →
+- **Pixel 6** (the fix target): slider previously absent → now visible; check whether dragging it
+  changes the felt basic-tap vibration; vibration survives an IME restart; "Vibrate on keypress" off →
   nothing.
-- **Fold 8** (already working): unchanged — mode was already 1, `n()` already false.
+- **Fold 8** (already working): mode was already 1, and `n()` is true when its toggle is on.

@@ -15,8 +15,9 @@ preflight pins `toolbar_*` and `docs/gboard-bindings.md` for the anchor table).
 
 > **If admission fails, every Flexboard button disappears at once and nothing says why.** The ids
 > are spliced in as text, so a malformed fragment throws inside the patch, Morphe catches it and
-> carries on, and the build ships with the allowed set untouched — `Lmlh.w` then drops every
-> registered access point silently. That shipped in `2.1.1-dev.0` over a `--` inside an XML
+> carries on, and the build ships with the allowed set untouched — `Lmlh.g` refuses to register
+> Flexboard's unadmitted ids and logs `Invalid access point <id> is added`. That shipped in
+> `2.1.1-dev.0` over a `--` inside an XML
 > comment. Run `tools/apk/check_patch_resources.py` after touching anything under
 > `patches/src/main/resources/`; see *A green gate that was not a gate* in `docs/development.md`.
 
@@ -26,14 +27,14 @@ Everything keys on one immutable name set, built **once per controller** from on
 Lmku.<init>(Context, Lmxf):
     getResources().getStringArray(0x7f0300dc)   ← the ONLY read, pinned
     Lvxe.o(array)  →  iput Lmku.c               ← the allowed-id set
-    Lmjv.n(ctx, cfg, sched, Lmku.c, Lwbi.a)     ← handed to the order manager
+    Lmjv.n(ctx, cfg, deviceClass, Lmku.c, Lwbi.a) ← handed to the order manager
 ```
 
 `0x7f0300dc` (`array_0x7f0300dc` under the obfuscated names) is a 43-entry `<array>` of
 `@string/…` references whose values are access-point ids: `sticker`, `gif_search`, `translate`,
 `settings`, `voice`, … and the five dormants (`editor_info`, `undo_cooperative`,
-`muse_toggle_playground_ap`, `jetson_feedback`, `signboard_education`) the current three text
-buttons borrow.
+`muse_toggle_playground_ap`, `jetson_feedback`, `signboard_education`). Flexboard's text action
+buttons now use their own minted ids; `editor_info` is only the array sentinel.
 
 The set gates exactly two places, and both were walked instruction by instruction:
 
@@ -60,10 +61,10 @@ never registered with an AP draw absolutely nothing**. Widening the set alone is
 | Rollback history | the class of bug dead since lanes: dev.3/dev.4 both died in values surgery, both reproduced and fixed on the desk | the pre-rollback hotkeys used it; works, but now covers only the read filter — registration fold still needs the set | — |
 | Drawer-native | yes | yes | yes |
 
-**Recommended: A.** It injects at the single place both gates read, changes zero dex, and every
+**Shipped: A.** It injects at the single place both gates read, changes zero dex, and every
 risk it carries is now mechanically gated: the in-patch DOM-parse assert, lane B's full arclib
-rebuild, and preflight. The dormant-id trick stays for permanent buttons (zero resource churn);
-the widened ids are for *families* of buttons (hotkeys 1–12, future slots) with a `flexboard_`
+rebuild, and preflight. All eleven Flexboard buttons have minted ids: hotkeys 1–8 and three text
+actions. Future slots use the same `flexboard_`
 name prefix so our additions are greppable inside Gboard's own logs.
 
 Option B stays documented in git history (`eb84cf4` patch half, `20b34dd` extension half,
@@ -71,23 +72,26 @@ Option B stays documented in git history (`eb84cf4` patch half, `20b34dd` extens
 from resources to a phenotype flag — that would actually make this *easier*, a values-less
 string write, but is not the case today).
 
-## Implementation sketch (when unpaused)
+## Implementation (shipped; this was the original sketch)
 
 1. `res/values/strings.xml` merge: one `<string name="flexboard_hotkey_N">flexboard_hotkey_N</string>`
-   per admitted id (the value *is* the id — the encoder needs a name and the dex needs the value;
+   per hotkey plus `flexboard_select_all`, `flexboard_copy` and `flexboard_paste` (the value *is*
+   the id — the encoder needs a name and the dex needs the value;
    making them identical keeps both lookups trivial).
 2. `res/values/arrays.xml` merge: find the allowed array by **content sentinel** — the item whose
    referenced string resolves to `editor_info` — never by the obfuscated name; append
    `<item>@string/flexboard_hotkey_N</item>` entries.
-3. Registration code unchanged: buttons register with ids `flexboard_hotkey_N`; both gates pass
+3. Registration code uses the corresponding `flexboard_*` id; both gates pass
    because the set now contains them.
-4. Gates to write before shipping:
-   - preflight: sentinel resolution (`editor_info` present + resolvable), array size = 43 + N,
+4. Gates used for this implementation:
+   - preflight: sentinel resolution (`editor_info` present + resolvable), stock array size 43,
      `Lmku.<init>` reads `0x7f0300dc` exactly once, set stored to field `c`, both consumers
      (`Lmlh.g` contains-check, `Lmjv.c` filter) unchanged in shape (registers/params).
-   - lane B: `VALUE_MERGES` entries for the strings+arrays splices (the lane errors on unmapped
+   - resource lane: `VALUE_MERGES` entries for the strings+arrays splices, including the
+     `43 + N` output-size check (the lane errors on unmapped
      values files — that's today's enforcement; the mapping is the unblock).
    - constants checker: id count shared Kotlin↔Java when hotkeys land.
-5. Bar capacity is a *separate* axis (`definedCountOnBar`, bar ctor) and stays parked: admission
-   ≠ display space. Widened ids with capacity untouched simply wait in the drawer/overflow like
+5. Bar capacity is a *separate* axis (`definedCountOnBar`, bar ctor), shipped as
+   [Bigger Toolbar](toolbar-capacity.md): admission ≠ display space. Widened ids with the patch
+   deselected wait in the drawer/overflow like
    any stock AP would.

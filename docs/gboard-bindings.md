@@ -1,10 +1,10 @@
 # Gboard bindings
 
 Every obfuscated name this project depends on, what it is, and how it was identified. These are
-facts about **one build**, and `COMPATIBILITY_GBOARD` pins the bundle to it precisely so a
-different Gboard is refused rather than mispatched.
+facts about **one build**. `COMPATIBILITY_GBOARD` records that build as advisory metadata; Morphe
+does not enforce it, so test the bindings on the actual APK before applying a different version.
 
-Kept as a document as well as in `GboardBindings.kt` because the derivation is the expensive part
+Kept as a document as well as in `Constants.kt` and the feature `Fingerprints.kt` files because the derivation is the expensive part
 and does not survive in code.
 
 ## The 17.7.7 → 18.0.3 move
@@ -67,14 +67,15 @@ actually do:
 | undo re-commit | the one `AbstractIme->…(L…;Z)V` call in the dispatcher | `s` and `t` are indistinguishable by shape |
 | committable text | the parameter type of that call | falls out of the same match |
 | slot field, availability, clear | the register the Optional getter is called on, walked out from the re-commit | `()Z` has three candidates on the slot, `()V` has nine |
-| store `getInt` | the `(String, I)I` that does **not** call `Integer.parseInt` | its sibling reads the value as text |
+| store `getInt` | the `(String, I)I` that **does** call `Integer.parseInt` | Flexboard's slider values are stored as text; its typed sibling would throw |
 | store `contains` | the `(I)Z` that calls `SharedPreferences.contains` | its sibling delegates to a boolean getter |
 
 Still pinned, and safely so — each was checked to be **signature-unique** on its class, so a rename
 makes it vanish rather than letting the letter survive on the wrong member. `checkPreferenceStorePins`
 and the existence helpers in `shared/Resolve.kt` assert they are still there:
 
-`Lqhy;->I(Context)`, `Lqhy;->k(String,Z)Z`, `LatinIme->y`, and the slot's `a()Lj$/util/Optional;`.
+`Lqhy;->I(Context)` is checked by `checkPreferenceStorePins`. The slot field and Optional getter
+are derived from the dispatcher's re-commit path, not pinned by those old letters.
 
 ### Nothing writes a preference through the store any more
 
@@ -156,12 +157,12 @@ real names, because layouts address them as strings and R8 cannot rename what XM
 | `Lmlh;->C(Ljava/util/List;)V` | The split. `n = min(Lmku;->b(bar.i()), size)`; `subList(0, n)` goes to the bar via `Lmhm;->m(List)`, the rest to the panel via `Lmhp;->m(List)`. |
 | `Lmku;->b(I)I` | **The icon count.** Gboard's own name for it, from the log line in `Lmlf;->c()V`: `definedCountOnBar`. Takes the capacity as an argument and puts it through both gates below, so its return value — not `->m:I` — is what decides how many icons land on the bar. Five callers, and two different capacities reach it: `Lmlh;->C` passes the bar's `m`, while `Lmln;->fn` passes a theme attribute (`0x7f0400ad`, default 5) with no bar in sight. |
 | `Lmlf;->c()V` | `AccessPointsListHolderController$7.onFinishUpdatingOrder`, and the anchor for the above. Logs `oldVisibleCountOnBar %d, currentVisibleCountOnBar %d, definedCountOnBar %d` and contains exactly one `(I)I` call — so a string R8 cannot rewrite names the value the obfuscated letter returns. |
-| `Lmku;->b:Lqhy;` | The preference store, `Lqhy;->I(context)` cached in `<init>`. Read inside `b(I)I` itself, which is where `toolbarCountPatch` derives it — no `Context` needed at the insertion point. |
+| `Lmku;->b:Lqhy;` | The preference store, `Lqhy;->I(context)` cached in `<init>`. An older, removed count-insertion patch read it here. |
 | `Lmku;->h:Lnmm;` | The device class, and what `b(I)I` picks its preference key on. Written in `<init>` from `Lnmp;->a()`, and again by `Lmkt;->a(Lnmm;)V`, the change listener — which also calls `Lmku;->d()` to rebuild. So it is **live**: opening a fold changes the class and therefore the key. |
-| `Lnmm;` | `DEVICE_PHONE` `a`, `DEVICE_TABLET` `b`, `DEVICE_TV` `c`, `DEVICE_WATCH` `d`, `DEVICE_CAR` `e`, **`DEVICE_FOLDABLE` `f`**, `DEVICE_TABLET_LARGE` `g`, `DEVICE_TABLET_HUGE` `h`, `DEVICE_UNKNOWN` `i`. The names are literals in `<clinit>`, so a constant can be identified by name even though its field cannot — which is how `toolbarCountPatch` tells the foldable branch from the tablet one beside it. |
+| `Lnmm;` | `DEVICE_PHONE` `a`, `DEVICE_TABLET` `b`, `DEVICE_TV` `c`, `DEVICE_WATCH` `d`, `DEVICE_CAR` `e`, **`DEVICE_FOLDABLE` `f`**, `DEVICE_TABLET_LARGE` `g`, `DEVICE_TABLET_HUGE` `h`, `DEVICE_UNKNOWN` `i`. An older, removed count patch used the foldable literal to identify its branch. |
 | `Lnmp;->a()Lnmm;` | `DeviceModeNotification.getCurrentDeviceMode`, unobfuscated in its own log strings. Returns `DEVICE_UNKNOWN` before the notification initialises. |
 | `Lmjv;->a(II)I` | `pref >= 0 ? min(pref, cap) : b(cap)`. **The preference can only lower the count.** |
-| `Lmjv;->b(I)I` | `m() ? min(3, cap) : cap` — the reduced-mode floor. |
+| `Lmjv;->b(I)I` | `m() ? min(3, cap) : cap` — the reduced-mode cap. |
 | `Lmjr;->b(Landroid/content/Context;Z)Z` | Gboard's own "reduce your toolbar icons" flow, which writes the same preference. |
 
 Preference ids: `0x7f1409af` = `access_points_count_on_bar`, `0x7f140a43` =
@@ -213,7 +214,9 @@ button from throwing `NotFoundException` while the bar is being built.
 `Lmic;->b(Landroid/content/Context;)Drawable` is the same shape for the icon: the literal `Icon` if
 there is one, otherwise `null`, with the resource-id path elsewhere.
 
-How the capacity is computed, and the shape the second of the patch's two insertions anchors on.
+How the capacity is computed (stock 18.0.3). The previous patch inserted into this constructor;
+the shipped Bigger Toolbar patch has **no insertions**. It changes the flag default and the
+constructor's `const/16 v5, #8` ceiling only. See [toolbar-capacity.md](toolbar-capacity.md).
 Worth reading with the row above in mind: this is the number that shipped patched in `1.1.0-dev.1`
 with nothing to show for it, because the table already said `Lmjv;->a` can only lower the count and
 that fact was not carried through to the conclusion.
@@ -227,18 +230,12 @@ that fact was not carried through to the conclusion.
 72: iput v4, v6, ->m:I
 ```
 
-`toolbarCountPatch` inserts before offset 72 and leaves the `iput` alone, so the field's obfuscated
-letter is never written down. **This insertion is bookkeeping, not the feature** — it keeps the
-bar's own "am I full?" tests agreeing with the count set at `Lmku;->b(I)I`, and on its own it moves
-nothing. It finds the site by walking from the single `Lnxp;->g()` call to the
-single following `iput` whose **field type** is `I` — filtering on the opcode would also match
-`->e:F` and `->f:F` at 79 and 85, since `iput` (`0x59`) covers int and float alike, and starting
-after the flag call is what excludes `->y:I` at 31.
+**Historical (removed):** `toolbarCountPatch` inserted before offset 72. The current Bigger Toolbar
+patch finds `const/16 v5, #8` between the flag read and the `iput` and rewrites that literal; it
+never writes the count preference.
 
-`v2` and `v5` are dead at offset 72; `v0` (the `TypedArray`), `v1`, `v3` and `v7` (the `Context`) are
-not. Offset 72 is also the start of a `try` range covering 72–86 whose handler recycles the
-`TypedArray` and rethrows — benign in both directions, since a throw propagates out of the
-constructor either way.
+The old insertion's liveness analysis (`v2`/`v5` free at 72, `v0`/`v1`/`v3`/`v7` live) is historical.
+No scratch registers are borrowed by the current literal-only patch.
 
 ## Gesture and decoding
 
@@ -263,21 +260,21 @@ the scrub engine does.
 
 ## Resources
 
-Gboard is built with aapt2 `--collapse-resource-names`. Of **33,287** resource entries, only
-**619** keep a real name; the rest read `0_resource_name_obfuscated`. Files are packed flat under
+Gboard is built with aapt2 `--collapse-resource-names`. Of **34,029** resource entries, only
+**630** keep a real name; the rest read `0_resource_name_obfuscated`. Files are packed flat under
 obfuscated paths (`res/aDh.xml`), and the resource table is the only way back.
 
 | Resource | Id | Packed path |
 |---|---|---|
-| `enable_gesture_input` (glide preference) | `0x7f14097b` | — (string) |
-| `enable_scrub_delete` (scrub preference) | `0x7f140995` | — (string) |
-| Latin keyboard layout | `0x7f170779` | `res/aDh.xml` — **name collapsed** |
-| `xml/settings` | `0x7f170e7e` | `res/B_o.xml` |
-| `xml/settings_legacy` | `0x7f170e7f` | `res/IeH.xml` |
-| `xml/setting_gesture` | `0x7f170e70` | `res/J_u.xml` |
-| the `<include>` in the Latin layout | `0x7f170e54` | `res/bsB.xml` — **name collapsed** |
+| `enable_gesture_input` (glide preference) | `0x7f140a05` | — (string) |
+| `enable_scrub_delete` (scrub preference) | `0x7f140a1f` | — (string) |
+| Latin keyboard layout | `0x7f1706ec` | `res/aDh.xml` — **name collapsed** |
+| `xml/settings` | `0x7f170f34` | `res/B_o.xml` |
+| `xml/settings_legacy` | `0x7f170f35` | `res/IeH.xml` |
+| `xml/setting_gesture` | `0x7f170f22` | `res/J_u.xml` |
+| the `<include>` in the Latin layout | `0x7f170f06` | `res/bsB.xml` — **name collapsed** |
 
-Only 33 `xml` names survive, and they are the settings screens plus the framework-mandated
+Only 37 `xml` names survive, including the settings screens and framework-mandated
 `method`, `file_provider_paths` and `spell_checker`. That is exactly why a resource patch can
 address `res/xml/settings.xml` but not the keyboard layout — Android resolves those few by name at
 runtime, so they could not be collapsed.
@@ -286,9 +283,9 @@ Resolve ids with [`../tools/apk/arsc.py`](../tools/apk/README.md).
 
 ### Material icons Gboard bundles
 
-Drawable names are collapsed too, so an icon can only be found by its geometry. Matching **all
-2,170 published Material Icons** against the APK's 496 vector drawables gives the complete list of
-what a patch can put on a button without shipping an image of its own: **29 shapes, at 35 ids.**
+Drawable names are collapsed too, so an icon can be found by its geometry. An earlier matching
+pass found **29 shapes at 35 ids** among published Material Icons. Compact SVG arcs and other
+non-path shapes can elude the research parser, so absence from that list is not proof of absence.
 
 | Glyph | Id(s) |
 |---|---|
@@ -346,15 +343,15 @@ How this is done, and how to regenerate it after a Gboard bump, is in
 
 Tools and worked examples are in [`../tools/apk/`](../tools/apk/README.md).
 
-1. **Resolve by exact signature, never by name.** `GboardMethodTarget.resolve` matches defining
-   class, name, parameter types and return type, and throws `Could not find <reference>` on a
+1. **Resolve by exact signature, never by name alone.** `Fingerprint` and the shared
+   `checkMethodExists` compare the full method descriptor and fail loudly on a
    miss. That is deliberate: a partial match on a renamed build is worse than a hard failure.
 2. **Find a method by its call site, not its name.** Obfuscated names carry no meaning and
    sibling methods share signatures. What identifies `at` among `ar`/`at`/`ay` is that
    `Lgmb;->c()V` passes the glide resource id to it.
 3. **Use unobfuscated neighbours as anchors.** Framework classes, `com.google.android.libraries.*`
    names, and log strings survive minification and are the fastest way into an unfamiliar area.
-4. **Assert frames, do not adapt to them.** `requireRegisterCount` turns a Gboard change into a
+4. **Assert frames, do not adapt to them.** `assertRegisterCount` turns a Gboard change into a
    loud patch-time failure instead of a register that silently means something else.
 
 ## Preference keys and the store API
@@ -394,13 +391,12 @@ aapt2 recompiles, long after the bytecode patch runs, so only a literal key can 
 
 ### Finding which resource id a method uses
 
-`dexlib.walk()` does **not** report `const` literals, so scanning it for a resource id returns zero
-matches whether or not the id is used. Verified: `0x7f0c00ef` is `const v1, 0x7f0c00ef` at offset 4
-of `ScrubMotionEventHandler.<init>` and the walk finds nothing. Search the raw instruction bytes
-instead, the same way `res/**.xml` is searched:
+`dexlib.walk()` reports `const` literals as **hex strings**. For `0x7f0c00ef` at pc 4 of
+`ScrubMotionEventHandler.<init>` it yields `"0x7f0c00ef"`; compare with `int(text, 0)`, not an int
+against a string. It still does not decode `const-wide` operands. A raw-byte alternative is:
 
 ```python
-needle = struct.pack('<I', 0x7f140977)
+needle = struct.pack('<I', 0x7f140a05)
 raw = d.b[c['insns_off']:c['insns_off'] + c['insns_size'] * 2]
 if needle in raw: ...
 ```

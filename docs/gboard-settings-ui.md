@@ -16,15 +16,16 @@ dead ends are kept alongside what replaced them rather than deleted.
 > **Update (1.4.0):** the extension Activity this document builds up to is gone. The settings
 > screen is hosted natively now — the row names the extension's fragment via `android:fragment`
 > and Gboard's own settings stack does the rest; the values cross into the store through the
-> datastore bridge. Everything below about preference contexts is still true for the pieces that
-> write the store without the UI (the first-run seed), but read
+> datastore bridge. The old first-run seed is gone; the extension still writes Gboard preferences
+> through its device-protected SharedPreferences file. Read
 > [`gboard-settings-hosting.md`](gboard-settings-hosting.md) for the mechanism that superseded
 > the Activity.
 
 ## Why bother
 
-Flexboard writes the glide typing setting off while the gesture is on, and writes it back when
-the gesture is turned off. That works, but it leaves one bad interaction: if the user ticks glide
+Flexboard writes the glide typing setting off while Swipe Left to Delete is applied. Removing the
+patch does not automatically restore it; turn it back on in Gboard's settings. The original design
+had a switch that wrote it back, and it left one bad interaction: if the user ticks glide
 typing back on in Gboard's settings, Flexboard either fights them — silently unticking a box they
 just ticked, which reads as a bug even when it is working — or lets the conflict happen.
 
@@ -307,11 +308,9 @@ Where that happens, elimination is the best available: four rows, one is glide t
 on it, and of the two left Glide delete comes first. Assert the counts so a *shape* change fails
 loudly, and accept that a *reorder* would not be caught.
 
-What makes that acceptable here is the pin. `COMPATIBILITY_GBOARD` fixes the bundle to one build by
-version and signature, so a reorder cannot arrive without failing that gate first — and it is a
-milder bet than the hardcoded resource ids elsewhere in the project, which would silently write the
-wrong *preference* rather than grey the wrong *row*. Prefer a positional anchor whose worst case is
-cosmetic, and say in the code that it is positional.
+The positional anchor is acceptable because a reorder's worst case is cosmetic: greying the wrong
+row. `COMPATIBILITY_GBOARD` is advisory metadata, not a gate; a different Gboard build can reach
+the patch. Prefer a positional anchor only when its failure mode is explicit and tolerable.
 
 ### Writing where Gboard reads — the file name is not enough
 
@@ -340,8 +339,8 @@ under `/data/user/<user>/<pkg>/shared_prefs/`. Same file name, two unrelated fil
 
 Gboard does this because a keyboard has to work at the lock screen, before the device is unlocked
 and credential-encrypted storage is available. Any patch or extension writing preferences Gboard
-reads has to resolve the same context — `FlexboardSettingsActivity.preferenceContext()` mirrors
-those three lines rather than paraphrasing them.
+reads has to resolve the same context — `Preferences.deviceProtected()` in the extension follows
+those three steps. The old `FlexboardSettingsActivity` was removed.
 
 Nothing on the bytecode side was ever affected: it reads through `Lpnp;` itself, so it always got
 the right file. Only code outside the store had to know.

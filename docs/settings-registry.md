@@ -1,5 +1,10 @@
 # Conditional settings rows: the patch-time selection registry
 
+**Status: shipped.** The registry and the balanced section sentinels are in
+`SettingsSections.kt`/`SettingsScreenPatch.kt`; this document records the original design.
+`check_shared_constants.py` checks section names against the enum and
+`check_patch_resources.py` mirrors the filter in the resource replay.
+
 ## The problem
 
 `flexboard_settings.xml` is one static file with every row: if a patch isn't ticked in Morphe,
@@ -77,19 +82,21 @@ Sentinel comments around each category:
 
 `writePatchResource` already does placeholder substitution; a section filter that drops blocks
 between `@SECTION_X@` and `@END_SECTION_X@` when `X` isn't in the registry is a regex pass
-before the parse check. The checkers parse the template and are untouched.
+before the parse check. Both checkers were updated to understand section sentinels; treating them
+as untouched once made the resource lane fail before it replayed anything.
 
-## What changes
+## Files changed when this design shipped
 
 | file | change |
 |---|---|
-| `shared/SettingsSections.kt` | **new** — enum + mutable set |
+| `shared/SettingsSections.kt` | enum + mutable set; section names checked against XML sentinels |
 | `shared/SettingsScreenPatch.kt` | clear in `execute`, filter in `finalize`, gate the icon-drawable loop on HOTKEYS |
 | `swipetodelete/ScrubDeleteAnywherePatch.kt` | one line: register SWIPE_TO_DELETE in `execute` |
 | `toolbar/ToolbarHotkeysPatch.kt` | one line: register HOTKEYS in `execute` |
 | vibration patches (once they want settings rows) | same one line |
 | `resources/xml/flexboard_settings.xml` | sentinel comments around Swipe and Hotkeys categories |
-| `.github/scripts/check_shared_constants.py` | untouched — checks the template, not the output |
+| `.github/scripts/check_shared_constants.py` | checks sentinel names against the enum |
+| `tools/apk/check_patch_resources.py` | mirrors filtering and checks the resource output |
 
 No extension code changes. No bytecode changes beyond the patch registrations. No new
 fingerprints. No Morphe API surface beyond what already exists.

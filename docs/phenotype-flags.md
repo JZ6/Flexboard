@@ -19,16 +19,18 @@ That applies to *all* flag types, which matters more than it first appears — s
 
 ## The inventory
 
-18.0.3 declares **884 boolean flags** through the boolean factory
-(`Lnxs;->a(Ljava/lang/String;Z)Lnxp;`) in a `<clinit>`. **717 of them ship `false`.**
+18.0.3 declares **822 boolean flags** through the boolean factory
+(`Lnxs;->a(Ljava/lang/String;Z)Lnxp;`) in a `<clinit>`. **662 ship `false`** and one default is
+unresolved. The earlier scanner counted 62 non-boolean declarations by borrowing the next flag's
+factory call; it is no longer part of this inventory.
 
-Of those 717:
+Of those 662:
 
 | | count | meaning |
 |---|---|---|
-| provably inert | 46 | the flag object is stored in a field no instruction anywhere reads |
-| companions look server-delivered | 16 | download groups, locale allowlists, version allowlists nearby |
-| neither | 655 | nothing static to say about them |
+| provably inert | 40 | the flag object is stored in a field no instruction anywhere reads |
+| companions look server-delivered | 14 | download groups, locale allowlists, version allowlists nearby |
+| neither | 608 | nothing static to say about them |
 
 `tools/apk/flagscan.py` produces this. Read its docstring before trusting any of it — the middle
 row is a weak signal and is scored against known outcomes in the tool's own output.
@@ -141,7 +143,7 @@ The eligibility check is `Lmev;->B(Landroid/content/Context;)Z`, and it requires
 |---|---|---|
 | 1 | `enable_agentic_dictation` | boolean `0` — forceable |
 | 2 | `config_agentic_dictation` | boolean `1` — already on |
-| 3 | `enable_jetson_in_toolbar` | boolean — forceable |
+| 3 | `enable_jetson_in_toolbar` | boolean `1` (shares config_agentic_dictation's constant) — already on |
 | 4 | `ModuleManager` reports `Lmql;` enabled | module registration |
 | 5 | `Lmqk;->b(Context)` | reads the user preference `enable_jetson`, default off |
 | 6 | `Lmqk;->c()` | **`ad_activation_type == 2`** |
@@ -241,7 +243,8 @@ the token `grammar` finds nothing alarming, while the token a program would deri
 `grammar_checker`, finds `grammar_checker_manifest_uri` and condemns a flag that works. Same flag,
 same dex, opposite verdict, decided by a parameter picked with hindsight.
 
-Automated over all 717, scored against the seven known outcomes, the classifier gets **3 of 7**:
+Automated over all 662 off-by-default flags, scored against the seven known outcomes, the
+classifier gets **3 of 7**:
 
 | | scan says | |
 |---|---|---|
@@ -254,12 +257,12 @@ Automated over all 717, scored against the seven known outcomes, the classifier 
 | `offline_translate` (inert) | no objection | miss |
 
 It catches 2 of the 5 duds, wrongly condemns 1 of the 2 that work, and clears the fatal one. A
-shortlist of 655 is not a shortlist. This is not close to gate quality and it is not being used as
+shortlist of 608 is not a shortlist. This is not close to gate quality and it is not being used as
 one.
 
 A bug found along the way is worth keeping in mind for anything similar: the field descriptor from
 the write side carried its `:Lnxp;` type suffix and the read side did not, so nothing matched and
-**all 717 flags looked provably inert** — including the two known to work. The only reason that was
+**all flags then counted looked provably inert** — including the two known to work. The only reason that was
 caught in seconds is that the tool prints its verdicts against known outcomes every run. Any
 classifier built here should keep a scorecard of cases whose answers are already known, and print it
 whether or not anyone asked.
@@ -283,16 +286,16 @@ read at runtime rather than at patch time, and an insertion point that is obfusc
 version-specific.
 
 The read hook is the more capable design and the reason the flag list here is short. It has not been
-built because the two flags that work do not need it.
+built because the currently selected flags do not need it.
 
 ## What this means in practice
 
 - **Device-verify before default-on.** Nothing in CI can tell whether a forced flag works; there is
   no device in the pipeline and no log access from a released build. Every flag ships opt-in until
   it has been watched working.
-- **One patch per flag while a flag set is unproven.** Bisecting a compiled-in list costs a release
-  per step. Bisecting checkboxes costs an install per step. That change alone turned a four-release
-  hunt into a three-install one.
+- **Test unproven flags separately before grouping them.** Bisecting a compiled-in list costs a
+  release per step. The four individually tested but unconfirmed flags are now one default-off
+  patch for optional retesting; only the two observed working ship default-on.
 - **Expect roughly two in seven.** Most flags shipping `false` are off for everyone — experiments,
   staged rollouts, dead code — and forcing one of those on enables an unfinished path rather than
   restoring a feature.
