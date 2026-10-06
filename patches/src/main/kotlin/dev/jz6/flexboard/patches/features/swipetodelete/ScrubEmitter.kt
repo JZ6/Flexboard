@@ -27,8 +27,7 @@ private const val STOCK_START_KEYCODE = 67
 private const val WILDCARD_START_KEYCODE = "-0x1"
 
 /**
- * `Lpvs;`, the per-handler config. Used to bound the scan proving three registers dead; now only to
- * confirm the keycode constant being replaced is the one feeding it.
+ * `Lpvs;`, the per-handler config. Its first argument is the start keycode.
  */
 private const val CONFIG_CONSTRUCTOR = "Lpvs;-><init>(IZIIIIII)V"
 
@@ -118,14 +117,15 @@ internal fun MutableMethod.writeWildcardStartKey() {
         "The keycode constant is at $keyIndex, after the $CONFIG_CONSTRUCTOR call at $configIndex"
     }
 
-    // Order alone does not prove the constant feeds the config: a future build could have another
-    // `const/16 …, 67` earlier in the method and nothing here would say so. Assert the call reads
-    // the exact register the constant landed in, so that build fails loudly instead of being
-    // rewritten on position.
+    // The constructor's first argument (after its receiver) is the keycode. Merely appearing
+    // anywhere in its register list would also match an unrelated number.
     val configCall = instructions[configIndex]
-    check((0 until configCall.invokeRegisterCount()).any { configCall.invokeRegisterAt(it) == startKeyRegister }) {
-        "The keycode constant is in v$startKeyRegister, which the $CONFIG_CONSTRUCTOR call at " +
-            "$configIndex never reads — the constant being replaced is not the one feeding the config"
+    check(configCall.invokeRegisterCount() == 9 && configCall.invokeRegisterAt(1) == startKeyRegister &&
+          (keyIndex + 1 until configIndex).none { index ->
+              startKeyRegister in instructions[index].destinationRegistersOrEmpty()
+          }) {
+        "The keycode constant in v$startKeyRegister no longer feeds argument 1 of " +
+            "$CONFIG_CONSTRUCTOR at $configIndex without an intervening write"
     }
 
     replaceInstruction(keyIndex, "const/16 v$startKeyRegister, $WILDCARD_START_KEYCODE")
@@ -326,26 +326,31 @@ internal fun MutableMethod.trackAcrossFullKeyboard() {
             "there is no single register this patch can safely read the sentinel from"
     }
 
-    // Both registers are read at the insertion point but derived from instructions well before it
-    // — the view register some twenty instructions earlier. Ordering was asserted above; that is
-    // not the same as liveness. Nothing here proves the registers still hold what they held at the
-    // derivation, and R8 is free to reuse a register once its last stock read is gone. So assert
-    // it: if anything between the derivation and the insertion writes either register, the values
-    // this emission reads are not the ones it was reasoned about, and the emitted
-    // `getHeight`/`iget` would run against whatever replaced them.
-    val borrowed = mapOf(
-        viewRegister to "the $KEYBOARD_VIEW_GET_WIDTH receiver",
-        configRegister to "the $CONFIG_START_KEY_FIELD holder",
+    // Follow each register from the actual field load that defined it, not from getWidth: the
+    // Context/config was loaded much earlier, and the Rect later than getWidth's receiver. A
+    // single width-based scan misses both regions, especially a reused Rect register.
+    fun source(register: Int, field: String): Int =
+        (0 until bottomIndex).lastOrNull { index ->
+            body[index].opcodeName() == "IGET_OBJECT" && body[index].usesField(field) &&
+                (body[index] as OneRegisterInstruction).registerA == register
+        } ?: error("No $field load into v$register precedes the full-height insertion")
+
+    val borrowed = listOf(
+        Triple(viewRegister, "the keyboard view", source(viewRegister,
+            "$SCRUB_MOTION_EVENT_HANDLER->d:$KEYBOARD_VIEW")),
+        Triple(configRegister, "the scrub config", source(configRegister, CONFIG_FIELD)),
+        Triple(rectRegister, "the tracking Rect", source(rectRegister,
+            "$SCRUB_MOTION_EVENT_HANDLER->h:$RECT")),
     )
-    body.subList(widthIndex + 1, bottomIndex + 1).forEach { instruction ->
-        // Wide writes take two registers, so a `-wide` landing on v4 clobbers v5 as well.
-        instruction.destinationRegistersOrEmpty().forEach { written ->
-            val what = borrowed[written] ?: return@forEach
-            error(
-                "v$written — $what — is overwritten by `${instruction.opcodeName()}` between the " +
-                    "derivation at $widthIndex and the insertion at ${bottomIndex + 1} in " +
-                    "$SCRUB_MOTION_EVENT_HANDLER->g; it no longer holds the value this patch reads",
-            )
+    check(borrowed.map { it.first }.distinct().size == borrowed.size) {
+        "The view, config and Rect registers overlap at ${bottomIndex + 1}: $borrowed"
+    }
+    borrowed.forEach { (register, what, origin) ->
+        body.subList(origin + 1, bottomIndex + 1).forEach { instruction ->
+            check(register !in instruction.destinationRegistersOrEmpty()) {
+                "v$register — $what — was overwritten by `${instruction.opcodeName()}` between " +
+                    "its load at $origin and the insertion at ${bottomIndex + 1}"
+            }
         }
     }
 

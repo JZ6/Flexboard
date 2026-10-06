@@ -27,6 +27,10 @@ internal fun Element.androidAttribute(localName: String): String? {
 }
 
 internal fun Element.setAndroidAttribute(localName: String, value: String) {
+    // Morphe parses without namespace awareness. Such a document already has a literal
+    // `android:foo` node; setAttributeNS would add a second attribute and the identity
+    // transformer would serialize the *old* value while getAttributeNS sees the new one.
+    removeAttribute("android:$localName")
     setAttributeNS(ANDROID_NS, "android:$localName", value)
 }
 

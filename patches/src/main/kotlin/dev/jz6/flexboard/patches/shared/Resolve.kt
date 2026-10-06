@@ -78,6 +78,13 @@ internal fun checkInvokeKind(
         "$what emits ${kind.mnemonic} for $descriptor, which is ${if (isStatic) "" else "not "}" +
             "static — the call would assemble and fail to verify on the device"
     }
+    if (isStatic) return  // Static methods on interfaces also use invoke-static.
+    if (isInterface && AccessFlags.PRIVATE.isSet(method.accessFlags)) {
+        check(kind == InvokeKind.DIRECT) {
+            "$what emits ${kind.mnemonic} for private interface method $descriptor; use invoke-direct"
+        }
+        return
+    }
     check(isInterface == (kind == InvokeKind.INTERFACE)) {
         "$what emits ${kind.mnemonic} for $descriptor, but $owner is " +
             "${if (isInterface) "an interface" else "a class"} — invoke-interface and " +
@@ -85,9 +92,7 @@ internal fun checkInvokeKind(
             "IncompatibleClassChangeError at the call site"
     }
 
-    // Direct versus virtual, which for a long time this did not check at all -- so the one
-    // production `invoke-direct` in the project was covered by a function whose whole stated
-    // purpose is catching exactly this. dexlib2 splits them into two lists, and that split is the
+    // Direct versus virtual. dexlib2 splits them into two lists, and that split is the
     // dex format's own: a private method, a constructor or a static is dispatched directly, and
     // everything else through the vtable. Spelling either one the other way assembles cleanly and
     // throws at the call site, which is the failure this exists to convert into a refused patch.
@@ -106,15 +111,20 @@ internal fun checkFieldExists(lookup: ClassLookup, descriptor: String, what: Str
     val owner = descriptor.substringBefore("->")
     val name = descriptor.substringAfter("->").substringBefore(":")
     val type = descriptor.substringAfter(":")
-    val found = when (val resolved = findField(lookup, owner, name)) {
+    val found = when (val resolved = findFieldOfType(lookup, owner, name, type)) {
         is FieldLookup.Found -> resolved.field
         // Saying nothing beats failing a patch on a framework class this cannot see. The same
         // choice checkAssignable makes, for the same reason.
         is FieldLookup.Unknowable -> return
-        FieldLookup.Absent -> error(
-            "$what refers to $descriptor, but neither $owner nor anything above it declares " +
-                "`$name`, and the whole chain was readable inside the APK",
-        )
+        FieldLookup.Absent -> {
+            val sameName = (findField(lookup, owner, name) as? FieldLookup.Found)?.field
+            if (sameName != null) {
+                error("$what refers to $descriptor, but `$name` is a ${sameName.type} — the " +
+                      "letter survived on a field of a different type")
+            }
+            error("$what refers to $descriptor, but neither $owner nor anything above it " +
+                  "declares `$name`, and the whole chain was readable inside the APK")
+        }
     }
     check(found.type == type) {
         "$what refers to $descriptor, but `$name` is a ${found.type} — the letter survived on a " +

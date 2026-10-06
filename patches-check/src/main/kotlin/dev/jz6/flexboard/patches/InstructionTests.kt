@@ -2,6 +2,9 @@ package dev.jz6.flexboard.patches
 
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction11x
+import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction11n
+import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction10x
+import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction10t
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction12x
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction21c
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction22c
@@ -13,6 +16,8 @@ import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodRefere
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableStringReference
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import dev.jz6.flexboard.patches.shared.booleanFlagCallIndex
+import dev.jz6.flexboard.patches.shared.assertNotReadBeforeWritten
+import dev.jz6.flexboard.patches.shared.assertTailReturnUntargeted
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.destinationRegisterOrNull
 import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
@@ -103,6 +108,12 @@ private fun flagSites() {
     equal("a mention that calls something else is not a site", "null",
         booleanFlagCallIndex(foreign, 0).toString())
 
+    val nextFlag = listOf(name("a_long_flag"), otherCall, name("a_boolean_flag"), factoryCall())
+    equal("the next flag's boolean factory is not borrowed", "null",
+        booleanFlagCallIndex(nextFlag, 0).toString())
+    equal("the real boolean flag still resolves", "3",
+        booleanFlagCallIndex(nextFlag, 2).toString())
+
     // The window is five, and it is a real boundary rather than decoration.
     val justInside = listOf(name("enable_x")) + List(4) { filler() } + listOf(factoryCall())
     equal("a factory call at the edge of the window counts", "5",
@@ -137,6 +148,7 @@ private fun encodings() {
     equal("3rc third", "14", range.invokeRegisterAt(2).toString())
 
     rejects("an offset past the end of a 35c invoke", "out of range") { packed.invokeRegisterAt(3) }
+    rejects("a negative invoke offset", "out of range") { packed.invokeRegisterAt(-1) }
     rejects("an offset past the end of a 3rc invoke", "out of range") { range.invokeRegisterAt(4) }
     rejects("asking a non-invoke for its registers", "Not an invoke") {
         ImmutableInstruction11x(Opcode.MOVE_RESULT, 0).invokeRegisterCount()
@@ -157,10 +169,37 @@ private fun readsAndWrites() {
         ImmutableInstruction12x(Opcode.ADD_INT_2ADDR, 1, 2).registersRead().sorted().toString(),
     )
     equal(
-        "a three-register op reads all three",
-        "[4, 5, 6]",
+        "a three-register op reads its two sources, not its destination",
+        "[5, 6]",
         ImmutableInstruction23x(Opcode.ADD_INT, 4, 5, 6).registersRead().sorted().toString(),
     )
+
+    val narrow = ImmutableInstruction11n(Opcode.CONST_4, 5, 0)
+    equal("a plain write does not read its destination", "[]", narrow.registersRead().toString())
+    equal("move-result does not read its destination", "[]",
+        ImmutableInstruction11x(Opcode.MOVE_RESULT, 5).registersRead().toString())
+    val putWide = ImmutableInstruction22c(
+        Opcode.IPUT_WIDE, 4, 0, ImmutableFieldReference("Lx;", "v", "J"))
+    equal("iput-wide reads both halves of its value", "[0, 4, 5]",
+        putWide.registersRead().sorted().toString())
+    accepts("a write before a later read ends the scratch veto") {
+        assertNotReadBeforeWritten(listOf(narrow, ImmutableInstruction10x(Opcode.RETURN_VOID)),
+            0, listOf(5), "T")
+    }
+    rejects("a wide high-half read vetoes scratch", "v5 is read") {
+        assertNotReadBeforeWritten(listOf(putWide, ImmutableInstruction10x(Opcode.RETURN_VOID)),
+            0, listOf(5), "T")
+    }
+    val targetedTail = listOf(
+        ImmutableInstruction10t(Opcode.GOTO, 1), ImmutableInstruction11x(Opcode.RETURN, 0))
+    rejects("an edge into the return would bypass a tail insertion", "branch into its return") {
+        assertTailReturnUntargeted(targetedTail, 1, "T")
+    }
+    accepts("a fall-through return follows the insertion") {
+        assertTailReturnUntargeted(
+            listOf(ImmutableInstruction11n(Opcode.CONST_4, 0, 1),
+                ImmutableInstruction11x(Opcode.RETURN, 0)), 1, "T")
+    }
 
     // `setsRegister` is the assembler's own flag. invoke-virtual does not set one: its result
     // arrives in the following move-result, and treating v-whatever as clobbered here loses a slot.

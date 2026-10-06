@@ -3,13 +3,14 @@ package dev.jz6.flexboard.patches.shared
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
+import com.android.tools.smali.dexlib2.AccessFlags
 
 /**
  * Handing a `Context` to the extension at Gboard's Application start.
  *
- * Three patches need the same thing — a moment early enough that nothing has read a preference yet,
- * and something to write them with. `LatinApp.applyPreferenceValues` is that moment: it is reached
- * from `Llzd;->onCreate()V`, which `LatinApp` overrides, and it runs before any keyboard is built.
+ * Two settings patches need an early preference Context, and the swipe-up patch installs its
+ * crash recorder at the same point. `LatinApp.applyPreferenceValues` is reached from
+ * `Lmsp;->onCreate()V` before any keyboard is built.
  *
  * ## Why a `Context` and not the store
  *
@@ -60,6 +61,9 @@ internal fun MutableMethod.callAtAppStart(descriptor: String) {
     check(parameterTypes.map(Any::toString) == listOf(PREFERENCE_STORE_TYPE)) {
         "$APPLY_PREFERENCES takes $parameterTypes, expected a single $PREFERENCE_STORE_TYPE — p0 " +
             "is only known to be a Context because of what this method's signature says"
+    }
+    check(!AccessFlags.STATIC.isSet(accessFlags)) {
+        "$APPLY_PREFERENCES became static; p0 would be the store, not an Application Context"
     }
 
     val receiver = registerCount - APPLY_PREFERENCES_PARAMETER_WORDS

@@ -28,12 +28,11 @@ repositories {
 }
 
 dependencies {
-    // Matching :driver, which resolves the same patcher without an SDK.
-    implementation("app.morphe:morphe-patcher:1.8.0")
+    // Use the same patcher/dexlib2 versions as the bundle and :driver.
+    implementation("app.morphe:morphe-patcher:${libs.versions.morphe.patcher.get()}")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-    // The patcher's published POM carries no transitive coordinates, and the helpers speak
-    // dexlib2 types directly.
-    implementation("com.github.revanced:smali:d92701d947")
+    // The helpers speak dexlib2 directly; compile against the plugin's pinned smali fork.
+    implementation("com.github.MorpheApp.smali:smali:${libs.versions.smali.get()}")
 }
 
 kotlin {
@@ -45,10 +44,8 @@ kotlin {
 sourceSets {
     named("main") {
         kotlin.srcDir("../patches/src/main/kotlin")
-        // Only `shared/`, plus the tests. The feature patches import `android.*` through the
-        // patches plugin's own classpath, which this module deliberately does not reproduce —
-        // and they are not what is under test. The helpers in shared/ are, and they reference
-        // nothing outside the patcher and dexlib2.
+        // Only `shared/`, plus the tests. Feature emitters need a real BytecodePatchContext and
+        // a matched Gboard APK to execute; the pure helpers here need only patcher and dexlib2.
         kotlin.include(
             "dev/jz6/flexboard/patches/shared/**",
             // Every test file in this module's own root, rather than naming them one at a time --

@@ -6,9 +6,11 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.shared.descriptor
+import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
 import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
+import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.sole
 
@@ -30,9 +32,10 @@ import dev.jz6.flexboard.patches.shared.sole
  * bookkeeping rather than anything this project has to add. Walking it back to a keycode is the
  * same four steps `g()` itself performs at offsets 88–108.
  *
- * ## Everything here is derived, nothing is pinned
+ * ## Most names are derived; two type anchors remain pinned
  *
- * Four of the six members below are obfuscated and none is written down. They are read out of
+ * The `Lpnu;` key-data type and `ActionDef` are explicit anchors; four of the six member names
+ * below are derived rather than written down. They are read out of
  * `g()`, which is the one method guaranteed to contain the exact chain wanted — it is where Gboard
  * compares a key's code against the configured one, which is precisely the operation being
  * reproduced later.
@@ -89,6 +92,9 @@ internal fun BytecodePatchContext.resolveStartKeyChain(): StartKeyChain {
         "Expected exactly one no-argument call returning Lpnu; in $where, found " +
             "$it — the key-data accessor can no longer be picked out by shape"
     }
+    check(keyDataCall.opcodeName() == "INVOKE_VIRTUAL" && keyDataCall.invokeRegisterCount() == 1) {
+        "$where no longer calls the key-data accessor virtually on an ActionDef receiver"
+    }
     val keyDataAccessor = keyDataCall.methodDescriptor()
     val actionRegister = keyDataCall.invokeRegisterAt(0)
 
@@ -99,11 +105,16 @@ internal fun BytecodePatchContext.resolveStartKeyChain(): StartKeyChain {
             (body[it] as OneRegisterInstruction).registerA == actionRegister
     } ?: error("Nothing in $where writes v$actionRegister before $keyDataAccessor is called on it")
 
+    check(resultIndex > 0) { "$where has a move-result-object with no preceding action accessor" }
     val accessorCall = body[resultIndex - 1]
     val actionAccessor = accessorCall.methodDescriptor()
-    check(accessorCall.methodReferenceOrNull()?.returnType == ACTION_DEF) {
+    val actionRef = accessorCall.methodReferenceOrNull()
+    check(accessorCall.opcodeName() == "INVOKE_VIRTUAL" &&
+          actionRef?.returnType == ACTION_DEF &&
+          actionRef.parameterTypes.map(Any::toString) == listOf("Lpmy;") &&
+          accessorCall.invokeRegisterCount() == 2) {
         "The call feeding $keyDataAccessor in $where is $actionAccessor, which does not return " +
-            "$ACTION_DEF — the chain from the starting key to its keycode has changed shape"
+            "$ACTION_DEF from an Lpmy; selector — the keycode chain has changed shape"
     }
     val softKeyView = accessorCall.methodReferenceOrNull()!!.definingClass
     val selectorRegister = accessorCall.invokeRegisterAt(1)
@@ -114,6 +125,9 @@ internal fun BytecodePatchContext.resolveStartKeyChain(): StartKeyChain {
         body[it].opcodeName() == "SGET_OBJECT" &&
             (body[it] as OneRegisterInstruction).registerA == selectorRegister
     } ?: error("Nothing in $where loads the action selector passed to $actionAccessor")
+    check((selectorIndex + 1 until resultIndex - 1).none { index ->
+        selectorRegister in body[index].destinationRegistersOrEmpty()
+    }) { "The action selector v$selectorRegister is overwritten before $actionAccessor" }
     val actionSelector = body[selectorIndex].fieldDescriptor()
 
     // The keycode read, which is also the gate's own left-hand side.

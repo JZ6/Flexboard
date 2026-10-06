@@ -27,23 +27,8 @@ internal const val ABSTRACT_IME = "Lcom/google/android/libraries/inputmethod/ime
  * silently tested the wrong field.
  */
 
-/**
- * The IME's `Context`, and the only way to reach one from inside the dispatcher.
- *
- * **`this` is not a `Context`.** `LatinIme` extends `AbstractIme`, which extends `Object` — no
- * `Service` and no `ContextWrapper` anywhere in the chain. Passing `this` where a `Context` is
- * required assembles cleanly, then fails verification at run time and takes the dispatcher with it,
- * which is the whole keyboard. That shipped in `0.0.1-dev.1`.
- *
- * Only the field's *name* is pinned here. Its declaring class and type are resolved out of the dex
- * at patch time, because which class to name is not a free choice: the emitted `iget-object`
- * requires the register to be a subclass of whatever class the descriptor names, and all the patch
- * can prove about that register is that it is at least an [ABSTRACT_IME]. Gboard's own reads spell
- * it `$LATIN_IME->B`, which is correct for Gboard — the verifier knows `this` there — but is a
- * claim this patch cannot make. `AbstractIme` declares the field, so naming the declaring class
- * is both provable and stable.
- */
-internal const val IME_CONTEXT_FIELD_NAME = "B"
+// The old IME Context field and its hardcoded `B` letter were removed with undo's preference
+// switch. LatinIme is not a Context; see docs/motion-event-handlers.md for the historical failure.
 
 /**
  * Gboard's undo slot: one deleted `CharSequence` and nothing more.
@@ -73,8 +58,8 @@ internal const val IME_CONTEXT_FIELD_NAME = "B"
  * declarations of both are empty stubs (`return-void`) that `LatinIme` overrides. The only thing
  * that distinguishes them is *which one Gboard's own undo calls*, so that is what this reads.
  *
- * [UNDO_SLOT_GET] is called exactly once in the dispatcher — in the stock `UNDO_MULTI_DELETION`
- * handler — and a few instructions later that handler casts the `Optional`'s contents and hands
+ * The slot's Optional getter is found by its return type near the re-commit in the stock
+ * `UNDO_MULTI_DELETION` handler; a few instructions later that handler casts its contents and hands
  * them to the re-commit. Matching the invoke that follows gives both the method *and* the
  * committable-text type, neither of which then needs a letter written down here.
  */
@@ -87,7 +72,7 @@ internal const val RECOMMIT_SEARCH_WINDOW = 40
  * and an unescaped one that happens to precede an identifier character is read by Kotlin as a
  * string template rather than a literal — which is what broke the `0.0.3-dev.2` build.
  */
-private const val DESCRIPTOR_CHARS = "A-Za-z0-9/_\$;"
+private const val DESCRIPTOR_CHARS = "A-Za-z0-9/_\$"
 internal val RECOMMIT_PATTERN = Regex(
     "^" + Regex.escape(ABSTRACT_IME) + "->[A-Za-z0-9_\$]+" +
         "\\((L[$DESCRIPTOR_CHARS]+;)Z\\)V\$",
@@ -100,7 +85,7 @@ internal const val OPTIONAL_GET = "$OPTIONAL->get()Ljava/lang/Object;"
 
 /**
  * The scrub-delete state holder. Its `a(I)` is called exactly once in the whole of
- * `LatinIme->d`, which is what makes it a usable anchor for a handler that is otherwise reachable
+ * `LatinIme->q`, which is what makes it a usable anchor for a handler that is otherwise reachable
  * only through a `packed-switch` — and switch keys never appear in the instruction stream. See the
  * note in `tools/apk/README.md`.
  */

@@ -117,16 +117,15 @@ private fun lookupOf(vararg defs: ClassDef): ClassLookup {
     return { byType[it] }
 }
 
-// A three-deep hierarchy: the leaf declares nothing, the middle declares both kinds, and the root
-// is Object. Gboard's real shape -- ScrubMotionEventHandler inheriting its Context one hop up.
+// The leaf declares nothing; the middle declares both kinds. Object is deliberately *not* in the
+// lookup, just as in the APK. The walk still reaches Object by following BASE's superclass.
 private val BASE = clazz(
     "Lbase;",
     statics = listOf(field("Lbase;", "instance", "Lbase;", static = true)),
     instances = listOf(field("Lbase;", "context", "Landroid/content/Context;", static = false)),
 )
 private val LEAF = clazz("Lleaf;", superclass = "Lbase;")
-private val OBJ = clazz(OBJECT, superclass = null)
-private val WORLD = lookupOf(BASE, LEAF, OBJ)
+private val WORLD = lookupOf(BASE, LEAF)
 
 internal fun resolveTests() {
     fields()
@@ -141,7 +140,8 @@ internal fun resolveTests() {
 private fun fields() {
     // The 0.0.2-dev.1 bug: the field is one hop up, and looking only at the subclass finds nothing.
     val inherited = findInstanceField(WORLD, "Lleaf;", "context")
-    equal("an inherited instance field is found", "Lbase;", inherited?.definingClass.toString())
+    equal("an inherited instance field is found", "Lbase;",
+        (inherited as? FieldLookup.Found)?.field?.definingClass.toString())
 
     // The other one: statics are fields too, and every `sget` this project emits reads one.
     equal(
@@ -151,8 +151,8 @@ private fun fields() {
     )
     equal(
         "but not by findInstanceField, which is the point of having both",
-        "null",
-        findInstanceField(WORLD, "Lleaf;", "instance").toString(),
+        "Absent",
+        findInstanceField(WORLD, "Lleaf;", "instance").let { it::class.simpleName }.toString(),
     )
 
     // Three-valued, not two. "Walked the whole chain and it is not there" and "the chain left the
@@ -196,13 +196,21 @@ private fun assignability() {
         checkAssignable(lookupOf(LEAF), "Lleaf;", "Lother;", "T")
     }
 
-    rejects("a type not in the chain", "not a") { checkAssignable(WORLD, "Lbase;", "Lleaf;", "T") }
+    accepts("a superclass-typed register may hold a subclass") {
+        checkAssignable(WORLD, "Lbase;", "Lleaf;", "T")
+    }
+    accepts("an Object-typed register may hold any class") {
+        checkAssignable(WORLD, OBJECT, "Landroid/content/Context;", "T")
+    }
+    rejects("an unrelated type with a complete chain", "not a") {
+        checkAssignable(WORLD, "Lleaf;", "Lother;", "T")
+    }
 
     // A superclass walk cannot answer an interface question -- implementing a type does not put it
     // in the chain -- so the check would have produced a confident, wrong failure.
     val iface = clazz("Liface;", isInterface = true)
     rejects("an interface target", "interface") {
-        checkAssignable(lookupOf(LEAF, BASE, OBJ, iface), "Lleaf;", "Liface;", "T")
+        checkAssignable(lookupOf(LEAF, BASE, iface), "Lleaf;", "Liface;", "T")
     }
 
     // A primitive is not a class, so the lookup returns null and the walk would pass it silently.
@@ -219,7 +227,9 @@ private val HOST = clazz(
     virtual = listOf(method("Lhost;", "virtual")),
 )
 private val IFACE = clazz("Liface;", isInterface = true, virtual = listOf(method("Liface;", "go")))
-private val KINDS = lookupOf(HOST, IFACE, CALLEE, OBJ)
+private val STATIC_IFACE = clazz("Lstaticiface;", isInterface = true,
+    direct = listOf(method("Lstaticiface;", "s", static = true)))
+private val KINDS = lookupOf(HOST, IFACE, STATIC_IFACE, CALLEE)
 
 private fun methodsAndInvokes() {
     accepts("a method that exists") { checkMethodExists(KINDS, "Lhost;->virtual()V", "T") }
@@ -238,6 +248,9 @@ private fun methodsAndInvokes() {
     }
     accepts("invoke-interface on an interface method") {
         checkInvokeKind(KINDS, "Liface;->go()V", InvokeKind.INTERFACE, "T")
+    }
+    accepts("invoke-static on a static interface method") {
+        checkInvokeKind(KINDS, "Lstaticiface;->s()V", InvokeKind.STATIC, "T")
     }
 
     // Both of these assemble cleanly and throw on the device, which is the entire reason the check
@@ -266,6 +279,12 @@ private fun methodsAndInvokes() {
 
     accepts("a field that exists, with the right type") {
         checkFieldExists(WORLD, "Lbase;->context:Landroid/content/Context;", "T")
+    }
+    val shadow = clazz("Lshadow;", superclass = "Lbase;",
+        instances = listOf(field("Lshadow;", "context", "Lshadow;", static = false)))
+    accepts("a field resolves by name AND type through a shadowing subclass") {
+        checkFieldExists(lookupOf(shadow, BASE),
+            "Lshadow;->context:Landroid/content/Context;", "T")
     }
     accepts("an sget target, which is static") {
         checkFieldExists(WORLD, "Lbase;->instance:Lbase;", "T")

@@ -7,6 +7,7 @@ import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.AccessFlags
 import dev.jz6.flexboard.patches.features.swipetodelete.scrubHandleMotionEventFingerprint
 import dev.jz6.flexboard.patches.shared.InvokeKind
+import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.checkFieldExists
 import dev.jz6.flexboard.patches.shared.checkInvokeKind
@@ -32,7 +33,7 @@ private const val HANDLER_ROUTE_FIELD = "$SCRUB_HANDLER->p:Lpvo;"
 private const val TAKE_OVER = "Lpvo;->m()V"
 
 /**
- * The route's only implementation, and how to ask it who owns the gesture now.
+ * The route implementation handed to scrub handlers, and how to ask it who owns the gesture.
  *
  * Both are package-private in the unnamed package, and the emission runs as code of
  * `ScrubMotionEventHandler`, in another package. See [openRouteToTheScrub].
@@ -43,6 +44,7 @@ private const val GESTURE_OWNER_FIELD = "Lozj;->k:Lpvn;"
 
 /** The scrub's own "is my pointer finished" test, at the end of every `g` call. */
 private const val SCRUB_POINTER_ENDED = "$SCRUB_HANDLER->t(Landroid/view/MotionEvent;)Z"
+private const val SCRUB_FRAME_REGISTERS = 13
 
 private const val TRACE_BEGIN = "Landroid/os/Trace;->beginSection(Ljava/lang/String;)V"
 
@@ -53,10 +55,9 @@ private const val REPORT = "flexboard_swipe_up_report"
 /**
  * Stage 2: take the gesture over, and report whether it took.
  *
- * This is deliberately **the takeover path of 2.5.1-dev.7, instruction for instruction**, with the
- * undo it then sent replaced by a report to `SwipeUp.tookOver`. dev.7 crashed on a swipe up, and this
- * splits that crash: if stage 2 crashes, the cause is somewhere in the takeover or in how the rest of
- * the gesture is skipped; if it does not, the cause was building or sending the undo.
+ * Stage 2 of the rebuild. dev.7 and dev.9 crashed in the owner read-back after takeover, because
+ * Lozi and its field were not accessible from the scrub handler. The class and field are widened
+ * before this code is emitted; on the fixed build a swipe is expected to type a 6 or x.
  *
  * Every event reaching `ScrubMotionEventHandler->g` is first offered to `SwipeUp.decide`:
  *
@@ -75,8 +76,8 @@ private const val REPORT = "flexboard_swipe_up_report"
  * Why the takeover cannot leave the keyboard stuck: the dispatcher clears the owner itself, in
  * `Lozj;->o`, after every UP and CANCEL, whatever the handler did. Pinned in preflight.
  *
- * v0-v3 are the only registers written, and v0-v10 are dead at both the insertion point and the jump
- * target (`preflight.live_free`, pinned).
+ * v0-v3 are the only registers written; preflight.live_free pins v0-v5 dead at the insertion point
+ * and jump target.
  *
  * **Why `Lozi;` is made public first.** 2.5.1-dev.7 and dev.9 crashed on every swipe up, from every
  * row, before the report could type anything. Reading the owner back means `instance-of`,
@@ -109,7 +110,7 @@ internal fun BytecodePatchContext.emitSwipeUp() {
     val insertAt = traceBegin + 1
     val endOfCall = body.indexOfSoleCall(SCRUB_POINTER_ENDED, what)
 
-    val registerCount = method.implementation!!.registerCount
+    val registerCount = method.assertRegisterCount(SCRUB_FRAME_REGISTERS, what)
     validateScratchRegisters(
         scratch = listOf(0, 1, 2, 3),
         avoid = listOf(registerCount - 2, registerCount - 1),
@@ -157,11 +158,17 @@ internal fun BytecodePatchContext.emitSwipeUp() {
  */
 private fun BytecodePatchContext.openRouteToTheScrub() {
     val route = mutableClassDefBy(ROUTE_IMPL)
-    route.setAccessFlags(route.accessFlags or AccessFlags.PUBLIC.value)
-
+    val otherVisibilities = AccessFlags.PRIVATE.value or AccessFlags.PROTECTED.value
+    check(route.accessFlags and otherVisibilities == 0) {
+        "$ROUTE_IMPL has another visibility; do not emit an invalid PUBLIC|PRIVATE/PROTECTED class"
+    }
     val name = ROUTE_MANAGER_FIELD.substringAfter("->").substringBefore(":")
     val type = ROUTE_MANAGER_FIELD.substringAfter(":")
     val manager = route.fields.singleOrNull { it.name == name && it.type == type }
         ?: error("$ROUTE_MANAGER_FIELD is not declared by $ROUTE_IMPL; the route has changed shape")
+    check(manager.accessFlags and otherVisibilities == 0) {
+        "$ROUTE_MANAGER_FIELD has another visibility; do not emit an invalid field"
+    }
+    route.setAccessFlags(route.accessFlags or AccessFlags.PUBLIC.value)
     manager.setAccessFlags(manager.accessFlags or AccessFlags.PUBLIC.value)
 }

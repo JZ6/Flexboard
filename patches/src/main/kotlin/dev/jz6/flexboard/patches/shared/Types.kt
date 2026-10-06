@@ -40,11 +40,13 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
  * So this is a cheap proof of *wrongness*, never of correctness. It is worth having anyway: the
  * middle case is where patches of this kind actually go wrong, and it is the case `dev.1` was in.
  *
- * **A supertype is enough to disprove.** The type handed in is often only a lower bound — reading
+ * **An unrelated supertype can disprove.** The type handed in is often only a lower bound — reading
  * `AbstractIme->N:Z` off a register proves the register is *at least* an `AbstractIme`, and it may
  * hold a subclass. That does not weaken the check, because the targets here are classes rather than
  * interfaces: under single inheritance, if `AbstractIme`'s chain terminates at `Object` without
- * passing through `Context`, then no subclass of `AbstractIme` can be a `Context` either.
+ * passing through `Context`, then no subclass of `AbstractIme` can be a `Context` either. However,
+ * a register known only as `Object` might hold a Context, and a target subclass of the lower bound
+ * is possible too. Those cases must not be rejected.
  *
  * That reasoning is exactly why [checkAssignable] must not be used with an interface as the target.
  * An interface can be implemented at any depth, so absence from a superclass chain proves nothing.
@@ -143,6 +145,8 @@ internal fun checkAssignable(lookup: ClassLookup, type: String, target: String, 
     // this cannot see, which would make the check worse than useless.
     val chain = superclassChain(lookup, type) ?: return
     if (target in chain) return
+    if (type == OBJECT_TYPE || (lookup(target) != null &&
+            type in (superclassChain(lookup, target) ?: emptyList()))) return
     error(
         "$what is $type, which is not a $target. Its full chain is " +
             "${chain.joinToString(" -> ")}, resolved entirely inside the APK, so no subclass " +
@@ -231,20 +235,6 @@ internal fun validateScratchRegisters(
 }
 
 /**
- * Instance field [name] on [type] or any class above it. Use [findField] unless the field being
- * *an instance field* is itself the property under test — the one caller here reads an `iget`
- * receiver, where a static would be the wrong answer rather than an acceptable one.
- *
- * **`ClassDef.instanceFields` is not enough**, which is worth stating because assuming otherwise
- * shipped as `0.0.2-dev.1`. It lists only what a class *declares*, and inherited fields are the
- * normal case here: `ScrubMotionEventHandler` inherits its `Context` from
- * `AbstractMotionEventHandler` one hop up, so looking only at the subclass finds nothing and fails
- * a patch that was perfectly correct.
- *
- * Returns the declaration, so callers get the class that actually declares the field and can emit
- * that spelling rather than a subclass's.
- */
-/**
  * The outcome of resolving a field reference, which is three-valued and not two.
  *
  * "Not found" and "cannot tell" are different answers and conflating them is what let a real patch
@@ -256,7 +246,7 @@ internal sealed interface FieldLookup {
     /** Declared here, with the class that declares it. */
     data class Found(val field: Field) : FieldLookup
 
-    /** The chain was walked to its root inside the APK, and nothing declares it. */
+    /** The chain reached Object, which has no fields, and nothing declares it. */
     data object Absent : FieldLookup
 
     /** The chain left the APK at [at], so nothing above it can be read. */
@@ -273,32 +263,51 @@ internal sealed interface FieldLookup {
  * throws before writing an instruction, which Morphe catches and continues past, shipping a build
  * with the feature quietly missing.
  */
-internal fun findField(lookup: ClassLookup, type: String, name: String): FieldLookup {
+private fun walkField(lookup: ClassLookup, type: String, accepts: (Field) -> Boolean): FieldLookup {
     var current: String? = type
     while (current != null) {
+        // Framework Object has no fields. It is not defined in the APK, so looking it up would
+        // turn every missing field into Unknowable and make checkFieldExists a no-op in production.
+        if (current == OBJECT_TYPE) return FieldLookup.Absent
         val definition = lookup(current) ?: return FieldLookup.Unknowable(current)
         (definition.staticFields + definition.instanceFields)
-            .firstOrNull { it.name == name }
+            .firstOrNull(accepts)
             ?.let { return FieldLookup.Found(it) }
         current = definition.superclass
     }
     return FieldLookup.Absent
 }
 
+internal fun findField(lookup: ClassLookup, type: String, name: String): FieldLookup =
+    walkField(lookup, type) { it.name == name }
+
+/** Field references resolve by both name and type, even when a subclass shadows a name. */
+internal fun findFieldOfType(
+    lookup: ClassLookup, type: String, name: String, expectedType: String,
+): FieldLookup = walkField(lookup, type) { it.name == name && it.type == expectedType }
+
 internal fun BytecodePatchContext.findField(type: String, name: String): FieldLookup =
     findField(classLookup, type, name)
 
-internal fun findInstanceField(lookup: ClassLookup, type: String, name: String): Field? {
+/**
+ * Instance field [name] on [type] or a superclass, with an explicit unknown-framework outcome.
+ * `ClassDef.instanceFields` lists only declarations; `ScrubMotionEventHandler` inherits its
+ * Context field from `AbstractMotionEventHandler`. Checking only the subclass shipped a false
+ * missing-field failure in `0.0.2-dev.1`. Returns the declaring class for a found field so the
+ * emitted `iget` uses that spelling, not a subclass's.
+ */
+internal fun findInstanceField(lookup: ClassLookup, type: String, name: String): FieldLookup {
     var current: String? = type
     while (current != null) {
-        val definition = lookup(current) ?: return null
-        definition.instanceFields.firstOrNull { it.name == name }?.let { return it }
+        if (current == OBJECT_TYPE) return FieldLookup.Absent
+        val definition = lookup(current) ?: return FieldLookup.Unknowable(current)
+        definition.instanceFields.firstOrNull { it.name == name }?.let { return FieldLookup.Found(it) }
         current = definition.superclass
     }
-    return null
+    return FieldLookup.Absent
 }
 
-internal fun BytecodePatchContext.findInstanceField(type: String, name: String): Field? =
+internal fun BytecodePatchContext.findInstanceField(type: String, name: String): FieldLookup =
     findInstanceField(classLookup, type, name)
 
 /**

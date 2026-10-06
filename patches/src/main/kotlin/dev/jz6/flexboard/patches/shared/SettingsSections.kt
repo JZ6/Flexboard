@@ -10,8 +10,8 @@ package dev.jz6.flexboard.patches.shared
  * time; a patch that isn't ticked never executes, so never registers.
  *
  * Rows for unregistered sections are dropped by a sentinel-comment pass over the template
- * before `writePatchResource` writes it. `check_shared_constants.py` parses the template and
- * is untouched — the rows here are the template's, not the output's.
+ * before `writePatchResource` writes it. `check_shared_constants.py` compares the sentinels with
+ * this enum, and `check_patch_resources.py` checks both minimal and maximal template outputs.
  */
 internal enum class SettingsSection {
     SWIPE_TO_DELETE,

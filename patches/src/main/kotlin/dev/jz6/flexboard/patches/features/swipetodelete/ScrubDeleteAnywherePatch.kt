@@ -1,13 +1,10 @@
 package dev.jz6.flexboard.patches.features.swipetodelete
 
 import app.morphe.patcher.patch.bytecodePatch
-import dev.jz6.flexboard.patches.features.swipetodelete.scrubTuningPatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.SettingsSection
 import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.selectedSettingsSections
-
-
 /**
  * Gboard already implements swipe-to-delete-a-word. `ScrubDeleteMotionEventHandler` is the swipe
  * on the backspace key, and everything it does — progressive delete, drag back to restore,
@@ -58,8 +55,8 @@ import dev.jz6.flexboard.patches.shared.selectedSettingsSections
 val swipeToDeletePatch = bytecodePatch(
     name = "Swipe Left to Delete",
     description = "Swipe left anywhere on the keyboard to delete the previous word, and swipe " +
-        "right to restore it. Uses Gboard's own word-scrub engine, so it behaves exactly like " +
-        "swiping on the backspace key already does — only it can start anywhere.",
+        "right to restore it. Uses Gboard's word-scrub engine; anywhere swipes have a one-word " +
+        "default cap, while deliberate backspace swipes keep Gboard's uncapped behaviour.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)

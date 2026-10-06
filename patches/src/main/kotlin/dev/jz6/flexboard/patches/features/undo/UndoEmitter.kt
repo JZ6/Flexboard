@@ -8,12 +8,11 @@ import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
-import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.fieldDescriptor
-import dev.jz6.flexboard.patches.shared.fieldOwnerType
 import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
+import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
 import dev.jz6.flexboard.patches.shared.invokeRegisterAt
 import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
@@ -43,7 +42,8 @@ private const val UNDO_DONE_LABEL = "flexboard_undo_done"
  * before reading any of them. The two branches the finish path can still take — the empty-text exit
  * and the no-`Lftq;` exit — both join the epilogue without reading v2 or v3 first.
  *
- * The epilogue *does* read v4 (the handled flag), v9 (`this`), v10 (the return value) and v12, so
+ * The epilogue *does* read v4 (the handled flag), v9, v10 (the return value) and the wide pair
+ * v12/v13, so
  * none of those may be touched.
  *
  * **Re-derived for Gboard 18, not carried over.** The dispatcher dropped from 36 to 34 registers,
@@ -110,6 +110,9 @@ private fun MutableMethod.resolveStockUndo(): StockUndo {
             "this patch mirrors, so emitting a call here would be guessing at which method puts " +
             "the text back."
     }
+    check(recommitInstruction.opcodeName() == "INVOKE_VIRTUAL") {
+        "The stock re-commit in $LATIN_IME->q is no longer invoke-virtual"
+    }
     val recommit = (recommitInstruction as ReferenceInstruction).reference.toString()
     val committableText = RECOMMIT_PATTERN.matchEntire(recommit)!!.groupValues[1]
 
@@ -126,6 +129,9 @@ private fun MutableMethod.resolveStockUndo(): StockUndo {
             "Optional, so the slot cannot be identified from here",
     )
     val get = (instructions[getIndex] as ReferenceInstruction).reference.toString()
+    check(instructions[getIndex].opcodeName() == "INVOKE_VIRTUAL") {
+        "The stock Optional getter is no longer invoke-virtual"
+    }
     val slotRegister = instructions[getIndex].invokeRegisterAt(0)
     val slotType = get.substringBefore("->")
 
@@ -175,6 +181,7 @@ private fun MutableMethod.callOnRegister(
     on: String? = null,
 ): String? {
     val instruction = instructions[index]
+    if (instruction.opcodeName() != "INVOKE_VIRTUAL") return null
     val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
         ?: return null
     if (reference.returnType != returning || reference.parameterTypes.isNotEmpty()) return null
@@ -243,17 +250,15 @@ internal fun MutableMethod.undoOnRightwardScrub() {
     // patch whose derivation had worked perfectly, which is the opposite of the point.
     val suppressedField = flagRead.fieldDescriptor()
 
-    // The IME register, carrying the only type it is *proven* to hold. Reading the suppression flag
-    // off it shows it is at least an `AbstractIme`; that it happens to be a `LatinIme` at run time
-    // is true but not established here.
+    // Gboard reads the flag off an IME register, but that register can be a local copy of p0
+    // (v9 on 18.0.3), not p0 itself. Prove its LatinIme type from the immediate stock path below.
     //
     // This patch used to reach the IME's `Context` through a field on `AbstractIme` in order to
     // read an on/off preference, and that whole apparatus is gone: undo is unconditional, so there
     // is no preference to read and nothing here is handed to the preference store. The derivation
     // is kept in `docs/motion-event-handlers.md` rather than in code, because it was expensive to
     // establish and would be needed again if the toggle ever came back.
-    val ime = TypedRegister(flagRead.registerB, flagRead.fieldOwnerType())
-    val thisRegister = ime.register
+    val thisRegister = flagRead.registerB
 
     val test = instructions[flagIndex + 1]
     check(test.opcodeName() == "IF_NEZ") {
@@ -273,27 +278,23 @@ internal fun MutableMethod.undoOnRightwardScrub() {
     }
     val countRegister = (countMove as OneRegisterInstruction).registerA
 
-    // The emission below reads `stock.slotField` — declared on `LatinIme` — off this register,
-    // while the derivation above only proves it is an `AbstractIme`: the flag it was found by is
-    // declared one class up. `LatinIme` *extends* `AbstractIme`, so that is a downcast, and
-    // `checkAssignable` in this direction would correctly refuse it. A `check-cast` would silence
-    // the question rather than answer it, and would be dead weight besides — Gboard's own code
-    // reads `LatinIme` fields off this same register, so the verifier already carries the narrower
-    // type here.
-    //
-    // What is missing is any statement of that in the patch, so state it: require Gboard itself to
-    // access a field of the slot field's owner through this register. If a build stops doing so,
-    // the register is no longer demonstrably a `LatinIme` and the emitted `iget-object` would be a
-    // verify error that takes the whole class down — which is worth failing the patch over.
+    // The field is declared on LatinIme. Its stock read immediately after the if-nez is a local
+    // proof that v9 holds LatinIme on this path, unlike a read anywhere else in this method.
     val slotOwner = stock.slotField.substringBefore("->")
-    val ownerReadsHere = instructions.count {
-        it.fieldReferenceOrNull()?.definingClass == slotOwner &&
-            (it as? TwoRegisterInstruction)?.registerB == thisRegister
+    check(slotOwner == LATIN_IME) {
+        "The undo slot moved to $slotOwner; the nearby LatinIme field read needs re-derivation"
     }
-    check(ownerReadsHere > 0) {
-        "No field of $slotOwner is accessed through v$thisRegister in $LATIN_IME->q, so the " +
-            "register is only demonstrably a ${ime.type}; emitting `${stock.slotField}` off it " +
-            "would be a downcast this patch cannot justify"
+    val nearbyOwnerReads = (flagIndex + 2 until minOf(takeTextIndex, flagIndex + 6))
+        .filter { index ->
+            instructions[index].fieldReferenceOrNull()?.definingClass == slotOwner &&
+                (instructions[index] as? TwoRegisterInstruction)?.registerB == thisRegister
+        }
+    check(nearbyOwnerReads.isNotEmpty() &&
+          (flagIndex + 1 until nearbyOwnerReads.first()).none { index ->
+              thisRegister in instructions[index].destinationRegistersOrEmpty()
+          }) {
+        "The stock path near the suppression flag does not read a $slotOwner field from " +
+            "v$thisRegister before it changes; the emitted slot read lacks a local type proof"
     }
 
     val (slot, value) = SCRATCH_REGISTERS
@@ -304,8 +305,9 @@ internal fun MutableMethod.undoOnRightwardScrub() {
     // verify on a device, which is the one place this project cannot read the error from.
     validateScratchRegisters(
         scratch = SCRATCH_REGISTERS,
-        avoid = listOf(countRegister, thisRegister, flagRegister),
+        avoid = listOf(countRegister, thisRegister, flagRegister, 12, 13),
         what = "$LATIN_IME->q",
+        registerCount = HANDLE_EVENT_REGISTER_COUNT,
     )
 
     // A leftward or empty scrub leaves on the first comparison with nothing touched, which is what

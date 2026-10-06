@@ -192,9 +192,5 @@ private fun Element.findGlideTypingRow(): Element {
             "$it — obfuscated key names are no longer distinct once decoded, so the " +
             "glide typing row cannot be told apart from its siblings"
     }
-    check(glideRow.androidAttribute("dependency") == null) {
-        "The glide typing row already declares a dependency on " +
-            "'${glideRow.androidAttribute("dependency")}', which this patch would overwrite"
-    }
     return glideRow
 }

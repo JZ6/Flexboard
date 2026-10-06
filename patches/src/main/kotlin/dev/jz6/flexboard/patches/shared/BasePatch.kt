@@ -10,7 +10,8 @@ import app.morphe.patcher.patch.bytecodePatch
  * cannot select a feature without the foundation it rests on — the extension is always merged,
  * the service is always reachable, and the settings row is always there.
  *
- * Internal so it never appears in Morphe's patch list. It runs as a dependency of every public
+ * Unnamed (`name == null`) so it never appears in Morphe's patch list; Kotlin `internal` alone does
+ * not hide it. It runs as a dependency of every public
  * patch and is always selected when any of them is.
  *
  * `settingsScreenPatch` sits in this package rather than under `features/` for the same reason:

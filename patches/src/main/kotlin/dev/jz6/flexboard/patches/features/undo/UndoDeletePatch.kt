@@ -3,8 +3,6 @@ package dev.jz6.flexboard.patches.features.undo
 import app.morphe.patcher.patch.bytecodePatch
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.jz6.flexboard.patches.shared.basePatch
-
-
 /**
  * Swipe right, after the delete gesture has ended, to put back the words it removed.
  *
@@ -40,11 +38,12 @@ import dev.jz6.flexboard.patches.shared.basePatch
  *
  * ## Reusing the suppression branch instead of naming a target
  *
- * The handler's second instruction is `if-nez vFlag, :handled`, where `vFlag` is
+ * The handler's prologue is `move-result` / `iget-boolean` / `if-nez vFlag, :handled`, where `vFlag` is
  * `AbstractIme->O:Z` and `:handled` is the stock "treat as handled, do nothing" exit. Rather than
  * branch there — which would mean resolving a `packed-switch`-reached label — this sets `vFlag` and
- * lets the stock test do the jumping. Control flow converges on Gboard's own path with no external
- * label at all, and the epilogue's `Trace.endSection()` still runs, which an early `return` would
+ * lets the stock test do the jumping. A leftward swipe uses an external label that points back to
+ * the stock `if-nez`; no emitted label names the handled exit. The epilogue's `Trace.endSection()`
+ * still runs, which an early `return` would
  * have skipped and left the trace stack unbalanced.
  */
 @Suppress("unused")

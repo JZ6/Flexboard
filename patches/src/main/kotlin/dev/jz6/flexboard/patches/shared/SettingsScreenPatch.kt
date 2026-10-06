@@ -50,8 +50,8 @@ import org.w3c.dom.Document
  * side only ever names it; and the row's target is a class name, not a package, so the rename
  * patch has nothing to correct.
  *
- * Both files this touches keep their real names through `aapt2 --collapse-resource-names` — 33 of
- * Gboard's 33,287 entries do, and the settings screens are among them. That is the only reason
+ * Both files this touches keep their real names through `aapt2 --collapse-resource-names` — 37
+ * XML names survive among Gboard's 34,029 resource entries, including the settings screens. That is the only reason
  * this patch can address them; see the addressability note in `docs/development.md`.
  */
 /**
@@ -208,8 +208,8 @@ private const val ENTRY_SUMMARY = "By JZ6"
  *
  * Called with the template's text after placeholder substitution, before the XML parse check.
  * The sentinel comments are stripped from the output either way — they're template scaffolding,
- * not APK content. The preflight pin for the row keys still validates the template, not the
- * output, so checkers are untouched.
+ * not APK content. The constants checker validates the enum/template sentinels and the resource
+ * replay checks the maximal and minimal variants; neither is untouched.
  */
 internal fun filterSettingsSections(xml: String): String {
     // Both halves of the vocabulary, checked against the enum before anything is filtered.
@@ -235,6 +235,23 @@ internal fun filterSettingsSections(xml: String): String {
             "template does not mark is emitted in every build"
     }
 
+    val markers = Regex("""<!--\s*@((?:END_)?SECTION_\w+)@\s*-->""").findAll(xml)
+    var inside: String? = null
+    markers.forEach { marker ->
+        val token = marker.groupValues[1]
+        if (token.startsWith("END_SECTION_")) {
+            require(inside == token.removePrefix("END_SECTION_")) {
+                "Settings template closes $token while $inside is open — nested/crossed sections are unsupported"
+            }
+            inside = null
+        } else {
+            require(inside == null) {
+                "Settings template nests ${token.removePrefix("SECTION_")} inside $inside; one-pass filtering cannot do that"
+            }
+            inside = token.removePrefix("SECTION_")
+        }
+    }
+
     val filtered = xml.replace(
         Regex("<!--\\s*@SECTION_(\\w+)@\\s*-->.*?<!--\\s*@END_SECTION_\\1@\\s*-->",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.MULTILINE)),
@@ -242,8 +259,7 @@ internal fun filterSettingsSections(xml: String): String {
         val section = match.groupValues[1]
         if (SettingsSection.entries.any { it.name == section &&
                     it in selectedSettingsSections }) {
-            // Keep, but strip this block's own sentinels. Anchored to the captured name rather
-            // than `\w+` so a nested block keeps its markers for its own pass to consume.
+            // Keep, but strip this block's sentinels. Nested blocks are rejected above.
             match.value
                 .replace(Regex("<!--\\s*@SECTION_$section@\\s*-->"), "")
                 .replace(Regex("<!--\\s*@END_SECTION_$section@\\s*-->"), "")
@@ -315,9 +331,11 @@ private fun readVersion(): String {
         ?.getResourceAsStream("flexboard_version.txt")
         ?.bufferedReader()?.use { it.readText() }?.trim()
         ?: error("flexboard_version.txt not found in patch resources")
-    // `@VERSION@` surviving to here means the resource substitution did not run: the build path
-    // is assembler-only, not the Gradle project. Fail loudly rather than ship "Flexboard @VERSION@".
-    require(!text.startsWith("@")) { "flexboard_version.txt is still the placeholder itself" }
+    // The source file contains `$VERSION`. Reject that literal (and any other invalid output)
+    // rather than displaying a placeholder on an assembler-only build.
+    require(Regex("""^[0-9]+\.[0-9]+\.[0-9]+(?:-(?:dev|rc|beta|alpha|preview)\.[0-9]+)?$""").matches(text)) {
+        "flexboard_version.txt is not an expanded version: $text"
+    }
     return text
 }
 

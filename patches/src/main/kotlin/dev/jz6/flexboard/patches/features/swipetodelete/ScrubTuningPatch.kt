@@ -7,11 +7,8 @@ import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
-import dev.jz6.flexboard.patches.features.swipetodelete.CONFIG_DISABLED_FIELD
 import dev.jz6.flexboard.patches.features.swipetodelete.CONFIG_FIELD
 import dev.jz6.flexboard.patches.features.swipetodelete.CONFIG_START_KEY_FIELD
-import dev.jz6.flexboard.patches.features.swipetodelete.CONFIG_STEP_TABLE_FIELD
-import dev.jz6.flexboard.patches.features.swipetodelete.HANDLER_CONTEXT_FIELD
 import dev.jz6.flexboard.patches.features.swipetodelete.HANDLER_CONTEXT_FIELD_NAME
 import dev.jz6.flexboard.patches.features.swipetodelete.HANDLER_CONTEXT_OWNER
 import dev.jz6.flexboard.patches.features.swipetodelete.INTEGER_VALUE_OF
@@ -28,6 +25,7 @@ import dev.jz6.flexboard.patches.features.swipetodelete.scrubDispatchFingerprint
 import dev.jz6.flexboard.patches.features.swipetodelete.scrubEngineConstructorFingerprint
 import dev.jz6.flexboard.patches.shared.ANDROID_CONTEXT
 import dev.jz6.flexboard.patches.shared.Constants.COMPATIBILITY_GBOARD
+import dev.jz6.flexboard.patches.shared.FieldLookup
 import dev.jz6.flexboard.patches.shared.PACKED_INVOKE_REGISTER_LIMIT
 import dev.jz6.flexboard.patches.shared.TypedRegister
 import dev.jz6.flexboard.patches.shared.assertNotReadBeforeWritten
@@ -63,7 +61,8 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
  */
 internal val scrubTuningPatch = bytecodePatch(
     description = "Reads the word cap from Gboard's preference store, so it can be adjusted " +
-        "from settings. Hold delay is fixed at 0 — its settings row was dropped; swipe length " +
+        "from settings. Hold delay defaults to 0; older stored values are honored even though its " +
+        "settings row was dropped. Swipe length " +
         "scaling is parked pending the investigation in docs/roadmap.md.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -103,13 +102,11 @@ internal const val MAX_WORDS_DEFAULT = 1
 internal const val MAX_WORDS_NO_LIMIT = 10
 
 /**
- * The sliders' span, mirrored into `flexboard_settings.xml` by attributes — see the key docs above
+ * The word-cap slider's span, mirrored into `flexboard_settings.xml` by attributes — see the key docs above
  * for why a file the build checker does not compare would be a silent breakage. These exist on the
  * Kotlin side only so `check_shared_constants.py` can assert the XML agrees; nothing emits them.
  */
 internal const val MAX_WORDS_MIN = 1
-internal const val HOLD_DELAY_MIN = 0
-internal const val HOLD_DELAY_MAX = 300
 
 /** `regs=11, ins=4` — asserted so the scratch register below is provably the one that was read. */
 private const val ENGINE_CONSTRUCTOR_REGISTER_COUNT = 11
@@ -117,21 +114,13 @@ private const val ENGINE_CONSTRUCTOR_REGISTER_COUNT = 11
 /** `this`, Context, Lpvo;, Lpvs;, and the wide delay — six registers. */
 private const val ENGINE_CONSTRUCTOR_ARGUMENT_REGISTERS = 6
 
-private const val DELETE_CONSTRUCTOR_REGISTER_COUNT = 12
-private const val DELETE_CONSTRUCTOR_ARGUMENT_REGISTERS = 4
-
 private const val FOUR_ARGUMENT_ENGINE_CONSTRUCTOR =
     "$SCRUB_MOTION_EVENT_HANDLER-><init>(Landroid/content/Context;Lpvo;Lpvs;J)V"
 
 private const val THREE_ARGUMENT_ENGINE_CONSTRUCTOR =
     "$SCRUB_MOTION_EVENT_HANDLER-><init>(Landroid/content/Context;Lpvo;Lpvs;)V"
 
-/** `100.0f`, as the high-16 constant the smali assembler wants. */
-private const val ONE_HUNDRED_FLOAT = "0x42c80000"
-
 private const val STOCK_HOLD_LABEL = "flexboard_stock_hold"
-private const val STEPS_LOOP_LABEL = "flexboard_steps_loop"
-private const val STEPS_DONE_LABEL = "flexboard_steps_done"
 
 /**
  * The three-argument engine constructor reads the 200 ms hold delay from a resource and forwards it
@@ -145,7 +134,8 @@ private const val STEPS_DONE_LABEL = "flexboard_steps_done"
  * 16: invoke-direct/range {v1 .. v6}, ScrubMotionEventHandler-><init>(…Lpvs;J)V
  * ```
  *
- * Replacing the forwarded value means `Lpvr;->b:J` is *built* with the user's delay, so the gate in
+ * Replacing the forwarded value means `Lpvr;->b:J` uses 0 for an unset preference, but keeps a
+ * value someone saved in an older build. The gate in
  * `p()` still runs exactly as Gboard wrote it and simply compares against a different number.
  *
  * Anchored on the forwarded call rather than on the resource id or the conversion opcode: the call
@@ -374,12 +364,18 @@ private const val SCALE_DELTA_LABEL = "flexboard_scale_delta"
  * receives the wrong value when this field is absent, and makes the failure easier to trace.
  */
 private fun BytecodePatchContext.resolveHandlerContext() =
-    findInstanceField(HANDLER_CONTEXT_OWNER, HANDLER_CONTEXT_FIELD_NAME)
-        ?: error(
+    when (val result = findInstanceField(HANDLER_CONTEXT_OWNER, HANDLER_CONTEXT_FIELD_NAME)) {
+        is FieldLookup.Found -> result.field
+        is FieldLookup.Unknowable -> error(
+            "The handler Context field walk left the APK at ${result.at}; cannot tell what " +
+                "$PREFERENCE_STORE_GET would receive",
+        )
+        FieldLookup.Absent -> error(
             "Neither $HANDLER_CONTEXT_OWNER nor anything above it declares " +
                 "`$HANDLER_CONTEXT_FIELD_NAME` — the handler's Context has moved, and " +
                 "$PREFERENCE_STORE_GET would be handed something else",
         )
+    }
 
 /**
  * The handler register and its resolved Context field, established once for both dispatch-site

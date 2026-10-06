@@ -34,24 +34,9 @@ internal const val CONFIG_START_KEY_FIELD = "Lpvs;->a:I"
  */
 internal const val HANDLER_CONTEXT_OWNER = SCRUB_MOTION_EVENT_HANDLER
 internal const val HANDLER_CONTEXT_FIELD_NAME = "o"
-internal const val HANDLER_CONTEXT_FIELD =
-    "$HANDLER_CONTEXT_OWNER->$HANDLER_CONTEXT_FIELD_NAME:Landroid/content/Context;"
 
 /** Boxes the signed word count into the dispatched event, which is what identifies it. */
 internal const val INTEGER_VALUE_OF = "Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;"
-
-/**
- * The distance table. `r()` counts how many of its entries `abs(delta)` has passed, and that count
- * is the number of words. **Not final**, unlike everything in `Lpvr;`, so its contents can be
- * scaled in place.
- */
-internal const val CONFIG_STEP_TABLE_FIELD = "Lpvs;->h:[F"
-
-/**
- * Set by the engine constructor when the distance table is not strictly increasing; `g()` bails at
- * offset 27 when it is true, and the table then points at the shared static `Lmvf;->c:[F`.
- */
-internal const val CONFIG_DISABLED_FIELD = "Lpvs;->g:Z"
 
 /**
  * Gboard's preference store, and its string-keyed getters. It exposes these alongside a

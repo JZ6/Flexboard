@@ -3,6 +3,8 @@ package dev.jz6.flexboard.patches.shared
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.OffsetInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.SwitchPayload
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ThreeRegisterInstruction
@@ -82,8 +84,8 @@ internal fun com.android.tools.smali.dexlib2.iface.Method.calledDescriptors(): L
         .mapNotNull { ((it as? ReferenceInstruction)?.reference as? MethodReference)?.toString() }
 
 /**
- * The register at [offset] in an invoke's argument list — `this` at 0, and a wide argument
- * occupying one slot at its low half. Handles both encodings: `35c` packs up to five registers into
+ * The register at [offset] in an invoke's argument list — `this` at 0. Offsets count register
+ * slots, so a wide argument occupies two slots, beginning at its low half. `35c` packs up to five into
  * nibbles, `3rc` gives a consecutive range.
  *
  * Reading arguments off the invoke itself is the most robust anchor available in these
@@ -92,7 +94,7 @@ internal fun com.android.tools.smali.dexlib2.iface.Method.calledDescriptors(): L
  */
 internal fun Instruction.invokeRegisterAt(offset: Int): Int {
     val count = invokeRegisterCount()
-    check(offset < count) { "Offset $offset is out of range for a $count-register invoke" }
+    check(offset in 0 until count) { "Offset $offset is out of range for a $count-register invoke" }
     (this as? RegisterRangeInstruction)?.let { return it.startRegister + offset }
     val packed = this as? FiveRegisterInstruction
         ?: error("Expected an invoke to read register $offset from, found `${opcode.name}`")
@@ -114,19 +116,47 @@ internal fun Instruction.invokeRegisterCount(): Int =
 /**
  * Every register this instruction names as a source.
  *
- * Deliberately over-inclusive: a destination that is also a source (`add-int/2addr` reads its first
- * operand) is included, and no attempt is made to widen a wide *source* to its second word. Both
- * choices err toward reporting a read. Every caller uses this to decide whether a register is still
- * in use, where a false "yes" costs an emission a register and a false "no" corrupts a value.
+ * The destination is not a read on a plain move/const/get, but *is* a source for `2addr` arithmetic.
+ * Wide sources count both halves. A false read vetoes a correct patch; a missed read can corrupt a
+ * live value, so distinguish these instead of treating every register operand alike.
  */
-internal fun Instruction.registersRead(): List<Int> = when (this) {
-    is FiveRegisterInstruction ->
-        listOf(registerC, registerD, registerE, registerF, registerG).take(registerCount)
-    is RegisterRangeInstruction -> (startRegister until startRegister + registerCount).toList()
-    is ThreeRegisterInstruction -> listOf(registerA, registerB, registerC)
-    is TwoRegisterInstruction -> listOf(registerA, registerB)
-    is OneRegisterInstruction -> listOf(registerA)
-    else -> emptyList()
+internal fun Instruction.registersRead(): List<Int> {
+    val name = opcodeName()
+    fun wide(r: Int) = listOf(r, r + 1)
+    return when (this) {
+        is FiveRegisterInstruction ->
+            listOf(registerC, registerD, registerE, registerF, registerG).take(registerCount)
+        is RegisterRangeInstruction -> (startRegister until startRegister + registerCount).toList()
+        is ThreeRegisterInstruction -> {
+            val a = if (opcode.setsRegister()) emptyList() else if (name.startsWith("APUT_WIDE"))
+                wide(registerA) else listOf(registerA)
+            val b = if (name.contains("LONG") || name.contains("DOUBLE"))
+                wide(registerB) else listOf(registerB)
+            val c = if ((name.contains("LONG") && !name.startsWith("SHL_") &&
+                         !name.startsWith("SHR_") && !name.startsWith("USHR_")) ||
+                        name.contains("DOUBLE")) wide(registerC) else listOf(registerC)
+            a + b + c
+        }
+        is TwoRegisterInstruction -> {
+            val a = if (!opcode.setsRegister() || name.endsWith("_2ADDR")) {
+                if (name.startsWith("IPUT_WIDE") ||
+                    (name.endsWith("_2ADDR") && opcode.setsWideRegister())) wide(registerA)
+                else listOf(registerA)
+            } else emptyList()
+            val wideSource = name.startsWith("MOVE_WIDE") || name.startsWith("NEG_LONG") ||
+                name.startsWith("NEG_DOUBLE") || name.startsWith("NOT_LONG") ||
+                name.startsWith("LONG_TO") || name.startsWith("DOUBLE_TO") ||
+                (name.endsWith("_2ADDR") && (name.contains("LONG") || name.contains("DOUBLE")))
+            val b = if (wideSource) wide(registerB) else listOf(registerB)
+            a + b
+        }
+        is OneRegisterInstruction -> when {
+            opcode.setsRegister() -> emptyList()
+            name.startsWith("RETURN_WIDE") || name.startsWith("SPUT_WIDE") -> wide(registerA)
+            else -> listOf(registerA)
+        }
+        else -> emptyList()
+    }
 }
 
 /**
@@ -174,6 +204,25 @@ internal fun List<Instruction>.indexOfSoleCall(descriptor: String, context: Stri
         .filter { (_, instruction) -> instruction.callsMethod(descriptor) }
         .sole { "Expected exactly one call to $descriptor in $context, found $it" }
         .index
+}
+
+/** Appending a block before a terminal return is safe only if no stock edge jumps past that block. */
+internal fun assertTailReturnUntargeted(body: List<Instruction>, index: Int, what: String) {
+    check(index in body.indices && body[index].opcodeName().startsWith("RETURN")) {
+        "$what has no return at the insertion point $index"
+    }
+    check(body.none { it is SwitchPayload }) {
+        "$what contains a switch payload; case offsets need inspection before a tail insertion"
+    }
+    val addresses = IntArray(body.size)
+    var pc = 0
+    body.forEachIndexed { i, instruction ->
+        addresses[i] = pc
+        pc += instruction.codeUnits
+    }
+    check(body.withIndex().none { (i, instruction) ->
+        instruction is OffsetInstruction && addresses[i] + instruction.codeOffset == addresses[index]
+    }) { "$what has a branch into its return, which would skip the refresh block" }
 }
 
 /**
