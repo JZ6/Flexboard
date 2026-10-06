@@ -88,34 +88,34 @@ It also changes two of Gboard's settings at startup, because the gesture cannot 
 
 Both are in Gboard's **Glide typing** screen, and because both are written on every start, both are
 **greyed out** while the gesture is on — otherwise changing either would appear to work and quietly
-revert at the next start. The switch that hands them back sits directly above them in that same
-screen, so the way out is where the problem is. It is the same setting as the switch on Flexboard's
-own screen, not a copy.
+revert at the next start. A non-selectable **Managed by Flexboard** note sits above the rows. To
+restore glide typing, re-patch without Swipe Left to Delete, then turn glide typing back on.
 
 Removing Flexboard leaves glide typing off — tick it back on in Gboard's own settings.
 
 ## Settings
 
-Gboard's settings gain a **Flexboard** entry that opens a screen of sliders. Three of them shape
-the swipe-anywhere gesture; the backspace key keeps Gboard's own behaviour, see below.
+Gboard's settings gain a **Flexboard** entry with one slider, hotkey editors and an About section.
+The slider shapes the swipe-anywhere gesture; the backspace key keeps Gboard's own behaviour.
 
 | Setting | Default | What it does |
 |---|---|---|
 | **Max words per swipe** | 1 | The most words one swipe can delete. At 1 a swipe deletes a single word however far it travels; 10 means no limit. Swiping back still restores. |
 
-Swipe length and hold delay are fixed rather than adjustable. The swipe travels Gboard's own
-distance per word, and deleting starts immediately instead of after Gboard's 200 ms press-and-hold.
-Both were sliders once; [`docs/design.md`](docs/design.md) has why they are not now.
+Swipe length and hold delay have no controls. The swipe travels Gboard's own distance per word.
+On a fresh install, deleting starts immediately instead of after Gboard's 200 ms press-and-hold;
+an older stored hold-delay value still applies until that preference is cleared. Both were sliders
+once; [`docs/design.md`](docs/design.md) has why they are not now.
 
-The screen also carries eight **Hotkeys** fields belonging to
+The screen also carries eight **Hotkeys** editor rows belonging to
 [Toolbar Hotkeys](#toolbar-hotkeys).
 
 Every value is read out of Gboard's own preference store, so there is no separate settings app and
 nothing to keep in sync.
 
-The starting values are written into the store the first time the patched app runs, rather than
-being numbers inside the patch. So they behave as defaults for a fresh install, and a later update
-can pick different ones without moving settings you have already got used to.
+The slider reads a default from the patch unless you set a value in the store. Suggested Settings
+seeds Gboard preferences individually when unset, so later updates can add a new default without
+overwriting values you chose.
 
 Changes are not instant: a new setting is picked up the next time the keyboard is opened. Hotkeys
 are half an exception — *editing* a snippet takes effect immediately, because the text is read when
@@ -128,12 +128,12 @@ features that are not in your build.
 
 ### The backspace key still behaves the way Gboard built it
 
-The sliders above apply to swipes that start **anywhere on the letters**. A swipe that starts on the
+The word-cap slider above applies to swipes that start **anywhere on the letters**. A swipe that starts on the
 **backspace key** — the one place Gboard's own word-delete has always worked — keeps Gboard's
 distance per word and is not capped, so it still deletes as many words as you drag across.
 
-That is deliberate. A one-word cap and a short swipe are right for a gesture you trigger by accident
-sometimes; they are wrong for the deliberate press-and-drag on backspace that people already have
+That is deliberate. A one-word cap is right for a gesture you trigger by accident sometimes;
+it is wrong for the deliberate press-and-drag on backspace that people already have
 muscle memory for. Flexboard adds a gesture rather than replacing one.
 
 It works because Gboard keeps the key a gesture started on for the gesture's whole life, so the
@@ -208,14 +208,14 @@ each, on whatever you are typing into.
 Gboard can already do all three, behind its **Text editing** toolbar button — open that panel, then
 tap the one you want. These are the same actions without the panel.
 
-They take the first three slots on the toolbar, which pushes whatever used to be last into the
+They share the toolbar's capacity, which can push whatever used to be last into the
 overflow menu behind the chevron. Long-press the toolbar to reorder them like any other button.
 
 The labels are Gboard's own, so they are already translated wherever Gboard is. The icons are
 Material's — the select-all marquee, and the familiar copy and paste marks. Gboard ships all three
 and draws none of them, because its text editing panel spells the actions out in words rather than
-using icons; that is why Select all first shipped borrowing an unrelated icon. Flexboard still adds
-no images of its own.
+using icons; that is why Select all first shipped borrowing an unrelated icon. These three use
+Gboard's own icons; the hotkeys below use a separate Flexboard icon pack.
 
 ## Toolbar hotkeys
 
@@ -223,15 +223,15 @@ Eight more toolbar buttons, each typing a string you set under **Hotkeys** in Fl
 an email address, a signature, "brb", whatever you type often enough to resent typing.
 
 **A slot you have not filled in makes no button.** Fresh out of the box there are no hotkeys at all;
-fill one in and its icon appears on the toolbar, clear the field and the button goes away again.
+fill one in and its icon appears on the toolbar. Clearing its text hides the button when the toolbar
+is rebuilt (for example after switching IMEs or restarting), since there is no mid-session removal.
 That is the on/off switch, and it is per-button.
 
 Each button is named by your own text, so they are easy to tell apart when you long-press to
-reorder the toolbar. On the bar itself there is only room for the icon, and here the icons are
-arbitrary — a star, a sparkle, scissors, a ticked box, a ring, a share mark. They have to be:
-Gboard bundles 29 Material shapes and not one of them is a digit, and Flexboard ships no images of
-its own. So the settings screen draws each slot's real icon beside the field that fills it, which
-is the moment you actually need to know which is which.
+reorder the toolbar. On the bar itself there is only room for the icon. Flexboard bundles a picker
+of 24 vector icons, including digits 0–9. The eight slot defaults are email, password, phone,
+post office, home pin, work, heart and star. A slot's settings row opens an editor with a text
+field and the icon picker, and shows the selected icon beside its text.
 
 Long text is fine. The whole of it gets typed; only the first line, cut short, becomes the name.
 
@@ -264,41 +264,44 @@ drag more icons onto the bar, because that number is your setting and the patch 
 
 ## Hidden features
 
-Gboard ships a lot of finished features switched off behind Google's own feature flags, waiting on
-a server-side rollout. Those flags are delivered per app **signature** — and a patched build is
-resigned, so the delivery never arrives and every flag stays at whatever it was compiled with. On
-this build that is 666 of them.
+Gboard gates features behind per-signature flags that a resigned build may not receive. The
+default-on patch enables **grammar check** and **dismissable suggestion chips**; both were seen
+working on a device. Five other flags were tried: on-device Proofread prevented Gboard from
+starting and was removed, while the other four showed no visible effect and remain opt-in below.
+Forcing a flag does not supply downloaded models, locale allowlists or language packs behind it.
 
-Most deserve to stay off; they are experiments and half-built code. Seven do not:
+## Enable Rambler
 
-| | |
-|---|---|
-| **Grammar check** | the settings row, and the checking behind it |
-| **Proofread** | on-device proofreading |
-| **Emoji Kitchen browse** | the browse surface for sticker mashups |
-| **Custom sticker tab** | your own stickers, as a tab |
-| **Offline translate** | translation without a round trip to a server |
-| **Dismissable chips** | a close control on the chips Gboard offers unprompted |
-| **Settings search** | search inside Gboard's own settings |
+Rambler is Gboard's agentic dictation option in **Voice** settings. Flexboard reveals the choice;
+it does not select it or give consent on your behalf. The feature uses a server and has its own
+quota. Choosing Rambler in Gboard is what switches it on.
 
-Each is something Google ships to ordinary Gboard users today, so the code behind the flag is
-finished — this is restoring what resigning took away, not switching on an experiment.
+## Hidden Features (unconfirmed)
 
-Some are locale- or account-dependent and may do nothing on your device, which is Google's doing
-rather than the patch's. If a feature does not appear, it was not enabled for you upstream either.
+This default-off patch lets you try Emoji Kitchen browse, custom sticker tab, offline translation
+and settings search. None was seen working when tested separately. Emoji browse, stickers and offline
+translation have other data or locale requirements; settings search has no companion parameters in
+the dex. None of the four caused a startup crash during those tests.
 
-## Flick keys for symbols
+## Modern keypress haptics
 
-Gboard can already enter a key's hinted symbol when you pull down on it — **Flick keys to enter
-symbols**, in its Preferences screen — and ships it off. Flexboard turns it on.
+Gboard ships a haptic-primitives path but gives its minimum Android version an impossible value.
+This patch lowers that minimum to API 30. Gboard still checks hardware support; where primitives
+aren't available it keeps the legacy vibration path. With primitives, the slider value describes
+intensity rather than milliseconds. The result has not been tested on a device for feel.
 
-It is written **once**, only if you have never set it, so it behaves as a default rather than
-something forced: turn it off in Gboard's settings and it stays off.
+## Suggested Settings
 
-One quirk worth knowing. Gboard's own settings row for it depends on **Touch & hold keys for
-numbers**, so while that is off the flick row shows as on but greyed out — the feature works, you
-just cannot toggle it from there. Enabling "Touch & hold keys for numbers" un-greys it. Flexboard
-deliberately does not change that setting for you, since nothing at runtime needs it.
+This default-on patch turns on **Flick keys to enter symbols**, **Touch & hold keys for numbers**,
+the suggestion strip, grammar check and smart replies; it turns off offensive-word blocking and
+word suggestions. Each preference is written only when unset, so changes you make in Gboard stick.
+The grammar check row also needs the [Hidden Features](#hidden-features) patch to be visible on a
+resigned build.
+
+Gboard's own flick row depends on **Touch & hold keys for numbers**, which this patch enables so
+the flick setting can be changed. Earlier Flexboard builds also wrote a slide-sensitivity value of
+0.6, which isn't a choice on Gboard's slider and doesn't control swipe-up. This patch removes that
+old value once, if it is still 0.6; other values are left alone.
 
 ## Install as Gboard clone
 
@@ -311,17 +314,23 @@ Untick it and the patched build replaces the Gboard you already have.
 ## Bypass Gboard signature
 
 Gboard hashes its own signing certificate and compares it against a list baked into the app. A
-patched build is re-signed, so that check fails. Flexboard forces it to pass.
+patched build is re-signed, so the cold-start self-check fails. Flexboard skips that self-check's
+failure branch; it leaves the check itself intact for other callers.
 
-Nothing about this one is visible either way, and it turns out that nothing is behind it. The
-check gates no feature: its only real caller does nothing except the check itself, and throws if
-it fails. Patched **without** this one the keyboard still opens — the exception lands on a
-background thread during startup and everything carries on. So it removes a startup crash rather
-than restoring anything.
+The self-check gates no feature: that call site does nothing except check and throw if it fails.
+Patched **without** this one the keyboard still opens — the exception lands on a background thread
+during startup and everything carries on. A second caller protects Gboard's exported debug bridge;
+its signature verification must stay intact.
 
 It is kept anyway, because an exception on every cold start is worth silencing even when it is
 survivable, and because assuming it stays harmless on every device is a worse bet than simply
 patching it out.
+
+## Vibration Slider Everywhere
+
+Gboard hides its own vibration-strength slider on some devices and sends users to Android's
+system haptic settings instead. This patch makes Gboard use its own slider on every device; the
+keypress vibration toggle still governs whether vibration runs at all.
 
 ## Development
 

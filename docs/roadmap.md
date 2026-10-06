@@ -1,5 +1,10 @@
 # Roadmap
 
+> Status: Bigger Toolbar, native toolbar ids, hotkeys, and conditional settings sections have
+> shipped. The duplicate "Pending" sections below are historical proposals, retained alongside
+> the user's original notes. Do not reintroduce a toolbar count seed or ToolbarMerge; see
+> [the current design](design.md) and [the review ledger](code-review-2026-10-02.md).
+
 
 # Roadmap entries written by the user verbatim.
 
@@ -47,17 +52,17 @@ the only way in.
 - "?attr/colorControlNormal does not resolve at recompile time" — still true; don't use AppCompat attrs.
 - "The settings Activity should render only enabled sections via markers" — deferred by user.
 
-## Pending (investigated, needs implementation)
+## Historical proposals (formerly pending; now shipped or superseded)
 
-**Bigger Toolbar returns natively.** Hotkeys have since shipped — eight slots on `flexboard_*` ids
-admitted by `toolbarIdAdmissionPatch`. Bigger Toolbar has not. Both previous attempts tried to own
+**Bigger Toolbar returns natively (done).** Hotkeys and Bigger Toolbar have shipped — eight slots
+on `flexboard_*` ids admitted by `toolbarIdAdmissionPatch`. Both previous attempts tried to own
 the count and both broke the user's ability to remove buttons; the plan that follows from that is
 `docs/toolbar-capacity.md`, and it raises the capacity only.
 
-**Widen the allowed-set array when hotkeys return.** Done — `toolbarIdAdmissionPatch` splices the
-twelve `flexboard_hotkey_N` ids into the allowed-set array via `res/values` (strings + items),
-zero dex change; research in [`docs/toolbar-access-points.md`](toolbar-access-points.md). Inert
-until a patch registers those ids — which is the hotkeys return, when it comes.
+**Widen the allowed-set array (done).** `toolbarIdAdmissionPatch` splices eight
+`flexboard_hotkey_N` ids and three text-action ids into the array via `res/values`, zero dex change;
+`ToolbarHotkeysPatch` and `ToolbarButtonsPatch` now register them natively. Research:
+[`docs/toolbar-access-points.md`](toolbar-access-points.md).
 
 **Rolled back: the 1.4.0-dev.1–dev.5 native hotkeys.** The dex side was solid (conditional
 `Lmlh` blocks + the `Lmjv;->c` order-filter bypass), but the feature's per-slot ListPreference
@@ -173,9 +178,12 @@ user's shared-prefs) are orphaned by the swap; neither breaks anything — the o
 of the order filter silently, and hotkey fields in the settings screen are inert until the
 hotkey patch returns in native form.
 
-## Pending (investigated, needs implementation)
+## Historical provider-registration proposal (no longer pending)
 
-**Toolbar reorder persistence — register as providers.** Gboard's customize-write path reconstructs the saved order string from the registered-provider list — the `Lmjv`/`Lmjz` order hierarchy — and drops any id it doesn't know. Our injected buttons (`flexboard_select_all`, `flexboard_copy`, `flexboard_paste`, `flexboard_hotkey_N`) aren't providers, so they never appear in the order string, and every customize session forgets them. On rebuild, `merge()` can only place them canonicallly at the front (which is why it currently always does that — see `ToolbarMerge.mergeOrdered`). To fix: register our access points with Gboard's provider machinery via a bytecode patch, instead of injecting into the bar's rendered list after the fact. Then the customize-write path has them by construction, and drag-persistence just works.
+**Toolbar reorder persistence — historical idea.** The older merge-splice implementation did not
+persist order. `ToolbarMerge.mergeOrdered` was deleted; the current native registration writes
+Flexboard ids into Gboard's allowed set and uses Gboard's own order list. Provider injection is no
+longer proposed. Keep the investigation in git history for the original failure.
 
 **Toolbar crash on clicking the 4-square overflow icon.** Reproduces as a crash depending on state; likely the icons where a draw with our registered ids into Customize's key paths. Needs a device logcat to identify. Likely related to not persisting: the customize view expects reordable ids, ours are absent, and the difference in list contents likely crashes the section/commit handler with an unexpected value.
 
@@ -254,7 +262,7 @@ The list above is kept as written; this notes which of it has landed, rather tha
     screen keeps its own count, set through Gboard's own UI. **Done** — shipped and confirmed on a
     device, where twelve is what makes the unfolded screen worth the ceiling.
 
-- **add select all copy paste hotkeys** — *Text Editing Buttons* puts one-tap **Select all**,
+- **add select all copy paste hotkeys** — *Text Action Buttons* puts one-tap **Select all**,
   **Copy** and **Paste** on the toolbar. Cut is not built; it is the same shape again, one entry in
   a list. The icons turned out to be free: Gboard bundles Material's set and draws none of them, and
   `tools/apk/glyphs.py` finds them by geometry now that every drawable name is stripped.
@@ -273,20 +281,17 @@ The list above is kept as written; this notes which of it has landed, rather tha
   needed. With the slider working the two now compose properly: raise the count and the button
   costs nothing that used to be visible.
 
-- **set new defaults, swipe length 60%, icons on the toolbar 6, icons when unfolded 12** — all
-  three, and **written into the store on first run** rather than baked into the patch as read
-  fallbacks. That distinction is the point: a fallback follows the code, so changing it later moves
-  everyone who never touched a slider. A written value is yours from the first run, and a future
-  release can pick different starting numbers for new installs without touching a keyboard someone
-  has got used to. The toolbar had no starting value at all before — unset fell through to whatever
-  Gboard computed.
+- **set new defaults, swipe length 60%, icons on the toolbar 6, icons when unfolded 12** —
+  **Superseded.** Swipe-length scaling and the seed-defaults patch were removed; the shipped
+  Bigger Toolbar patch raises the capacity ceiling without writing either of Gboard's toolbar
+  count preferences. Writing a count puts removed buttons back. The original request is retained
+  here, but its former implementation is not shipped.
 
-- **what other material symbols are there, im pretty sure undo exists** — it does not. All 2,170
-  published Material Icons were matched against the APK's 496 vector drawables, and 29 shapes are
-  bundled at 35 ids; the table is in [`gboard-bindings.md`](gboard-bindings.md#material-icons-gboard-bundles).
-  `undo`, `redo`, `search`, `send`, `add`, `edit` and every numbered glyph match nothing, while
-  `spellcheck` and `auto_awesome` are there. The hotkey icons were picked out of that list, which is
-  also why they are shapes rather than the digits one through six. The `glyphs.py` tail check was
+- **what other material symbols are there, im pretty sure undo exists** — the historical Gboard
+  icon scan found 29 Material shapes at 35 ids. That search was not exhaustive: compact SVG arcs
+  and non-path shapes were unsupported, so an absent match was inconclusive. Flexboard now ships
+  its own 24-icon vector pack, including digits 0–9, for configurable hotkeys. The original
+  `glyphs.py` tail check was
   fixed — it had been bleeding into the next `<path>` element and skipping filled icons, so
   `add`, `close`, `content_paste`, `delete`, `edit`, `mic`, `search` and `send` all reported
   "0 points" and were silently absent from earlier audits.
