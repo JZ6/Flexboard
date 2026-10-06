@@ -4,7 +4,7 @@ import android.content.res.Resources;
 
 /**
  * Compile-time shape only — the set of members the extension actually uses, nothing more.
- * CI compiles against the real android.jar; this stub is never packaged and never runs.
+ * The shipped extension compiles against android.jar; this stub runs only in extension-check tests.
  */
 public abstract class Context {
 
@@ -22,7 +22,9 @@ public abstract class Context {
 
     public abstract SharedPreferences getSharedPreferences(String name, int mode);
 
-    public abstract String getString(int resId);
+    public final String getString(int resId) {
+        return getResources().getString(resId);
+    }
 
     public abstract Resources getResources();
 
@@ -40,7 +42,7 @@ public abstract class Context {
         return null;
     }
 
-    public android.graphics.drawable.Drawable getDrawable(int id) {
-        return null;
+    public final android.graphics.drawable.Drawable getDrawable(int id) {
+        return getResources().getDrawable(id);
     }
 }

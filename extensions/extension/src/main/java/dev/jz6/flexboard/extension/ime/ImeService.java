@@ -1,11 +1,7 @@
 package dev.jz6.flexboard.extension.ime;
 
-import android.content.Context;
-import android.content.SharedPreferences;
 import android.inputmethodservice.InputMethodService;
 import android.view.inputmethod.InputConnection;
-
-import dev.jz6.flexboard.extension.prefs.Preferences;
 
 /**
  * Gboard's running {@link InputMethodService}, published from patched bytecode so the extension's
@@ -55,19 +51,5 @@ public final class ImeService {
             return null;
         }
         return inputMethodService.getCurrentInputConnection();
-    }
-
-    /**
-     * Gboard's own preference store, or {@code null} before the service exists.
-     *
-     * <p>Same file the settings screen writes — see {@code Preferences} for why the context matters
-     * as much as the name.
-     */
-    public static SharedPreferences preferences() {
-        Context context = service;
-        if (context == null) {
-            return null;
-        }
-        return Preferences.of(context);
     }
 }

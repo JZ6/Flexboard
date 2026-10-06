@@ -11,8 +11,8 @@ plugins {
 // actually calls. A typo, a missing import, a renamed method: fails here in seconds, locally,
 // instead of after a push in CI.
 //
-// CI never sees the android.* stubs: :extensions:extension compiles against the real android.jar
-// and does not depend on this module.
+// CI also runs this local-check module through tools/gate. The shipped :extensions:extension
+// compiles against the real android.jar and does not depend on these test stubs.
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_1_8
@@ -26,6 +26,8 @@ sourceSets {
 
 dependencies {
     compileOnly(project(":stubs"))
+    // Settings tests may load the Gboard/AndroidX stubs as classes at runtime too.
+    runtimeOnly(project(":stubs"))
 }
 
 // Running the extension's own logic, not just compiling it.
@@ -41,7 +43,7 @@ sourceSets {
 }
 
 tasks.register<JavaExec>("extensionTests") {
-    description = "Runs the extension's blob, label and icon logic on a desktop JVM."
+    description = "Runs the extension's blob, label, settings and crash-recorder logic on a desktop JVM."
     group = "verification"
     mainClass.set("dev.jz6.flexboard.extension.ExtensionTests")
     classpath = sourceSets["main"].runtimeClasspath

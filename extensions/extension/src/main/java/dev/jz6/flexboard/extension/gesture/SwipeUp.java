@@ -11,8 +11,9 @@ import dev.jz6.flexboard.extension.ime.ImeService;
  *
  * <p><b>Stage 2 of 4: take the gesture over, and say whether it took.</b> Stage 1 typed a "6" on
  * every swipe up, mid-swipe, and was confirmed on a device. Stage 2 adds the takeover — exactly the
- * takeover path of the build that crashed (2.5.1-dev.7), with its undo replaced by a marker — so it
- * splits that crash in two: if this crashes, the takeover is the cause; if not, sending the undo was.
+ * takeover path of the build that crashed (2.5.1-dev.7), with its undo replaced by a marker.
+ * dev.9 identified the crash in the owner read-back: Lozi's class/field were not accessible from
+ * the scrub handler. The patch widens their visibility before installing this stage.
  * <ol>
  *   <li>detect, and type "6" — confirmed;</li>
  *   <li><b>take the gesture over</b> — "6" if it took and the key is not typed, "x" if refused;</li>
@@ -80,7 +81,13 @@ public final class SwipeUp {
                 return PASS;
             }
             switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_DOWN: {
+                    // A new DOWN begins a new gesture even if an old UP/CANCEL went missing.
+                    clear();
+                    int index = event.getActionIndex();
+                    begin(event.getPointerId(index), event.getX(index), event.getY(index));
+                    return PASS;
+                }
                 case MotionEvent.ACTION_POINTER_DOWN: {
                     if (anyClaimed()) {
                         return SWALLOW;
@@ -104,11 +111,7 @@ public final class SwipeUp {
                 }
                 case MotionEvent.ACTION_CANCEL: {
                     boolean ours = anyClaimed();
-                    for (int i = 0; i < SLOTS; i++) {
-                        active[i] = false;
-                        fired[i] = false;
-                        claimed[i] = false;
-                    }
+                    clear();
                     return ours ? SWALLOW : PASS;
                 }
                 default:
@@ -180,6 +183,15 @@ public final class SwipeUp {
             }
         }
         return false;
+    }
+
+    private static void clear() {
+        for (int i = 0; i < SLOTS; i++) {
+            active[i] = false;
+            fired[i] = false;
+            claimed[i] = false;
+        }
+        lastClaimed = -1;
     }
 
     private static void begin(int id, float x, float y) {

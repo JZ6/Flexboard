@@ -18,7 +18,7 @@ import dev.jz6.flexboard.extension.ime.ImeService;
  * for its null handling to drift apart.
  *
  * <p><b>Why an ordinal rather than the framework id.</b> The patch emits the constructor argument,
- * and passing {@code android.R.id.copy} would mean hardcoding {@code 0x0102001b} in Kotlin. The ids
+ * and passing {@code android.R.id.copy} would mean hardcoding {@code 0x01020021} in Kotlin. The ids
  * below are Flexboard's own, mapped to the framework's in {@link #menuAction()}, so the framework
  * constants stay symbolic in the one language that can name them. They are duplicated in
  * {@code ToolbarButtonsPatch.kt} and held in step by {@code check_shared_constants.py}.

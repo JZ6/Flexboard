@@ -38,8 +38,9 @@ public final class ResourceIds {
     /**
      * The id of {@code type/name}, or 0 when this build has no such resource.
      *
-     * <p>Never throws: {@code getIdentifier} answers a miss with 0 rather than an exception, and
-     * both callers already treat 0 as "fall back to what the XML gave us".
+     * <p>{@code getIdentifier} answers a missing name with 0. The fragment's {@code aB()} returns
+     * that id and displays a blank settings screen if no XML resolves; a missing hotkey drawable
+     * instead falls back to its existing/default icon. A broken Context can still throw.
      */
     public static int byName(Context context, String type, String name) {
         android.content.res.Resources resources = context.getResources();

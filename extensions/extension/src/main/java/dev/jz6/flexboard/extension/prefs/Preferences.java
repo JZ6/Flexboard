@@ -40,8 +40,8 @@ import android.content.SharedPreferences;
  *
  * <p><b>Why this is its own class.</b> It lived in the settings Activity back when the screen was
  * an extension-owned frame writing this store by hand. The screen is a Gboard-hosted fragment now
- * (see {@code FlexboardSettingsFragment}), but the seed in {@link Defaults} still writes through
- * here, and the patches' in-smi readers target this same file — the reasoning stays in one place.
+ * (see {@code FlexboardSettingsFragment}), but {@link GboardSettings} still seeds preferences
+ * through here, and the patches' emitted smali readers target this same file.
  */
 public final class Preferences {
 

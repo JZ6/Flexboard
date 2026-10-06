@@ -7,7 +7,7 @@ import android.content.SharedPreferences;
  * Gboard's own settings, written the way Gboard writes them.
  *
  * <p>Two patches need to change a Gboard preference at startup: one forces the settings the widened
- * swipe cannot work without, the other turns on flick keys as a default. Both used to do it in
+ * swipe cannot work without, the other seeds several suggested defaults. Both used to do it in
  * bytecode, through the store's id-keyed setter.
  *
  * <p><b>None of that was necessary.</b> A Gboard preference key is a string resource's value —
@@ -23,9 +23,8 @@ import android.content.SharedPreferences;
  * themselves back on every start instead of behaving as a default, and nothing short of a device
  * would have said so. {@link SharedPreferences#contains} has no sibling.
  *
- * <p><b>The resource ids stay pinned</b>, exactly as they were — {@code COMPATIBILITY_GBOARD} ties
- * the bundle to one Gboard build, and `tools/apk/preflight.py` now checks that each id still names
- * the preference it is supposed to, which nothing did while they lived in Kotlin.
+ * <p><b>The resource ids stay pinned</b> by `tools/apk/preflight.py`. The compatibleWith metadata
+ * describes the target build but does not prevent Morphe applying a patch to another version.
  *
  * <p>Called from patched bytecode at Application start, before any keyboard is built and so before
  * anything reads these.
@@ -48,16 +47,9 @@ public final class GboardSettings {
     /** `pref_enable_flick_symbols`. */
     private static final int ENABLE_FLICK_SYMBOLS = 0x7f140a01;
 
-    /**
-     * `keyboard_slide_sensitivity_ratio`, which scales every slide threshold in
-     * {@code Lpvi;->h} — the function that decides whether a drag off a key is a SLIDE_UP or just
-     * a press.
-     *
-     * <p>Stored as a <b>String</b> and read with {@code Float.parseFloat}, not as a float
-     * preference. Writing a float here would throw {@code ClassCastException} on the next read,
-     * inside the keyboard.
-     */
+    /** Only used to remove Flexboard's old, invalid 0.6 default once. Stored as a String. */
     private static final int SLIDE_SENSITIVITY_RATIO = 0x7f140ad3;
+    private static final String SLIDE_SENSITIVITY_MIGRATED = "flexboard_slide_ratio_migrated";
 
     /** `enable_secondary_digits` — "Touch & hold keys for numbers". Un-greys the flick row. */
     private static final int ENABLE_SECONDARY_DIGITS = 0x7f140a21;
@@ -124,14 +116,14 @@ public final class GboardSettings {
     /**
      * {@code context.getString(id)} for one of the pinned Gboard ids, or null when it fails.
      *
-     * <p>These nine ids are hardcoded numbers pinned against one build, and both callers run from
+     * <p>These ten ids are hardcoded numbers pinned against one build, and both callers run from
      * patched bytecode at Gboard's Application start. A stale id makes {@code getString} throw
      * {@link android.content.res.Resources.NotFoundException} inside {@code onCreate} -- which is
      * not a settings screen failing, it is the whole app failing to start, on a keyboard, with no
      * keyboard left to report it with. Skipping one preference is a far better outcome than a
      * crash loop.
      *
-     * <p>{@code tools/apk/preflight.py} checks all nine, and now runs from the pre-push hook, so
+     * <p>{@code tools/apk/preflight.py} checks all ten, and now runs from the pre-push hook, so
      * this is the seatbelt rather than the gate. It does not help against an id that resolves to
      * the <em>wrong</em> string -- nothing at runtime can detect that, which is what the preflight
      * pins are for.
@@ -190,19 +182,19 @@ public final class GboardSettings {
         boolean wrote = false;
 
         String key = keyOrNull(context, ENABLE_FLICK_SYMBOLS);
- if (key != null && !preferences.contains(key)) {
+        if (key != null && !preferences.contains(key)) {
             editor.putBoolean(key, true);
             wrote = true;
         }
-        // Gboard's stock ratio is 1.0, tuned for flick-to-symbol on keys that define a flick.
-        // Swipe up to undo is a flick on keys that do not, and at 1.0 it lands on the threshold:
-        // measured on a device as firing on some swipes and not others, with no difference the
-        // user could feel. 0.6 brings it within a normal upward swipe.
-        //
-        // A default rather than a forced value, so anyone who has set it keeps their setting.
-        key = keyOrNull(context, SLIDE_SENSITIVITY_RATIO);
-        if (key != null && !preferences.contains(key)) {
-            editor.putString(key, "0.6");
+        // An older release seeded 0.6, which is not a Gboard slider value and does not control
+        // SwipeUp's independent 24dp threshold. Remove it once so Gboard can use its own default.
+        // Never touch another value, including one chosen later by the user.
+        if (!preferences.contains(SLIDE_SENSITIVITY_MIGRATED)) {
+            key = keyOrNull(context, SLIDE_SENSITIVITY_RATIO);
+            if (key != null && "0.6".equals(preferences.getString(key, null))) {
+                editor.remove(key);
+            }
+            editor.putBoolean(SLIDE_SENSITIVITY_MIGRATED, true);
             wrote = true;
         }
         key = keyOrNull(context, ENABLE_SECONDARY_DIGITS);

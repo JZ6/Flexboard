@@ -31,8 +31,9 @@ import java.io.StringWriter;
  *       than lost.</li>
  * </ol>
  *
- * <p>Everything here catches {@code Throwable}. A crash reporter that can itself crash the keyboard
- * is worse than none.
+ * <p>The installed handler, install and delivery paths catch {@code Throwable}; the direct
+ * {@code record} helper is called from inside the handler's catch. A crash reporter that itself
+ * crashes the keyboard is worse than none.
  */
 public final class CrashRecorder {
 
@@ -50,12 +51,11 @@ public final class CrashRecorder {
     }
 
     /** Called at app start with the application context. Safe to call more than once. */
-    public static void install(Context context) {
+    public static synchronized void install(Context context) {
         try {
             if (installed || context == null) {
                 return;
             }
-            installed = true;
             Context app = context.getApplicationContext();
             if (app == null) {
                 app = context;
@@ -63,6 +63,7 @@ public final class CrashRecorder {
             deliver(app);
             Thread.setDefaultUncaughtExceptionHandler(
                     handler(app, Thread.getDefaultUncaughtExceptionHandler()));
+            installed = true;
         } catch (Throwable oops) {
             // See the class comment.
         }
@@ -72,9 +73,9 @@ public final class CrashRecorder {
      * The handler that records a crash and then hands it on.
      *
      * <p>A factory rather than a private class so the two properties that matter can be tested
-     * without installing anything process-wide: the crash is handed on even when recording it
-     * fails, and even when there was no handler before. If it were not, a crash would leave a
-     * frozen keyboard instead of a restarted one.
+     * without installing anything process-wide: recording failures do not prevent handoff to
+     * the previous handler. Android has one in the app process. A null predecessor in a desktop
+     * test is tolerated, but there is no handler to hand that crash to.
      */
     public static Thread.UncaughtExceptionHandler handler(
             Context context, Thread.UncaughtExceptionHandler previous) {
@@ -155,8 +156,7 @@ public final class CrashRecorder {
                 return false;
             }
             ((ClipboardManager) service).setPrimaryClip(ClipData.newPlainText("Flexboard crash", report));
-            prefs.edit().remove(KEY).commit();
-            return true;
+            return prefs.edit().remove(KEY).commit();
         } catch (Throwable oops) {
             return false;
         }

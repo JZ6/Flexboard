@@ -6,6 +6,14 @@ package android.content.res;
  */
 public class Resources {
 
+    public String getString(int id) {
+        throw new NotFoundException();
+    }
+
+    public android.graphics.drawable.Drawable getDrawable(int id) {
+        throw new NotFoundException();
+    }
+
     public int getIdentifier(String name, String defType, String defPackage) {
         return 0;
     }
@@ -26,8 +34,20 @@ public class Resources {
      * no instance to take one from.
      */
     public static Resources getSystem() {
-        return null;
+        return SYSTEM;
     }
+
+    private static final Resources SYSTEM = new Resources() {
+        private final android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+        {
+            metrics.density = 1f;
+        }
+
+        @Override
+        public android.util.DisplayMetrics getDisplayMetrics() {
+            return metrics;
+        }
+    };
 
     /** Thrown by the id-addressed lookups when the id names nothing on this build. */
     public static class NotFoundException extends RuntimeException {

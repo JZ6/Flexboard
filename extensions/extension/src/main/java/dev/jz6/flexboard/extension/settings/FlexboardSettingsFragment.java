@@ -70,7 +70,6 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     /** Must match the file {@code SettingsScreenPatch} writes to {@code res/xml/}. */
     private static final String SCREEN_NAME = "flexboard_settings";
 
-    /** Held against Constants.kt and build.gradle.kts by check_shared_constants. */
     /** Paired with ABOUT_SOURCE_KEY in SettingsScreenPatch.kt. */
     private static final String ABOUT_SOURCE_KEY = "flexboard_about_source";
 
@@ -83,6 +82,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     /** Paired with HOTKEY_IMPORT_KEY in SettingsScreenPatch.kt. */
     private static final String HOTKEY_IMPORT_KEY = "flexboard_hotkey_paste";
 
+    /** Held against Constants.kt and build.gradle.kts by check_shared_constants. */
     private static final String SOURCE_URL = "https://github.com/JZ6/Flexboard";
     private static final String SOURCE_URL_SHORT = "github.com/JZ6/Flexboard";
 
@@ -114,15 +114,13 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         }
         new Handler(Looper.getMainLooper()).post(() -> {
             // The doc above promised this no-ops when the pass lands badly. It did not: this was
-            // the one path in the class with no catcher, and unlike a click handler it sits on no
-            // Gboard stack that could supply one. Gboard is a single process -- nothing in its
+            // a path with no catcher. Gboard is a single process -- nothing in its
             // manifest declares android:process -- so an escape here does not close a settings
             // screen, it takes the keyboard down and leaves the device with no text input.
             try {
                 paintRowsFromStore();
             } catch (Throwable unpaintable) {
-                // Silent on purpose, and the outcome the doc already described: rows keep what
-                // the XML gave them, and syncRowIconsOnce repaints on the first tap.
+                // Rows keep what the XML gave them; the latch remains unset for a later retry.
             }
         });
         return dev.jz6.flexboard.extension.ResourceIds.byName(context, "xml", SCREEN_NAME);
@@ -266,7 +264,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
             if (isRow(preference, Hotkeys.textKey(slot))) {
                 if (!editHotkey(preference, slot)) {
-                    preference.n("couldn't open the editor — reopen Settings from the keyboard");
+                    preference.n("couldn't open the editor");
                 }
                 return true;
             }
@@ -309,7 +307,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     private void tryKeyboard(androidx.preference.Preference row) {
         Context ui = dialogContext(row);
         if (ui == null) {
-            row.n("couldn't open the text box — reopen Settings from the keyboard");
+            row.n("couldn't open the text box");
             return;
         }
         try {
@@ -358,7 +356,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
     private void openSource(androidx.preference.Preference row) {
         Context context = dialogContext(row);
         if (context == null) {
-            row.n("couldn't open a browser — reopen Settings from the keyboard");
+            row.n("couldn't open a browser");
             return;
         }
         try {
@@ -431,11 +429,8 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         field.setText(Hotkeys.textOf(ui, slot));
         field.setHint("Text to commit");
 
-        // Grid of the bundled pack, dimmed on the current choice. A tap moves the dim only —
-        // both halves (text and icon) commit together through the dismiss hook:
-        //   Save → commit both (the button itself just dismisses; the hook does the work).
-        //   Cancel → discard both (sets the flag the hook checks first).
-        //   Back / outside-tap → commit both, i.e. the autosave every other dismissal means.
+        // Grid of the bundled pack, dimmed on the current choice. A tap moves the dim only.
+        // Save commits text and icon together; Cancel, Back and outside-tap discard both.
         // An "undo" that works everywhere stays "tap the old icon again".
         GridLayout grid = new GridLayout(ui);
         grid.setColumnCount(4);
@@ -485,7 +480,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save", (dlog, which) -> {
                 // Outside editHotkey's try: the dialog callback runs later, on its own stack, and
-                // redrawSlot reaches three obfuscated Preference members.
+                // redrawSlot reaches the fragment's d() and the row's n()/N() members.
                 try {
                     Hotkeys.setText(ui, slot, field.getText().toString());
                     if (!pending[0].equals(seed)) {
@@ -599,11 +594,17 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             .setTitle("Import hotkeys")
             .setView(content)
             .setPositiveButton("Apply", (dlog, which) -> {
-                String blob = field.getText().toString();
-                String outcome = Hotkeys.importFromText(ui, blob);
-                row.n(outcome);
-                if (Hotkeys.applied(outcome)) {
-                    onImportApplied(ui);
+                // This callback runs after showImportDialog has returned; the outer catch cannot
+                // guard it. Obfuscated row/fragment methods can throw LinkageError here.
+                try {
+                    String blob = field.getText().toString();
+                    String outcome = Hotkeys.importFromText(ui, blob);
+                    row.n(outcome);
+                    if (Hotkeys.applied(outcome)) {
+                        onImportApplied(ui);
+                    }
+                } catch (Throwable unpaintable) {
+                    // Import may have completed already. Leave the saved data for the next open.
                 }
             })
             .setNegativeButton("Cancel", null)
@@ -624,10 +625,10 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
      * what makes {@code n()} safe to call on them (on an EditTextPreference row the port's
      * ctor-installed SummaryProvider would have it throw).
      */
-    private void redrawSlot(Context context, int slot) {
+    private boolean redrawSlot(Context context, int slot) {
         androidx.preference.Preference row = d(Hotkeys.textKey(slot));
         if (row == null) {
-            return;
+            return false;
         }
         String text = Hotkeys.textOf(context, slot);
         // The stored text is painted verbatim, but the empty-test mirrors the toolbar's
@@ -637,6 +638,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         if (icon != null) {
             row.N(icon);
         }
+        return true;
     }
 
     /**
@@ -652,8 +654,7 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
             // burn the trigger that would have fixed the screen.
             return;
         }
-        iconsSynced = true;
-        redrawAllRows(context);
+        iconsSynced = redrawAllRows(context);
     }
 
     /**
@@ -677,9 +678,19 @@ public final class FlexboardSettingsFragment extends CommonPreferenceFragment {
         redrawAllRows(context);
     }
 
-    private void redrawAllRows(Context context) {
+    private boolean redrawAllRows(Context context) {
+        boolean allPresent = true;
+        int present = 0;
         for (int slot = 1; slot <= Hotkeys.slotCount(); slot++) {
-            redrawSlot(context, slot);
+            // Evaluate every slot even after a miss; do not short-circuit the repaint.
+            if (redrawSlot(context, slot)) {
+                present++;
+            } else {
+                allPresent = false;
+            }
         }
+        // When Toolbar Hotkeys was not selected, none of its rows exists by design. Only consider
+        // that a completed paint once the unconditional About row proves inflation has happened.
+        return allPresent || (present == 0 && d(ABOUT_SOURCE_KEY) != null);
     }
 }

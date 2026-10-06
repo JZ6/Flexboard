@@ -13,19 +13,19 @@ import dev.jz6.flexboard.extension.prefs.Preferences;
  *
  * <p>Every slot has two keys — {@code flexboard_hotkey_N_text} (the string the tap commits) and
  * {@code flexboard_hotkey_N_icon} (a bundled vector's drawable <i>name</i>; decimal ids from
- * dev.7-and-earlier exports still parse, validated against this build before use). A slot
+ * dev.7-and-earlier exports still parse, checked to name a drawable on this build before use). A slot
  * registers only when its text is set — an unused slot draws nothing — and clearing the text
  * takes the button away at the next bar-controller rebuild (rotation, an IME switch, a restart):
  * the registry has no mid-session un-register, while text and icon edits go live on the next
  * keyboard open through the start-input re-registration. Slot N hiding skips registration, so
  * reordering stays Gboard's (docs/toolbar-access-points.md).
  *
- * <p>All values are strings because the screen's rows persist through Gboard's androidx port,
- * which writes them as text; readers here parse defensively and fall back to the default the
- * patch itself would have staged.
+ * <p>Flexboard stores text and icon choice as strings; readers parse defensively and fall back to
+ * the default the patch itself would have staged.
  *
  * <p>Each slot's default icon is a fixed member of the bundled Flexboard pack, so an untouched
- * install already shows eight distinguishable buttons. The settings screen's single row per
+ * install has eight distinguishable icons available once the user fills a slot. Empty slots show
+ * no buttons. The settings screen's single row per
  * slot opens a composite editor (text field + grid over the same pack, chosen by name), so a
  * preference written by the dialog, by an import, or by neither resolves through one path.
  */
@@ -36,7 +36,7 @@ public final class Hotkeys {
     private static final String PREF_TEXT_SUFFIX = "_text";
     private static final String PREF_ICON_SUFFIX = "_icon";
 
-    /** Must match HOTKEY_SLOTS in the patch's ToolbarSlotsPatch and the XML's count maximum. */
+    /** Must match HOTKEY_SLOTS in features/toolbar/ToolbarHotkeys.kt and the eight XML rows. */
     private static final int SLOT_COUNT = 8;
 
     /** The slot count, for screens that iterate every row. */
@@ -92,7 +92,7 @@ public final class Hotkeys {
     };
 
     /**
-     * The picker's grid order: the twelve slot defaults first, then the extras.
+     * The picker's grid order: twelve default-pack icons (first eight are slot defaults), then extras.
      *
      * <p>Sized and filled by the two source tables' own lengths, not SLOT_COUNT: a drifted table
      * degrades to a short grid instead of killing the whole class in its static initializer
@@ -162,10 +162,8 @@ public final class Hotkeys {
     }
 
     private static int iconOfUnguarded(Context context, int slot) {
-        // Bounds-checked like shown() above. Both readers index DEFAULT_ICON_NAMES[slot - 1]
-        // directly, and are safe today only because the emitted smali gates them behind shown()
-        // and the fragment loops 1..slotCount(). The array being longer than SLOT_COUNT is what
-        // has been hiding the omission; SLOT_COUNT is documented as a number someone may raise.
+        // Both readers index DEFAULT_ICON_NAMES[slot - 1]; keep the bounds check even when
+        // a caller normally gates it behind shown().
         if (slot < 1 || slot > SLOT_COUNT) {
             return 0;
         }
@@ -182,9 +180,10 @@ public final class Hotkeys {
      *
      * <p>A decimal token is a build-local resource id, kept only so dev.7-and-earlier exports
      * still parse — but the number must be validated on <i>this</i> build before use: a renumbered
-     * Gboard turns the same value into a different resource or none at all, and
+     * Gboard may turn the same value into a different resource or none at all, and
      * {@code getDrawable(badId)} throws rather than returning null. Any doubt answers 0 and the
-     * caller's default takes over — the toolbar build and the settings sync both ride this path.
+     * caller's default takes over if the id is missing or no longer a drawable; a different
+     * drawable cannot be distinguished from the old one by a decimal id alone.
      */
     private static int resolveIcon(Context context, String token) {
         if (token == null || token.isEmpty()) {
@@ -213,10 +212,7 @@ public final class Hotkeys {
      * row from after a pick or an import.
      */
     public static String currentIconToken(Context context, int slot) {
-        // Bounds-checked like shown() above. Both readers index DEFAULT_ICON_NAMES[slot - 1]
-        // directly, and are safe today only because the emitted smali gates them behind shown()
-        // and the fragment loops 1..slotCount(). The array being longer than SLOT_COUNT is what
-        // has been hiding the omission; SLOT_COUNT is documented as a number someone may raise.
+        // Bound this direct index rather than relying on the emitted shown() gate.
         if (slot < 1 || slot > SLOT_COUNT) {
             return "";
         }
@@ -292,6 +288,15 @@ public final class Hotkeys {
     /** First line of a blob; guards against accepting any old clipboard content as config. */
     private static final String BLOB_VERSION = "flexboard-hotkeys v1";
 
+    private static boolean hasBlobHeader(String text) {
+        if (text == null) {
+            return false;
+        }
+        int end = text.indexOf('\n');
+        String first = text.substring(0, end < 0 ? text.length() : end).trim();
+        return first.replace("\uFEFF", "").equals(BLOB_VERSION);
+    }
+
     /**
      * Writes the current hotkey set to the clipboard as a blob and says what happened. Called
      * from the settings screen's Copy row.
@@ -323,7 +328,7 @@ public final class Hotkeys {
             return "clipboard is empty";
         }
         CharSequence text = clip.getItemAt(0).getText();
-        if (text == null || !text.toString().startsWith(BLOB_VERSION)) {
+        if (text == null || !hasBlobHeader(text.toString())) {
             return "clipboard does not hold a Flexboard export";
         }
         return importFromText(context, text.toString());
@@ -339,7 +344,7 @@ public final class Hotkeys {
         if (blob == null || blob.trim().isEmpty()) {
             return "nothing to apply";
         }
-        if (!blob.startsWith(BLOB_VERSION)) {
+        if (!hasBlobHeader(blob)) {
             return "not a Flexboard export";
         }
         int[] outcome = applyBlob(context, blob);
@@ -411,11 +416,11 @@ public final class Hotkeys {
      * (counted for the outcome string) rather than fatal, so a blob travels cleanly from a wider
      * build into a trimmed one.
      *
-     * @return {@code null} when the blob was rejected, else {written lines, skipped lines}.
+     * @return {@code null} when rejected, else {written lines, skipped lines, cleared slots}.
      */
     private static int[] applyBlob(Context context, String blob) {
         String[] lines = blob.split("\n");
-        if (lines.length < 1 || !lines[0].trim().equals(BLOB_VERSION)) {
+        if (lines.length < 1 || !hasBlobHeader(lines[0])) {
             return null;
         }
         String[] texts = new String[SLOT_COUNT + 1];

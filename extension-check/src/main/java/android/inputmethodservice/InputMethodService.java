@@ -29,11 +29,6 @@ public class InputMethodService extends Context {
     }
 
     @Override
-    public String getString(int resId) {
-        return null;
-    }
-
-    @Override
     public android.content.res.Resources getResources() {
         return null;
     }

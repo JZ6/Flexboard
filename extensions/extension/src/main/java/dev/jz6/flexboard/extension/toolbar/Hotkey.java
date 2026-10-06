@@ -1,6 +1,5 @@
 package dev.jz6.flexboard.extension.toolbar;
 
-import android.content.Context;
 import android.inputmethodservice.InputMethodService;
 import android.view.inputmethod.InputConnection;
 
@@ -29,8 +28,8 @@ public final class Hotkey implements Runnable {
         if (connection == null) {
             return;
         }
-        String text = Hotkeys.textOf((Context) service, slot);
-        if (text.isEmpty()) {
+        String text = Hotkeys.textOf(service, slot);
+        if (text.trim().isEmpty()) {
             return;
         }
         connection.commitText(text, 1);

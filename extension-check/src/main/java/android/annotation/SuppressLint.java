@@ -10,7 +10,8 @@ import java.lang.annotation.Target;
  * CI compiles against the real android.jar; this stub is never packaged and never runs.
  */
 @Retention(RetentionPolicy.CLASS)
-@Target({ElementType.TYPE, ElementType.METHOD, ElementType.CONSTRUCTOR, ElementType.FIELD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.CONSTRUCTOR, ElementType.FIELD,
+         ElementType.PARAMETER, ElementType.LOCAL_VARIABLE})
 public @interface SuppressLint {
-    String[] value() default {};
+    String[] value();
 }

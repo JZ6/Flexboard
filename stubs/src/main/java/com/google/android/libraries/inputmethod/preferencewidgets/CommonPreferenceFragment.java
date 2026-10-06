@@ -12,9 +12,9 @@ package com.google.android.libraries.inputmethod.preferencewidgets;
  *
  * <p>Only what {@code FlexboardSettingsFragment} touches is declared. Verified against Gboard
  * 18.0.3 (see {@code tools/apk/preflight.py}, the native-settings section): the class is public
- * and concrete, the no-arg constructor is public, and {@code aB()I} is public and concrete, so a
- * plain subclass with nothing but an {@code aB()} override links and verifies on device. Nothing
- * else may be added here unless the real class is re-checked — a stub member the real class
+ * and concrete, the no-arg constructor is public, and {@code aB()I} and {@code aA(Preference)Z}
+ * are public and concrete; the fragment overrides both and calls the final {@code d(CharSequence)}.
+ * Nothing else may be added here unless the real class is re-checked — a stub member the real class
  * renames silently becomes a {@code NoSuchMethodError} at runtime.
  */
 public class CommonPreferenceFragment {
@@ -33,8 +33,8 @@ public class CommonPreferenceFragment {
 
     /**
      * Stub of the ported androidx click dispatch — the real {@code Lcdr.aA(Landroidx/preference/
-     * Preference;)Z} is what {@code Preference.performClick} funnels through. Defaults false so an
-     * unhandled row falls through to the host's own navigation logic.
+     * Preference;)Z} is what {@code Preference.performClick} funnels through. The real superclass
+     * implements row navigation; the stub body only exists to let the extension compile.
      */
     public boolean aA(androidx.preference.Preference preference) {
         return false;
@@ -47,7 +47,7 @@ public class CommonPreferenceFragment {
      * the extension may call: the row-class one survives R8 as {@code protected}, so a call from
      * the fragment would compile here and throw IllegalAccessError at tap time.
      */
-    public androidx.preference.Preference d(CharSequence key) {
+    public final androidx.preference.Preference d(CharSequence key) {
         return null;
     }
 }

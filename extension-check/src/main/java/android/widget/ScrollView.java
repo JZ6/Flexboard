@@ -1,12 +1,11 @@
 package android.widget;
 
 import android.content.Context;
-import android.view.ViewGroup;
 
 /**
- * Compile-time shape only — the export dialog's scroll frame.
+ * Compile-time shape only — the settings dialogs' scroll frames.
  */
-public class ScrollView extends ViewGroup {
+public class ScrollView extends FrameLayout {
 
     public ScrollView(Context context) {
         super(context);

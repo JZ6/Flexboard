@@ -1,8 +1,8 @@
 package android.content;
 
 /**
- * Compile-time shape only — the set of members the extension actually uses, nothing more.
- * CI compiles against the real android.jar; this stub is never packaged and never runs.
+ * Compile-time shape only. FakeContext subclasses this in extension-check tests; it is never
+ * packaged with the shipped extension, which compiles against android.jar.
  */
 public class ClipboardManager {
 

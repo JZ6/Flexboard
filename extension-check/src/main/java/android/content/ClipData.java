@@ -1,12 +1,14 @@
 package android.content;
 
 /**
- * Compile-time shape only — the set of members the extension actually uses, nothing more.
- * CI compiles against the real android.jar; this stub is never packaged and never runs.
+ * SDK shape with minimal test behaviour. It runs in extension-check via FakeClipboard but is
+ * never packaged into the shipped extension, which compiles against android.jar.
  */
 public class ClipData {
 
     private CharSequence text;
+
+    private ClipData() {}
 
     public static ClipData newPlainText(CharSequence label, CharSequence text) {
         ClipData data = new ClipData();
@@ -15,13 +17,13 @@ public class ClipData {
     }
 
     public int getItemCount() {
-        return text == null ? 0 : 1;
+        return 1;
     }
 
     public static class Item {
         private final CharSequence text;
 
-        Item(CharSequence text) {
+        public Item(CharSequence text) {
             this.text = text;
         }
 
@@ -31,6 +33,9 @@ public class ClipData {
     }
 
     public Item getItemAt(int index) {
-        return index == 0 && text != null ? new Item(text) : null;
+        if (index != 0) {
+            throw new IndexOutOfBoundsException("one clipboard item");
+        }
+        return new Item(text);
     }
 }
