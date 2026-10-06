@@ -2,7 +2,6 @@ package dev.jz6.flexboard.patches.features.bypasssignature
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
-import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
@@ -11,28 +10,25 @@ import dev.jz6.flexboard.patches.shared.assertRegisterCount
 import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.opcodeName
-import dev.jz6.flexboard.patches.shared.usesField
+import dev.jz6.flexboard.patches.shared.indexOfSoleCall
+import dev.jz6.flexboard.patches.shared.stringOrNull
 
 /**
- * Forces Gboard's own signature check to pass.
+ * Bypasses only Gboard's own cold-start signature check.
  *
  * `Lrpv;->a` computes the SHA-256 of the signing certificate of the package it is handed and
  * compares it byte-for-byte against three baked-in digests. A re-signed build matches none of
  * them, so on an unpatched Flexboard the check returns false.
  *
- * ## It gates nothing, and this file used to claim otherwise
- *
- * The previous version of this comment said "the features gated on that check stop working". That
- * is wrong, and it is the kind of wrong that gets a patch either dropped as dead weight or kept
- * for imagined reasons. There are exactly two callers:
+ * There are exactly two callers of this signature check:
  *
  *  - `Lmm;->run()` case 8, reached from `LatinApp;->e()` — `new Lmm(applicationContext, 8)`, the
  *    only construction site using that selector — on cold start, guarded by `isMainProcess`. Its
  *    entire body is the check followed by `return-void`. On failure it throws
  *    `IllegalStateException("APK is signed by unrecognized certificates: …")`. On success it does
  *    nothing whatsoever, so a failing check skips no work, because there is none to skip.
- *  - `WebDebugBridgeContentProvider;->call`, which checks the *caller* of a developer debug
- *    provider rather than Gboard itself.
+ *  - `WebDebugBridgeContentProvider;->call`, which checks the *caller* of an exported developer
+ *    debug provider. This must retain its original signature enforcement.
  *
  * No Flexboard subsystem references `Lrpv;` at all — not the preference store, the Phenotype flag
  * suppliers, the access points bar, the scrub handlers, or the IME.
@@ -49,17 +45,15 @@ import dev.jz6.flexboard.patches.shared.usesField
  *
  * ## The derivation
  *
- * The method has three exits — the digest could not be computed, the digest matched, the digest
- * did not match — and all three are forced to return true.
- *
- * An obfuscated single-letter method on an unexpected build could be anything, so the bar for
- * recognising it is deliberately high: register count, the exact three return registers, the
- * digest call, the array comparison and all four field reads.
+ * We change only the result of the call in `Lmm;->run()V` immediately before its branch to the
+ * self-check exception. The signature method is left untouched for the debug provider. The
+ * adjacent `getPackageName`, call, move-result and if-nez, the exception message, and the frame
+ * are all checked before emitting anything.
  */
 @Suppress("unused")
 val bypassGboardSignaturePatch = bytecodePatch(
     name = "Bypass Gboard Signature",
-    description = "Bypass Gboard's signature whitelist checks and force them to pass.",
+    description = "Bypass Gboard's own startup signature check without changing other callers.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -67,69 +61,36 @@ val bypassGboardSignaturePatch = bytecodePatch(
     dependsOn(basePatch)
 
     execute {
-        signatureCheckFingerprint().method.forceSignatureChecksToPass()
+        signatureCheckFingerprint().method // The check still has the expected owner and signature.
+        signatureSelfCheckFingerprint().method.bypassOwnStartupCheck()
     }
 }
 
 private const val SIGNATURE_CHECK = "Lrpv;->a(Landroid/content/Context;Ljava/lang/String;)Z"
-private const val DIGEST_METHOD = "Lrpv;->c(Landroid/content/Context;Ljava/lang/String;)[B"
-private const val ARRAYS_EQUALS = "Ljava/util/Arrays;->equals([B[B)Z"
+private const val SELF_CHECK = "Lmm;->run()V"
+private const val GET_PACKAGE_NAME = "Landroid/content/Context;->getPackageName()Ljava/lang/String;"
+private const val SELF_CHECK_ERROR = "APK is signed by unrecognized certificates: "
+private const val SELF_CHECK_REGISTERS = 18
 
-/**
- * The three baked-in certificate digests, and the flag the check falls back to.
- *
- * `Lrox;->b:Z` is **not** a cached signature verdict, despite sitting in a list of signature
- * fields. It is the global test-environment flag — `Lrox;-><clinit>` copies it from `Lmvm;->a:Z`,
- * which is `Build.FINGERPRINT.equals("robolectric")` — so it is permanently false on a device, and
- * around forty unrelated places read it as a test-versus-production switch. The check reads it
- * exactly once, as the value to return when the caller's digest cannot be computed at all. It is
- * an input to the check, never an output of it, and it is listed here only because reading it is
- * part of what identifies the method.
- */
-private val EXPECTED_FIELDS = listOf(
-    "Lrpv;->e:[B",
-    "Lrpv;->d:[B",
-    "Lrpv;->c:[B",
-    "Lrox;->b:Z",
-)
-
-/** The unknown-package exit, the match exit and the no-match exit, in bytecode order. */
-private val EXPECTED_RETURN_REGISTERS = listOf(6, 4, 3)
-private const val EXPECTED_REGISTER_COUNT = 8
-
-/** `const/4` encodes its register in a nibble. */
-private const val MAX_CONST_4_REGISTER = 15
-
-private fun MutableMethod.forceSignatureChecksToPass() {
-    assertRegisterCount(EXPECTED_REGISTER_COUNT, SIGNATURE_CHECK)
-    check(instructions.count { it.callsMethod(DIGEST_METHOD) } == 1) {
-        "Expected exactly one digest call in $SIGNATURE_CHECK"
+private fun MutableMethod.bypassOwnStartupCheck() {
+    assertRegisterCount(SELF_CHECK_REGISTERS, SELF_CHECK)
+    val body = instructions.toList()
+    val call = body.indexOfSoleCall(SIGNATURE_CHECK, SELF_CHECK)
+    check(body.count { it.stringOrNull() == SELF_CHECK_ERROR } == 1) {
+        "$SELF_CHECK no longer contains the expected startup error"
     }
-    check(instructions.count { it.callsMethod(ARRAYS_EQUALS) } == 1) {
-        "Expected exactly one digest comparison in $SIGNATURE_CHECK"
+    check(call >= 2 && call + 2 < body.size && body[call - 2].callsMethod(GET_PACKAGE_NAME)) {
+        "$SELF_CHECK no longer checks its own package immediately before $SIGNATURE_CHECK"
     }
-    EXPECTED_FIELDS.forEach { descriptor ->
-        check(instructions.count { it.usesField(descriptor) } == 1) {
-            "Expected exactly one read of $descriptor in $SIGNATURE_CHECK"
-        }
+    val result = body[call + 1]
+    val register = (result as? OneRegisterInstruction)?.registerA
+    check(result.opcodeName() == "MOVE_RESULT" && register != null && register <= 15) {
+        "$SELF_CHECK no longer reads the boolean result of $SIGNATURE_CHECK into a const/4 register"
     }
-
-    val returnIndices = instructions.indices.filter { instructions[it].opcodeName() == "RETURN" }
-    val returnRegisters = returnIndices.map { index ->
-        (instructions[index] as? OneRegisterInstruction)?.registerA
-            ?: error("RETURN at $index in $SIGNATURE_CHECK has no register")
+    val branch = body[call + 2] as? OneRegisterInstruction
+    check(branch?.opcodeName() == "IF_NEZ" && branch.registerA == register) {
+        "$SELF_CHECK no longer branches on the signature-check result"
     }
-    check(returnRegisters == EXPECTED_RETURN_REGISTERS) {
-        "$SIGNATURE_CHECK returns $returnRegisters, expected $EXPECTED_RETURN_REGISTERS"
-    }
-
-    // Reversed so each edit leaves the indices of the ones still to come untouched.
-    returnIndices.asReversed().forEach { index ->
-        val register = (instructions[index] as OneRegisterInstruction).registerA
-        check(register <= MAX_CONST_4_REGISTER) {
-            "RETURN register v$register cannot be forced with const/4"
-        }
-        replaceInstruction(index, "const/4 v$register, 0x1")
-        addInstruction(index + 1, "return v$register")
-    }
+    // Keep the stock call and move-result; only this self-check's branch sees the forced value.
+    addInstruction(call + 2, "const/4 v$register, 0x1")
 }
