@@ -29,6 +29,9 @@ def _pool(b, off):
             out.append(b[p:p + m].decode('utf-8', 'replace'))
         else:
             n = struct.unpack_from('<H', b, p)[0]
+            if n & 0x8000:
+                n = ((n & 0x7fff) << 16) | struct.unpack_from('<H', b, p + 2)[0]
+                p += 2
             out.append(b[p + 2:p + 2 + 2 * n].decode('utf-16-le', 'replace'))
     return out, off + sz
 
@@ -46,25 +49,40 @@ def parse(b):
             ns, name = struct.unpack_from('<II', b, p + 16)
             aStart, aSize, aCount = struct.unpack_from('<HHH', b, p + 24)
             attrs = {}
-            ap = p + 16 + aStart
+            ap = p + hs + aStart
+            namespace_of = {}
             for _ in range(aCount):
                 ans, aname, araw = struct.unpack_from('<III', b, ap)
                 dtype = b[ap + 15]
                 data = struct.unpack_from('<I', b, ap + 16)[0]
                 key = strs[aname] if aname < len(strs) else f'?{aname}'
+                uri = strs[ans] if ans < len(strs) else ''
+                prefix = ('android' if uri == 'http://schemas.android.com/apk/res/android'
+                          else 'app' if uri == 'http://schemas.android.com/apk/res-auto'
+                          else uri or 'none')
                 if araw != 0xffffffff and araw < len(strs):
                     val = strs[araw]
                 elif dtype == TYPE_REFERENCE:
                     val = f'@0x{data:08x}'
                 elif dtype == TYPE_INT_BOOLEAN:
                     val = 'true' if data else 'false'
-                elif dtype in (TYPE_INT_DEC,):
-                    val = str(data)
+                elif dtype == TYPE_INT_DEC:
+                    val = str(data - (1 << 32) if data & 0x80000000 else data)
+                elif dtype == TYPE_STRING and data < len(strs):
+                    val = strs[data]
                 elif dtype == TYPE_INT_HEX:
                     val = hex(data)
                 else:
                     val = f'<t{dtype:#x}:{data}>'
-                attrs[key] = val
+                if key in attrs:
+                    old = namespace_of[key]
+                    attrs[f'{old}:{key}'] = attrs.pop(key)
+                    attrs[f'{prefix}:{key}'] = val
+                elif any(k.endswith(':' + key) for k in attrs):
+                    attrs[f'{prefix}:{key}'] = val
+                else:
+                    attrs[key] = val
+                namespace_of[key] = prefix
                 ap += aSize
             yield depth, strs[name], attrs
             depth += 1

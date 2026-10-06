@@ -2,18 +2,19 @@
 """
 Lane B: resource dress rehearsal.
 
-Replays, locally and with no Android SDK, the exact resource writes the patch bundle performs
-inside Morphe Manager, then asks arsclib to rebuild the whole resource table — the same call
-stack that rejected 1.4.0-dev.3 (filename-derived bogus type) and 1.4.0-dev.4 (spliced second
-`<resources>` tag, SAX death at arrays.xml:7141). A red lane here means the phone would have
-failed; a green lane here means the resource half of a release is safe to tag.
+Mirrors the known patch-side resource writes locally, with no Android SDK, then asks arsclib to
+rebuild the table. The same decoder/encoder caught the dev.3 bogus type and dev.4 malformed XML.
+This is a dress rehearsal, not Morphe's whole resource pipeline: the patcher's string processors,
+framework lookup, and some runtime inputs are not rerun here. A green lane proves the mirrored
+tree encodes; the driver lane executes the real patch with a source-matched bundle, and neither
+substitutes for a device test.
 
 Nothing here patches dex — bytecode anchors are preflight's job (`tools/apk/preflight.py`).
 
 What runs, in order:
 
   1. jar    resolve the pinned arsclib jar (env → cache → gradle cache → jitpack).
-  2. decode full XML decode of the target APK — cached by the APK's sha256, so this costs
+  2. decode full XML decode of the target APK — cached by the APK, shim and jar hashes, so this costs
             minutes exactly once per Gboard version, seconds afterwards.
   3. replay re-apply every patch-side resource write against a copy of the decode:
               - `writePatchResource` copies   (COPY_WRITES, mirroring SettingsScreenPatch)
@@ -168,33 +169,44 @@ def resolve_arsclib():
         fail("jar", f"ARSCLIB_JAR points at missing file {p}")
     cached = CACHE / f"arsclib-{ARSCLIB_VERSION}.jar"
     if cached.exists():
-        return cached
+        if cached.stat().st_size >= 1_000_000:
+            return cached
+        cached.unlink()
     hits = glob(
         str(Path.home() / ".gradle/caches/modules-2/files-2.1/com.github.REAndroid/arsclib"
             f"/{ARSCLIB_VERSION}/*/arsclib-{ARSCLIB_VERSION}.jar")
     )
     if hits:
         cached.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(hits[0], cached)
+        part = cached.with_suffix(".part")
+        shutil.copy(hits[0], part)
+        if part.stat().st_size < 1_000_000:
+            part.unlink(missing_ok=True)
+            fail("jar", f"Gradle cache copy looked wrong (too small): {hits[0]}")
+        part.replace(cached)
         return cached
     url = ("https://jitpack.io/com/github/REAndroid/arsclib"
            f"/{ARSCLIB_VERSION}/arsclib-{ARSCLIB_VERSION}.jar")
     cached.parent.mkdir(parents=True, exist_ok=True)
     print(f"jar: downloading {url}")
+    part = cached.with_suffix(".part")
     try:
-        urllib.request.urlretrieve(url, cached)
+        urllib.request.urlretrieve(url, part)
     except Exception as e:
+        part.unlink(missing_ok=True)
         fail("jar", f"download from jitpack failed: {e}")
-    if cached.stat().st_size < 1_000_000:
-        cached.unlink(missing_ok=True)
+    if part.stat().st_size < 1_000_000:
+        part.unlink(missing_ok=True)
         fail("jar", f"download looked wrong (too small): {cached}")
+    part.replace(cached)
     return cached
 
 
 def compile_shim(classpath):
-    classes = CACHE / "classes"
+    tool_digest = sha256(SHIM_SOURCE.read_bytes() + classpath.read_bytes()).hexdigest()[:16]
+    classes = CACHE / "classes" / tool_digest
     cls = classes / "ArsclibRoundTrip.class"
-    if cls.exists() and cls.stat().st_mtime > SHIM_SOURCE.stat().st_mtime:
+    if cls.exists():
         return classes
     if shutil.which("javac") is None:
         fail("shim", "javac not on PATH — any JDK suffices, this is not the Android SDK")
@@ -204,11 +216,11 @@ def compile_shim(classpath):
 
 
 # -------------------------------------------------------------------------------------------
-# Stage 2: decode, cached by APK hash
+# Stage 2: decode, cached by APK plus decoder source and arsclib jar hashes
 # -------------------------------------------------------------------------------------------
 
 def decode_tree(jar, classes, apk):
-    digest = sha256(apk.read_bytes()).hexdigest()[:16]
+    digest = sha256(apk.read_bytes() + SHIM_SOURCE.read_bytes() + jar.read_bytes()).hexdigest()[:16]
     out = CACHE / "decode" / digest
     marker = out / ".complete"
     if marker.exists():
@@ -339,8 +351,21 @@ def replay(scratch):
         # including the values splices. A red lane that fails early is a lane that guards nothing,
         # and this one stayed red long enough to let a malformed values fragment reach a phone.
         #
-        # Replayed with every section selected: that is the maximal output, the one a default
-        # install produces, and the only variant whose rows must all resolve at link time.
+        # Replayed with every section selected: the maximal output. Also inspect the minimal
+        # variant: its unconditional rows must not refer to hotkey drawables this selection omits.
+        if source_rel == "xml/flexboard_settings.xml":
+            minimal = re.sub(
+                r"<!--\s*@SECTION_(\w+)@\s*-->(.*?)<!--\s*@END_SECTION_\1@\s*-->",
+                "", xml, flags=re.S,
+            )
+            for name in re.findall(r"@drawable/(flexboard_[\w]+)", minimal):
+                if name != "flexboard_settings_icon":
+                    fail("replay", f"unconditional settings row needs {name}, which the minimal "
+                                   "selection does not write")
+            try:
+                parse_xml_string(minimal)
+            except Exception as exc:
+                fail("replay", f"minimal settings selection is not well-formed: {exc}")
         xml = re.sub(
             r"<!--\s*@SECTION_(\w+)@\s*-->(.*?)<!--\s*@END_SECTION_\1@\s*-->",
             lambda m: m.group(2), xml, flags=re.S,
@@ -380,7 +405,7 @@ def replay(scratch):
             dom_parse(settings)
             touched.append(settings)
 
-    # Values merges (empty by policy today; see VALUE_MERGES).
+    # The admitted-id values merge (see VALUE_MERGES).
     values_dir = REPO / "patches" / "src" / "main" / "resources" / "values"
     patched = {src for src, _ in VALUE_MERGES}
     if values_dir.is_dir():
@@ -405,7 +430,7 @@ def replay(scratch):
         inner = our.split("<resources>", 1)[1].rsplit("</resources>", 1)[0]
         inner = re.sub(r"<!--.*?-->", "", inner, flags=re.S)
         inner = "\n".join(l for l in inner.split("\n") if l.strip()).strip()
-        new_names = re.findall(r'name="(flexboard_[a-z_0-9]+)"', inner)
+        new_names = re.findall(r'name="(flexboard_\w+)"', inner)
         dest = pkg_dir / target
         existing = dest.read_text() if dest.exists() else None
         if existing is None or "</resources>" not in existing:
@@ -458,9 +483,12 @@ def replay(scratch):
             widened = holder.replace("</array>", f"{items}\n  </array>")
             old_count = holder.count("<item>")
             arrays = arrays.replace(holder, widened)
-            delta = widened.count("<item>") - old_count
-            if delta != count:
-                fail("replay", f"widening added {delta} items, expected {count}")
+            name = re.search(r'<array name="([^"]+)">', holder).group(1)
+            actual = re.search(rf'<array name="{re.escape(name)}">.*?</array>', arrays, re.S)
+            if (actual is None or actual.group().count("<item>") != old_count + count or
+                    any(len(re.findall(rf'<item>@string/{re.escape(i)}</item>', actual.group())) != 1
+                        for i in new_ids)):
+                fail("replay", f"output array {name} did not gain each admitted id exactly once")
         write_fresh(arrays_xml, arrays)
         dom_parse(arrays_xml)
         touched.append(arrays_xml)
@@ -499,7 +527,7 @@ def main():
     scratch = reset_scratch(decoded)
     replay(scratch)
     encode_proof(jar, classes, scratch)
-    print("\npass: the bundle's resource writes survive a full arsclib table rebuild")
+    print("\npass: the mirrored resource writes survive an arsclib table rebuild")
 
 
 if __name__ == "__main__":

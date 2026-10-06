@@ -21,6 +21,7 @@ Prints, for each reference icon, whether the APK bundles that exact glyph and at
 import re
 import sys
 import zipfile
+import xml.etree.ElementTree as ET
 
 import axml
 import arsc
@@ -30,6 +31,33 @@ ARITY = {'M': 2, 'L': 2, 'T': 2, 'H': 1, 'V': 1, 'C': 6, 'S': 4, 'Q': 4, 'A': 7,
 
 NUMBER = re.compile(r'[-+]?(?:\d*\.\d+(?:[eE][-+]?\d+)?|\d+\.?(?:[eE][-+]?\d+)?)')
 COMMAND = re.compile(r'[MmLlHhVvCcSsQqTtAaZz]')
+
+
+def arc_args(chunk):
+    """SVG arc flags are single digits, even in compact `00-1.41` syntax."""
+    cursor, out = 0, []
+    while cursor < len(chunk):
+        while cursor < len(chunk) and chunk[cursor] in " \t\r\n,":
+            cursor += 1
+        if cursor == len(chunk):
+            break
+        args = []
+        for part in range(7):
+            while cursor < len(chunk) and chunk[cursor] in " \t\r\n,":
+                cursor += 1
+            if part in (3, 4):
+                if cursor >= len(chunk) or chunk[cursor] not in "01":
+                    raise ValueError(f"invalid SVG arc flag at {chunk[cursor:]!r}")
+                args.append(float(chunk[cursor]))
+                cursor += 1
+            else:
+                match = NUMBER.match(chunk, cursor)
+                if match is None:
+                    raise ValueError(f"incomplete SVG arc at {chunk[cursor:]!r}")
+                args.append(float(match.group()))
+                cursor = match.end()
+        out.append(args)
+    return out
 
 
 def points(d):
@@ -45,6 +73,7 @@ def points(d):
     start_x = start_y = 0.0
     cursor = 0
     previous = None
+    last_cubic = last_quadratic = None
     while cursor < len(d):
         match = COMMAND.search(d, cursor)
         if not match:
@@ -53,7 +82,7 @@ def points(d):
         cursor = match.end()
         nxt = COMMAND.search(d, cursor)
         chunk = d[cursor:nxt.start() if nxt else len(d)]
-        numbers = [float(n) for n in NUMBER.findall(chunk)]
+        numbers = [float(n) for n in NUMBER.findall(chunk)] if letter.upper() != 'A' else []
         cursor = nxt.start() if nxt else len(d)
 
         upper = letter.upper()
@@ -64,73 +93,99 @@ def points(d):
             continue
 
         step = ARITY[upper]
-        if step == 0 or not numbers:
+        if step == 0 or not numbers and upper != 'A':
             continue
-        for i in range(0, len(numbers) - step + 1, step):
-            args = numbers[i:i + step]
+        if upper != 'A' and len(numbers) % step:
+            raise ValueError(f'incomplete {upper} path command: {chunk!r}')
+        groups = arc_args(chunk) if upper == 'A' else [numbers[i:i + step]
+                                                         for i in range(0, len(numbers), step)]
+        for i, args in enumerate(groups):
             if upper == 'H':
                 x = x + args[0] if relative else args[0]
             elif upper == 'V':
                 y = y + args[0] if relative else args[0]
             elif upper == 'A':
-                # Only the endpoint is comparable; the radii and flags describe the same arc in
-                # both encodings when the endpoints agree.
+                out.append(tuple(round(v, 2) for v in args[:3]) + tuple(int(v) for v in args[3:5]))
                 x = x + args[5] if relative else args[5]
                 y = y + args[6] if relative else args[6]
             else:
                 base_x, base_y = (x, y) if relative else (0.0, 0.0)
+                if upper == 'S':
+                    reflected = (2*x - last_cubic[0], 2*y - last_cubic[1]) if (
+                        previous in ('C', 'S') and last_cubic is not None) else (x, y)
+                    out.append(tuple(round(v, 2) for v in reflected))
+                if upper == 'T':
+                    reflected = (2*x - last_quadratic[0], 2*y - last_quadratic[1]) if (
+                        previous in ('Q', 'T') and last_quadratic is not None) else (x, y)
+                    out.append(tuple(round(v, 2) for v in reflected))
                 for j in range(0, step, 2):
                     px, py = base_x + args[j], base_y + args[j + 1]
                     if j + 2 < step:
                         out.append((round(px, 2), round(py, 2)))
                 x, y = base_x + args[step - 2], base_y + args[step - 1]
+                if upper in ('C', 'S'):
+                    last_cubic = (base_x + args[step - 4], base_y + args[step - 3])
+                elif upper == 'Q':
+                    last_quadratic = (base_x + args[0], base_y + args[1])
+                elif upper == 'T':
+                    last_quadratic = reflected
             out.append((round(x, 2), round(y, 2)))
             # A repeated M is an implicit L, and only the first pair opens a subpath.
             if upper == 'M' and i == 0:
                 start_x, start_y = x, y
                 upper = 'L'
-        previous = upper
+            previous = upper
     return out
 
 
 def svg_points(text):
     """Reference SVGs carry a transparent 24x24 backing rect; it is not part of the glyph."""
     out = []
-    for attrs, data in re.findall(r'<path\b([^>]*?)\bd="([^"]+)"', text):
-        # `attrs` captures everything between `<path ` and `d=`. A `fill="none"` after `d=` on
-        # the same element is caught by looking up to the next `>`, not past it — the tail check
-        # used to read into the NEXT path and wrongly skipped a filled path followed by the
-        # transparent backing rect.
-        rest = text.split(data, 1)[1] if data in text else ''
-        own = rest[:rest.find('>') + 1] if '>' in rest else rest[:40]
-        if 'fill="none"' in attrs or 'fill="none"' in own:
+    for element in ET.fromstring(text).iter():
+        tag = element.tag.rsplit('}', 1)[-1]
+        if tag == 'g' and element.get('transform'):
+            raise ValueError('SVG group transforms are not supported by this geometry matcher')
+        if tag == 'path':
+            if element.get('fill') == 'none' or 'fill:none' in element.get('style', ''):
+                continue
+            data = element.get('d')
+            if not data:
+                raise ValueError('filled SVG path without geometry')
+            out += points(data)
             continue
-        out += points(data)
+        if tag in ('rect', 'circle', 'ellipse', 'polygon', 'polyline', 'line') and (
+                element.get('fill') != 'none' and 'fill:none' not in element.get('style', '')):
+            raise ValueError(f'filled SVG {tag} shape is not supported by this path-only matcher')
     return out
 
 
 def apk_glyphs(apk):
     """id -> points, for every vector drawable in the APK."""
-    zf = zipfile.ZipFile(apk)
-    table = arsc.load(zf.read('resources.arsc'))
     found = {}
-    for rid, name in table.names.items():
-        if not name.startswith('drawable/'):
-            continue
-        source = str(table.value(rid) or '')
-        match = re.search(r'res/[^\'"]+\.xml', source)
-        if not match:
-            continue
-        try:
-            elements = list(axml.parse(zf.read(match.group(0))))
-        except Exception:
-            continue
-        collected = []
-        for _depth, tag, attrs in elements:
-            if tag == 'path' and attrs.get('pathData'):
-                collected += points(str(attrs['pathData']))
-        if collected:
-            found[rid] = (match.group(0), collected)
+    skipped = []
+    with zipfile.ZipFile(apk) as zf:
+        table = arsc.load(zf.read('resources.arsc'))
+        for rid, name in table.names.items():
+            if not name.startswith('drawable/'):
+                continue
+            source = str(table.value(rid) or '')
+            match = re.search(r'res/[^\'"]+\.xml', source)
+            if not match:
+                continue
+            try:
+                elements = list(axml.parse(zf.read(match.group(0))))
+                collected = []
+                for _depth, tag, attrs in elements:
+                    if tag == 'path' and attrs.get('pathData'):
+                        collected += points(str(attrs['pathData']))
+                if collected:
+                    found[rid] = (match.group(0), collected)
+            except Exception as exc:
+                skipped.append((match.group(0), str(exc)))
+    if skipped:
+        print(f'{len(skipped)} vector candidates could not be parsed:', file=sys.stderr)
+        for path, reason in skipped[:10]:
+            print(f'  {path}: {reason}', file=sys.stderr)
     return found
 
 
@@ -143,8 +198,12 @@ def main():
     print(f'{len(bundled)} vector drawables in the APK\n')
     hits = 0
     for path in references:
-        with open(path) as handle:
-            want = svg_points(handle.read())
+        try:
+            with open(path) as handle:
+                want = svg_points(handle.read())
+        except (ValueError, ET.ParseError) as exc:
+            print(f'  unsupported {path}: {exc}')
+            continue
         matches = [(rid, src) for rid, (src, got) in bundled.items() if got == want]
         name = path.split('/')[-1].replace('.svg', '')
         if matches:
@@ -152,7 +211,7 @@ def main():
             ids = ', '.join(f'{rid:#010x} ({src})' for rid, src in matches[:3])
             print(f'  BUNDLED  {name:<16} {ids}')
         else:
-            print(f'  absent   {name:<16} {len(want)} points, no drawable matches')
+            print(f'  not matched {name:<16} {len(want)} points (not proof of absence)')
     print(f'\n{hits}/{len(references)} reference icons are bundled')
     return 0
 

@@ -33,7 +33,7 @@ metric that looks quantitative while sorting nothing is worse than no metric.
 
 Usage:
     python3 tools/apk/flagscan.py [apk-dir]        # default ../../gboard-apk
-    python3 tools/apk/flagscan.py --all            # every flag, not just the shortlist
+    python3 tools/apk/flagscan.py --all            # every off-by-default flag
 """
 
 import re
@@ -44,7 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import dexlib
-import dis as ddis
+import dalvik_dis as ddis
 
 BOOLEAN_FACTORY = "Lnxs;->a(Ljava/lang/String;Z)Lnxp;"
 FACTORY_WINDOW = 6
@@ -63,6 +63,9 @@ ALREADY_FORCED = {
     "enable_custom_sticker_tab",
     "offline_translate",
     "enable_settings_search",
+    "enable_agentic_dictation",
+    "enable_rambler_al_toolbar",
+    "enable_rambler_toolbar_at_cursor_position",
 }
 
 # Confirmed on a device, so the scan can be scored against them rather than trusted blind.
@@ -90,8 +93,8 @@ def collect_flags(dexes):
                     continue
                 try:
                     ins = ddis.disasm(d, code)
-                except Exception:
-                    continue
+                except Exception as exc:
+                    raise ValueError(f"cannot disassemble {desc}: {exc}") from exc
                 for i, (_pc, mn, arg) in enumerate(ins):
                     if not mn.startswith("const-string"):
                         continue
@@ -101,15 +104,21 @@ def collect_flags(dexes):
                     name = m.group(2)
                     if not re.fullmatch(r"[a-z][a-z0-9_]{5,70}", name):
                         continue
-                    call = next(
-                        (j for j in range(i + 1, min(i + FACTORY_WINDOW, len(ins)))
-                         if BOOLEAN_FACTORY in (ins[j][2] or "")),
-                        None,
-                    )
+                    # The first invoke after this name belongs to this flag. Searching past a
+                    # different flag's factory borrowed its default and counted 62 non-booleans.
+                    call = next((j for j in range(i + 1, min(i + 1 + FACTORY_WINDOW, len(ins)))
+                                 if ins[j][1].startswith("invoke") or
+                                 ins[j][1].startswith("const-string")), None)
                     if call is None:
                         continue
-
-                    reg = [int(x) for x in re.findall(r"v(\d+)", ins[call][2].split("},")[0])][1]
+                    if not (ins[call][1].startswith("invoke-static") and
+                            (ins[call][2] or "").endswith(BOOLEAN_FACTORY)):
+                        continue
+                    arguments = [int(x) for x in re.findall(r"v(\d+)",
+                                 ins[call][2].split("},")[0])]
+                    if len(arguments) != 2 or arguments[0] != int(m.group(1)):
+                        continue
+                    reg = arguments[1]
                     own = [j for j in range(i + 1, call)
                            if ins[j][1].startswith("const")
                            and re.match(rf"\s*v{reg},", ins[j][2] or "")]
@@ -159,14 +168,9 @@ def collect_field_reads(dexes):
 
 
 def collect_identifiers(apk_dir):
-    """Config-looking identifiers in the string pool, for the companion scan."""
-    idents = set()
-    for f in sorted(Path(apk_dir).glob("*.dex")):
-        for m in re.finditer(rb"[ -~]{8,70}", f.read_bytes()):
-            s = m.group().decode("ascii", "ignore").lstrip("!\"#$%&()*+,-./0123456789 ")
-            if re.fullmatch(r"[a-z0-9_]{8,64}", s):
-                idents.add(s)
-    return idents
+    """Config-looking identifiers from real dex string pools, not printable byte fragments."""
+    return {s for d in dexlib.load(apk_dir) for i in range(d.str_n)
+            for s in [d.string(i)] if re.fullmatch(r"[a-z0-9_]{8,64}", s)}
 
 
 def token(flag):
@@ -188,7 +192,11 @@ def main():
     idents = collect_identifiers(apk_dir)
 
     rows = []
+    unknown = 0
     for name, info in flags.items():
+        if info["default"] is None:
+            unknown += 1
+            continue
         if info["default"]:
             continue                                    # already on, nothing to force
         unread = info["field"] is not None and info["field"] not in reads
@@ -207,7 +215,7 @@ def main():
     gated = [r for r in rows if r["gated"] and not r["unread"]]
     clean = [r for r in rows if not r["unread"] and not r["gated"]]
 
-    print(f"\n  {total} boolean flags, {off} shipping off")
+    print(f"\n  {total} boolean flags, {off} shipping off, {unknown} default(s) unknown")
     print(f"  {len(inert):>5}  provably inert   (flag object stored in a field nothing reads)")
     print(f"  {len(gated):>5}  probably gated   (server-delivered companions nearby)")
     print(f"  {len(clean):>5}  neither          (no static objection — which is not the same as safe)")

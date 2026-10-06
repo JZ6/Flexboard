@@ -2,17 +2,17 @@
 
 Resolves resource ids to names and values, and values back to ids. Gboard ships its resource
 *files* under obfuscated paths — the Latin keyboard layout is `res/aDh.xml` inside the APK — but
-the resource table still carries the real entry names. The patcher decodes resources before a
-resource patch sees them, so a patch addresses `res/xml/<name>.xml`, never `res/aDh.xml`. Getting
-from one to the other is what this is for.
+most resource table entry names are collapsed to `0_resource_name_obfuscated`. The few surviving
+names (notably settings screens) can be addressed as `res/xml/<name>.xml` by a resource patch;
+`res/aDh.xml` has no usable decoded name. Values can still be looked up by packed path.
 
     import zipfile, arsc
     z = zipfile.ZipFile('gboard.apk')
     t = arsc.load(z.read('resources.arsc'))
 
-    t.name(0x7f14097b)              # 'string/enable_gesture_input_key'
-    t.value(0x7f14097b)             # 'enable_gesture_input'
-    t.find_value('res/aDh.xml')     # [(0x7f170..., 'xml/...')]
+    t.name(0x7f170f34)              # 'xml/settings'
+    t.value(0x7f140a05)             # 'enable_gesture_input'
+    t.find_value('res/aDh.xml')     # [(0x7f1706ec, 'xml/0_resource_name_obfuscated')]
 
 Only what the findings in ../../docs need: entry names, simple values, and reverse lookup. No
 style, no reference chasing, no configuration-aware "which value wins" logic — `values()` returns
@@ -166,6 +166,8 @@ class Table:
         )
         type_names = StringPool(data, offset + type_strings_off)
         key_names = StringPool(data, offset + key_strings_off)
+        if header_size >= 288 and struct.unpack_from('<I', data, offset + 284)[0]:
+            raise ValueError('nonzero ResTable_package typeIdOffset is not supported')
 
         cursor = offset + header_size
         end = offset + size
@@ -212,8 +214,10 @@ class Table:
         for entry_index, entry_offset in positions:
             at = table_base + entry_offset
             if at + 8 > len(data):
-                continue
+                raise ValueError(f'truncated resource entry at 0x{at:x}')
             entry_size, entry_flags, key_index = struct.unpack_from('<HHI', data, at)
+            if entry_flags & 0x0008:
+                raise ValueError(f'compact resource entry at 0x{at:x} is not supported')
             resource_id = (package_id << 24) | (type_id << 16) | entry_index
             self.names.setdefault(resource_id, f'{type_name}/{key_names[key_index]}')
 
@@ -223,7 +227,7 @@ class Table:
                 continue
             value_at = at + entry_size
             if value_at + 8 > len(data):
-                continue
+                raise ValueError(f'truncated resource value at 0x{value_at:x}')
             _size, _res0, data_type, value = struct.unpack_from('<HBBI', data, value_at)
             self.entries[resource_id].append(Value(data_type, value, config, self.strings))
 
@@ -247,7 +251,7 @@ class Table:
         path like 'res/aDh.xml' back to the resource that owns it."""
         hits = []
         for resource_id, values in self.entries.items():
-            if any(v.resolve() == needle for v in values):
+            if any(type(v.resolve()) is type(needle) and v.resolve() == needle for v in values):
                 hits.append((resource_id, self.names.get(resource_id, '?')))
         return sorted(hits)
 
