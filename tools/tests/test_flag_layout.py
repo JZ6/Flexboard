@@ -94,10 +94,12 @@ class Absent(unittest.TestCase):
             ("const-string", "v0, 'ad_activation_type'"),
             ("const-wide/16", "v1, #1"),
             ("invoke-static", "{v0, v1, v2}, %s" % LONG_FACTORY),
-            ("move-result-object", "v0"),
-            ("sput-object", "v0, Lholder;->a:Lnxp;"),
+            ("const-string", "v0, 'a_boolean_flag'"),
+            ("const/4", "v1, #0"),
+            ("invoke-static", "{v0, v1}, %s" % FACTORY),
         )
         self.assertIsNone(P.flag_layout(ins, "ad_activation_type"))
+        self.assertEqual(P.flag_layout(ins, "a_boolean_flag")["effective"], 0)
 
 
 class DeclaredSets(unittest.TestCase):

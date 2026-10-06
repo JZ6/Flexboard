@@ -228,8 +228,8 @@ class LiveFree(unittest.TestCase):
         )
         self.assertNotIn(6, self.free(ins, 8, 0))
 
-    def test_a_linear_walk_from_the_seam_would_claim_everything_is_available(self):
-        """Why `live_free` exists, stated as a test rather than as a comment.
+    def test_a_branch_read_without_a_write_keeps_the_register_live(self):
+        """Why `live_free` needs a control-flow graph rather than a linear scan.
 
         A linear walk forward from an index eventually touches almost every register, so asking it
         "what is available here" answers "everything". That is how a register handover computed an
@@ -248,18 +248,6 @@ class LiveFree(unittest.TestCase):
         )
         # Backward CFG liveness: v7 is read on a path that does not write it, so it is live.
         self.assertNotIn(7, self.free(ins, 8, 0))
-
-        # A linear walk would have seen the `const/4 v7` at pc 2 first and called v7 available.
-        linear_available = set()
-        written = set()
-        for _pc, mnemonic, args in ins:
-            for r in P.invoke_regs(args or ""):
-                if r not in written:
-                    linear_available.add(r)
-            if not mnemonic.startswith(P.READS_FIRST_OPERAND):
-                first = P.regs(args or "")[:1]
-                written.update(first)
-        self.assertIn(7, written, "the linear walk sees a write and stops worrying about v7")
 
     def test_a_switch_is_refused_rather_than_guessed(self):
         # The case targets live in a payload live_free does not read, so every register the cases

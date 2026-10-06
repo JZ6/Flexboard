@@ -40,7 +40,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import dexlib
-import dis as ddis
+import dalvik_dis as ddis
 from dexlib import uleb
 
 # --------------------------------------------------------------------------- what to expect
@@ -78,15 +78,10 @@ BINDINGS = {
     'undo_slot': 'Lqyc;',
     'committable': 'Lojt;',
     'sigcheck': 'Lrpv;',
+    'sigcheck_runner': 'Lmm;',
     'toolbar_module': 'Lmln;',
     'bar_controller': 'Lmlh;',
     'toolbar_module_base': 'Lnvd;',
-    # Not a cached signature verdict, despite the company it keeps here. Lrox;->b:Z is the global
-    # test-environment flag (Build.FINGERPRINT.equals("robolectric")), permanently false on a
-    # device and read in ~40 unrelated places. The signature check reads it once, as the value to
-    # return when the caller's digest cannot be computed -- an input, never an output. It is
-    # tracked only because reading it is part of what identifies the check.
-    'test_environment': 'Lrox;',
     # The factory every boolean Phenotype flag is built through. Hidden Features finds each
     # flag's holder class by carrying the flag's name string rather than naming the class, so the
     # holders need no bindings -- Ljpf; had one and no longer does. Names move every build; the
@@ -99,13 +94,9 @@ BINDINGS = {
     # any of them.
     'start_key_holder': 'Lpnu;',          # holds the start keycode the scrub engine compares
     'key_selector': 'Lpmy;',              # the sget-object the start-key read goes through
-    'pointer_tracker': 'Lpvi;',           # per-pointer state; holds a gesture's start and current x/y
     'key_data': 'Lpnu;',                  # key data; the scrub engine calls the same class start_key_holder
     'key_data_arg': 'Lpnt;',              # its second ctor argument, passed null here
     'ime_event': 'Lnur;',                 # the IME event wrapper a key-data becomes
-    'pointer_delegate_iface': 'Lpvj;',    # how the tracker declares its owner
-    'event_sink': 'Lpvo;',                # the interface anything down here raises an IME event through
-    'pointer_delegate': 'Lpvf;',          # owns the pointer trackers; where the flick preference lands
     'flag_box': 'Lnxp;',                  # boxed phenotype flag read by the scrub gate
     'access_point_map': 'Lays;',          # the map the toolbar register call writes into
     'immutable_set': 'Lvxe;',             # the allowed-set the order helper stores
@@ -167,6 +158,8 @@ EXPECTED = {
         (0x7f140a1f, 'enable_scrub_delete'),
         (0x7f140a05, 'enable_gesture_input'),
         (0x7f140a01, 'pref_enable_flick_symbols'),
+        # Used once to clean up the obsolete "0.6" value left by older Flexboard builds.
+        (0x7f140ad3, 'keyboard_slide_sensitivity_ratio'),
         (0x7f140a21, 'enable_secondary_digits'),
         (0x7f1409c0, 'block_offensive_words'),
         (0x7f140b6f, 'show_suggestions'),
@@ -174,30 +167,10 @@ EXPECTED = {
         (0x7f140a07, 'pref_key_enable_grammar_checker'),
         (0x7f140a28, 'enable_smart_reply'),
     ],
-    'sigcheck_registers': 8,
-    'sigcheck_returns': [6, 4, 3],
+    'sigcheck_runner_registers': 18,
     'undo_scratch': [2, 3],
     'clamp_scratch': [5, 7, 9],
-    'distance_scratch': [7, 8, 9],
     'stock_start_keycode': 67,
-    'toolbar_scratch': [2, 5],
-    'toolbar_ctor_registers': 9,
-    'toolbar_ctor_ins': 3,
-    # Gboard's own log line for the order-update callback. The anchor for the *count*, as opposed to
-    # the capacity the constructor writes -- and unusually good for one, because it does not merely
-    # locate a method, it says in Google's own words what the value returned there is.
-    'toolbar_count_log': 'oldVisibleCountOnBar %d, currentVisibleCountOnBar %d, definedCountOnBar %d',
-    # Gboard's own name for the device class an open fold reports. The enum's <clinit> hands it to
-    # each constant's constructor as a literal, and R8 rewrites the field but never the string, so
-    # this is what tells the foldable constant apart from DEVICE_TABLET sitting next to it.
-    'toolbar_foldable_name': 'DEVICE_FOLDABLE',
-    'toolbar_count_registers': 5,
-    'toolbar_count_ins': 2,
-    'toolbar_count_scratch': [0, 1, 2],
-    # Gboard's own stock icon count, the default of the getInt in the bar's constructor. Not used by
-    # the patch -- it reads the preference with whatever Gboard computed -- but it is the number the
-    # settings slider displays while unset, so it has to stay true.
-    'toolbar_stock_count': 5,
     # ---- the native-registration path in ToolbarButtonsPatch
     #
     # The bar-controller's constructor is the hook site, so its register count is pinned. A bump
@@ -359,44 +332,62 @@ def flag_layout(ins, flag):
                 if n_.startswith('const-string') and f"'{flag}'" in (a_ or '')), None)
     if idx is None:
         return None
-    call = next((j for j in range(idx + 1, min(idx + 9, len(ins)))
-                 if re.search(r'->\w\(Ljava/lang/String;Z\)', ins[j][2] or '')), None)
+    factory = f"{BINDINGS['flag_store']}->a(Ljava/lang/String;Z)Lnxp;"
+    name_register = regs(ins[idx][2])[:1]
+    call = next((j for j in range(idx + 1, min(idx + 6, len(ins)))
+                 if ins[j][1].startswith('invoke-static') and
+                 (ins[j][2] or '').endswith(factory) and
+                 invoke_regs(ins[j][2])[:1] == name_register and
+                 not any(ins[k][1].startswith('const-string') for k in range(idx + 1, j))), None)
     if call is None:
         return None
     reg = invoke_regs(ins[call][2])[1]
 
-    own = [j for j in range(idx + 1, call)
-           if ins[j][1].startswith('const') and regs(ins[j][2] or '')[:1] == [reg]]
-    src = own[-1] if own else next(
-        (j for j in range(idx - 1, -1, -1)
-         if ins[j][1].startswith('const') and regs(ins[j][2] or '')[:1] == [reg]), None)
+    def writes(j):
+        n, a = ins[j][1:]
+        operands = regs(a)
+        _extra_sources, wide_dest = wide_pairs(n, operands)
+        return (not n.startswith(READS_FIRST_OPERAND) and operands[:1] == [reg]) or reg in wide_dest
 
-    nxt = next((j for j in range(call + 1, len(ins))
-                if ins[j][1].startswith('const') and regs(ins[j][2] or '')[:1] == [reg]), len(ins))
-    later = [j for j in range(call + 1, nxt) if reg in invoke_regs(ins[j][2] or '')]
+    own = [j for j in range(idx + 1, call) if writes(j)]
+    src = own[-1] if own else next((j for j in range(idx - 1, -1, -1) if writes(j)), None)
+
+    nxt = next((j for j in range(call + 1, len(ins)) if writes(j)), len(ins))
+    later = [j for j in range(call + 1, nxt)
+             if reg in (invoke_regs(ins[j][2] or '') if ins[j][1].startswith('invoke')
+                        else regs(ins[j][2] or '') if ins[j][1].startswith(READS_FIRST_OPERAND)
+                        else regs(ins[j][2] or '')[1:])]
 
     return {
         'own': bool(own),
-        'effective': literal_of(ins[src][2]) if src is not None else None,
-        'shared': bool(later) or not own,
+        'effective': (literal_of(ins[src][2]) if src is not None and
+                      ins[src][1].startswith('const') and
+                      not ins[src][1].startswith('const-wide') else None),
+        'shared': bool(later),
         'isolate': bool(later) or not own,
         'register': reg,
     }
 
 
+def declared_flag_calls(source):
+    """Each forced/isolation set in the source (Hidden Features has two calls)."""
+    source = re.sub(r'//[^\n]*', '', source)
+    out = []
+    for call in re.finditer(r'forceFlagsOn\((.*?)\n\s*\)\n', source, re.S):
+        positional, _, isolating = call.group(1).partition('isolating')
+        out.append((set(re.findall(r'"([a-z0-9_]+)"', positional)),
+                    set(re.findall(r'"([a-z0-9_]+)"', isolating))))
+    return out
+
+
 def declared_flag_sets(source):
-    """The flags a patch forces and the subset it isolates, read out of its Kotlin source.
+    """The flags a one-call patch forces and the subset it isolates, read from source.
 
     Parsed rather than restated, so the pin compares the patch against the APK instead of comparing
     two copies of the same assumption.
     """
-    call = re.search(r'forceFlagsOn\((.*?)\n\s*\)\n', source, re.S)
-    if not call:
-        return None, None
-    positional, _, isolating = call.group(1).partition('isolating')
-    forced = set(re.findall(r'"([a-z0-9_]+)"', re.sub(r'//[^\n]*', '', positional)))
-    isolated = set(re.findall(r'"([a-z0-9_]+)"', re.sub(r'//[^\n]*', '', isolating)))
-    return forced, isolated
+    calls = declared_flag_calls(source)
+    return calls[0] if len(calls) == 1 else (None, None)
 
 
 def find_string_holder(dl, needle):
@@ -478,6 +469,28 @@ def class_fields(d, cd):
             af, o = uleb(b, o)
             idx += diff
             yield d.field(idx), static
+
+
+def field_access_flags(dl, descriptor):
+    """The encoded_field access bits for a concrete descriptor (not just its existence)."""
+    owner = descriptor.split('->')[0]
+    d, _sup, cd = find_class(dl, owner)
+    if d is None or not cd:
+        return None
+    b = d.b
+    sf, o = uleb(b, cd)
+    inf, o = uleb(b, o)
+    _dm, o = uleb(b, o)
+    _vm, o = uleb(b, o)
+    for count in (sf, inf):
+        idx = 0
+        for _ in range(count):
+            diff, o = uleb(b, o)
+            flags, o = uleb(b, o)
+            idx += diff
+            if d.field(idx) == descriptor:
+                return flags
+    return None
 
 
 def superclass_chain(dl, name, limit=16):
@@ -759,13 +772,13 @@ def live_free(ins, register_count, at_pc):
 
 # The floor for the check count. Not the exact number: adding a pin should not require editing
 # two places. It exists to catch a *collapse*, which is what an empty dex-derived list causes.
-MINIMUM_CHECKS = 316
+MINIMUM_CHECKS = 291  # 31 orphaned pins removed and six current-shape guards added.
 
 # And the floor when an APK is supplied too, which is how the gate runs it. Two numbers because the
 # resource pins only exist in that mode: a single floor either has to sit below the dex-only count,
 # which leaves twenty-odd resource pins free to vanish unnoticed, or above it, which breaks the
 # dex-only run. The whole point of a floor is that it sits just under the real number.
-MINIMUM_CHECKS_WITH_APK = 336
+MINIMUM_CHECKS_WITH_APK = 311  # Leave room for new pins without allowing a collapsed check set.
 
 
 class Report:
@@ -1036,10 +1049,14 @@ def run(dl, apk=None):
                      f'found {len(cfgs)}')
         if ok_k and ok_c:
             check('scrubdelete: keycode precedes the config ctor', keys[0] < cfgs[0])
-            # The patch also asserts the call consumes the constant's own register: order alone
-            # stops proving feeding as soon as a build has a second `const/16 …, 67`.
+            # Only argument slot 1 is the start key; another matching register in the call is
+            # unrelated. Check intervening writes, not just register-list membership.
+            key_reg = regs(ins[keys[0]][2])[0]
+            args = invoke_regs(ins[cfgs[0]][2])
             check('scrubdelete: the config ctor consumes the keycode register',
-                  regs(ins[keys[0]][2])[0] in invoke_regs(ins[cfgs[0]][2]))
+                  keys[0] < cfgs[0] and len(args) == 9 and args[1] == key_reg and
+                  not writes_before(ins, key_reg, ins[keys[0]][0], ins[cfgs[0]][0]),
+                  f'arg1={args[1:2]} constant=v{key_reg}')
 
     c, ins = body(dl, f'{SCRUB}->g(Landroid/view/MotionEvent;)V')
     if check('scrubdelete: g() exists', ins is not None):
@@ -1105,9 +1122,12 @@ def run(dl, apk=None):
         # insertion point. This is the argument the patch cannot make for itself — it derives each
         # register from the instruction that loads it and then trusts it across a gap — so it is
         # made here instead, against the real method body.
-        if rect_regs and width:
-            bottom_pc = [pc for pc, n, a in ins
-                         if n == 'iput' and 'Landroid/graphics/Rect;->bottom:I' in a][0]
+        bottom_writes = [pc for pc, n, a in ins
+                         if n == 'iput' and 'Landroid/graphics/Rect;->bottom:I' in a]
+        if check('scrubdelete: register-survival inputs are present',
+                 bool(rect_regs) and bool(width) and bool(reads) and
+                 'bottom' in rect_regs and len(bottom_writes) == 1):
+            bottom_pc = bottom_writes[0]
             loads = {
                 'config': (regs(ins[reads[0]][2])[1], f':{config}'),
                 'keyboard view': (regs(ins[width[0]][2])[0], f'{SCRUB}->d:'),
@@ -1115,11 +1135,12 @@ def run(dl, apk=None):
             }
             for what, (reg, marker) in loads.items():
                 src = [pc for pc, n, a in ins
-                       if n == 'iget-object' and marker in a and regs(a)[:1] == [reg]]
+                       if n == 'iget-object' and marker in a and regs(a)[:1] == [reg]
+                       and pc < bottom_pc]
                 if not check(f'scrubdelete: the {what} register is loaded in g()', bool(src),
                              f'v{reg} {marker}'):
                     continue
-                clobbered = writes_before(ins, reg, src[-1], bottom_pc)
+                clobbered = writes_before(ins, reg, max(src), bottom_pc)
                 check(f'scrubdelete: the {what} register survives to the insertion point',
                       not clobbered, f'v{reg} rewritten at {clobbered}')
 
@@ -1172,28 +1193,6 @@ def run(dl, apk=None):
         check('startkey: one Lpnu; field read in g()', len(kc) == 1, f'found {len(kc)}')
 
     c, ins = body(dl, f'{SCRUB}->r(Landroid/view/MotionEvent;Z)V')
-    if ins:
-        absi = [i for i, (pc, n, a) in enumerate(ins) if 'Ljava/lang/Math;->abs(F)F' in a]
-        if check('distance: Math.abs(F)F is unique in r()', len(absi) == 1, f'found {len(absi)}'):
-            delta = regs(ins[absi[0]][2])[0]
-            sub = [i for i in range(absi[0] - 1, -1, -1)
-                   if regs(ins[i][2])[:1] == [delta] and not ins[i][1].startswith('if-')]
-            if check('distance: the delta is written before it', bool(sub)):
-                # binop2addrc7 is sub-float/2addr (0xc7).
-                check('distance: it comes from a sub-float/2addr',
-                      ins[sub[0]][1] == 'binop2addrc7', ins[sub[0]][1])
-                # The scratch set, checked by real backward liveness rather than a forward scan --
-                # a forward scan wrongly reports v3 free, because the if-gt guarding the table walk
-                # branches past the write that makes it look dead.
-                site = sub[0] + 1
-                free = live_free(ins, c['registers'], ins[site][0])
-                want = E['distance_scratch']
-                check('distance: the scratch registers are dead at the insertion point',
-                      all(r in free for r in want), f'free={free} want={want}')
-                check('distance: v3 is correctly NOT among them', 3 not in free,
-                      'v3 looks free but is read on the extrapolation path')
-
-    c, ins = body(dl, f'{SCRUB}->r(Landroid/view/MotionEvent;Z)V')
     if check('tuning: r() exists', ins is not None):
         check('tuning: r() register count', c['registers'] == E['scrub_r_registers'],
               f'got {c["registers"]}')
@@ -1224,178 +1223,6 @@ def run(dl, apk=None):
                     check(f'tuning: scratch is dead at the insertion point after pc {ins[site][0]}',
                           set(scratch) <= free,
                           f'scratch={scratch} still live={sorted(set(scratch) - free)}')
-
-    # ---- toolbar icon count
-    #
-    # The bar's own class name survives R8 (a layout addresses it as a string), and the anchor for
-    # the ceiling is a *string literal*, which R8 never rewrites. So unlike everything above, only
-    # the register numbers here can move between builds.
-    _, clinit = body(dl, f'{ACCESS_POINTS_BAR}-><clinit>()V')
-    check('toolbar: the bar declares config_max_access_points',
-          clinit is not None and any('config_max_access_points' in a for pc, n, a in clinit),
-          'the flag naming this class as the toolbar cap is gone')
-
-    ctor = f'{ACCESS_POINTS_BAR}-><init>({CONTEXT}Landroid/util/AttributeSet;)V'
-    c, ins = body(dl, ctor)
-    if check('toolbar: the bar constructor exists', ins is not None, ctor):
-        check('toolbar: its register count',
-              c['registers'] == E['toolbar_ctor_registers'], f'got {c["registers"]}')
-        check('toolbar: its parameter words',
-              c['ins'] == E['toolbar_ctor_ins'], f'got {c["ins"]}')
-
-        # Gboard's own starting count, read off the getInt the flag falls back to.
-        #
-        # This used to assert that the settings slider showed the same number, because it did: the
-        # patch had no default and an untouched slider left the count wherever Gboard put it. The
-        # first-run seed ended that relationship — Flexboard writes its own number now — so what is
-        # left is a fact about Gboard worth noticing if it moves, and the docs quote it.
-        gi = [i for i, (pc, n, a) in enumerate(ins)
-              if 'Landroid/content/res/TypedArray;->getInt(II)I' in a]
-        if check('toolbar: one getInt on the styled attributes', len(gi) == 1, f'found {len(gi)}'):
-            default_reg = regs(ins[gi[0]][2])[2]
-            src = [i for i in range(gi[0] - 1, -1, -1)
-                   if ins[i][1].startswith('const') and regs(ins[i][2])[:1] == [default_reg]]
-            # Hex too: dis.py renders `const` and `const/high16` that way, and a decimal-only
-            # pattern matches the leading 0 of `#0x5` and calls the literal zero.
-            literal = re.search(r'#(-?0x[0-9a-fA-F]+|-?\d+)', ins[src[0]][2]) if src else None
-            check("toolbar: Gboard's own starting count is unchanged",
-                  literal is not None and int(literal.group(1), 0) == E['toolbar_stock_count'],
-                  f'got {literal and literal.group(1)}, '
-                  f'expected {E["toolbar_stock_count"]}')
-
-        flag = [i for i, (pc, n, a) in enumerate(ins) if f"{B['flag_box']}->g()Ljava/lang/Object;" in a]
-        if check('toolbar: one flag read in the constructor', len(flag) == 1, f'found {len(flag)}'):
-            # By field *type*, not by opcode: `iput` (0x59) covers int and float alike, and the two
-            # dimensions read out of the same TypedArray follow just below. Restricting to after the
-            # flag read is what excludes `->y:I`, written near the top.
-            puts = [i for i, (pc, n, a) in enumerate(ins)
-                    if i > flag[0] and n == 'iput' and a.rstrip().endswith(':I')]
-            if check('toolbar: one int field written after it', len(puts) == 1,
-                     f'found {len(puts)}'):
-                site = ins[puts[0]][0]
-                ceiling = regs(ins[puts[0]][2])[0]
-                free = live_free(ins, c['registers'], site)
-                want = E['toolbar_scratch']
-                check('toolbar: the scratch registers are dead at the insertion point',
-                      all(r in free for r in want), f'free={free} want={want}')
-                # The standing guard. Everything else at this point is live: the TypedArray, the two
-                # constants the dimension reads still need, and the Context the store is handed.
-                held = [r for r in (0, 1, 3, 7) if r in free]
-                check('toolbar: v0, v1, v3 and v7 are correctly NOT among them', not held,
-                      f'{held} look free but are read after the ceiling is written')
-                check('toolbar: the capacity register is not borrowed as scratch',
-                      ceiling not in want, f'v{ceiling} is in {want}')
-
-    # The capacity checked above is not the icon count, and mistaking one for the other is what
-    # shipped this patch broken once. The count is `definedCountOnBar`, which Gboard names for us in
-    # a log line and which sits after both gates that can override the capacity. These checks guard
-    # the derivation that finds it, since it is an obfuscated letter that is never written down.
-    log_hits = []
-    for dex in dl:
-        for _cls_name, _af, cls_data in dex.classes():
-            if not cls_data:
-                continue
-            for m_name, _maf, m_off in dex.class_methods(cls_data):
-                if not m_off:
-                    continue
-                try:
-                    mc = dex.code(m_off)
-                except Exception:
-                    continue
-                if any(mn == 'const-string' and txt and E['toolbar_count_log'] in txt
-                       for _pc, _op, mn, txt in dex.walk(mc)):
-                    log_hits.append(m_name)
-    if check('toolbar: exactly one method logs definedCountOnBar', len(log_hits) == 1,
-             str(log_hits)):
-        _c, ins = body(dl, log_hits[0])
-
-        def called(a):
-            return a.split('}, ')[-1]
-
-        counts = sorted({called(a) for _pc, mn, a in ins
-                         if mn.startswith('invoke') and called(a).endswith('(I)I')})
-        # One, not "at least one". The patch takes the sole (I)I call as the count; a second would
-        # be picked between silently, and the log line says nothing about which is which.
-        if check('toolbar: one (I)I call in it', len(counts) == 1, str(counts)):
-            c, ins = body(dl, counts[0])
-            if check('toolbar: the count method has a body', ins is not None, counts[0]):
-                check('toolbar: its register count',
-                      c['registers'] == E['toolbar_count_registers'], f'got {c["registers"]}')
-                check('toolbar: its parameter words',
-                      c['ins'] == E['toolbar_count_ins'], f'got {c["ins"]}')
-                # The insertion is at method entry, so the proof that the scratch registers are
-                # free is arithmetic rather than a liveness fixpoint: locals below the parameters
-                # hold nothing before the first instruction runs.
-                locals_ = c['registers'] - c['ins']
-                check('toolbar: the scratch registers are locals at entry',
-                      locals_ == len(E['toolbar_count_scratch']),
-                      f'{locals_} locals, insertion needs {len(E["toolbar_count_scratch"])}')
-                this_reg = c['registers'] - c['ins']
-                capacity_reg = c['registers'] - 1
-                # The device-class branch the unfolded override rides on. Gboard picks its own
-                # preference key from device class, and a fold changes class when it opens, so this
-                # is what makes the inner and outer screens separately configurable.
-                sgets = [a for _pc, mn, a in ins if mn == 'sget-object']
-                if check('toolbar: one enum constant chooses the preference key',
-                         len(sgets) == 1, f'found {len(sgets)}'):
-                    mode_type = sgets[0].rsplit(':', 1)[-1].strip()
-                    constant = sgets[0].split(', ')[-1].strip()
-                    # Resolved by name out of the enum's <clinit>, never by its letter: R8 rewrites
-                    # the field and leaves the string. A letter that moved onto DEVICE_TABLET would
-                    # put the override on the wrong screens and nothing else would notice.
-                    _cc, cins = body(dl, f'{mode_type}-><clinit>()V')
-                    named = next((i for i, (_pc, _mn, a) in enumerate(cins or [])
-                                  if E['toolbar_foldable_name'] in a), None)
-                    if check(f'toolbar: {mode_type} names {E["toolbar_foldable_name"]}',
-                             named is not None):
-                        stored = next((a for _pc, mn, a in cins[named:]
-                                       if mn == 'sput-object' and a.rstrip().endswith(mode_type)),
-                                      None)
-                        check('toolbar: the key branch tests the foldable constant',
-                              stored is not None and stored.split(', ')[-1].strip() == constant,
-                              f'branch tests {constant}, foldable is {stored}')
-                    modes = [a for _pc, mn, a in ins
-                             if mn == 'iget-object' and a.rstrip().endswith(f':{mode_type}')]
-                    if check('toolbar: one device-mode field read', len(modes) == 1,
-                             f'found {len(modes)}'):
-                        check('toolbar: the device mode is read off the receiver',
-                              regs(modes[0])[1] == this_reg,
-                              f'read off v{regs(modes[0])[1]}, receiver is v{this_reg}')
-                # What makes this the method that *finishes* the calculation rather than a step
-                # inside it. Insert before the gate and the value goes back where Gboard's own
-                # count preference and its reduced mode can each override it.
-                #
-                # Signature alone is not enough to find it -- the store's own id-keyed getInt is
-                # (II)I as well, and this check failed on that before it was narrowed. The gate is
-                # the (II)I call the *capacity parameter* flows into; the store read is a call that
-                # has nothing to do with it.
-                gates = [i for i, (_pc, mn, a) in enumerate(ins)
-                         if mn.startswith('invoke') and called(a).endswith('(II)I')
-                         and capacity_reg in regs(a.split('}, ')[0])]
-                if check('toolbar: it still applies the count gate', len(gates) == 1,
-                         f'found {len(gates)}'):
-                    # The other half, and the half that stops the check above from passing on a
-                    # coincidence: the gate's result must be what the method hands back. Input and
-                    # output together say the body is `return gate(..., capacity)`, which is the
-                    # property the patch actually depends on -- overriding at entry outranks the
-                    # gate only if the gate is the last word on the value.
-                    i = gates[0]
-                    flows = (i + 2 < len(ins)
-                             and ins[i + 1][1] == 'move-result'
-                             and ins[i + 2][1] == 'return'
-                             and regs(ins[i + 1][2]) == regs(ins[i + 2][2]))
-                    check('toolbar: the gate result is what it returns', flows,
-                          f'{[n for _pc, n, _a in ins[i:i + 3]]}')
-                stores = [a for _pc, mn, a in ins
-                          if mn == 'iget-object' and a.rstrip().endswith(f':{B["store"]}')]
-                # The preference store is read out of this method rather than named, so exactly one
-                # such field must be touched -- and off the receiver, or `iget-object ... p0` in the
-                # emitted code reads the wrong object.
-                if check('toolbar: one preference-store field read in it', len(stores) == 1,
-                         f'found {len(stores)}'):
-                    check('toolbar: it is read off the receiver',
-                          regs(stores[0])[1] == this_reg,
-                          f'read off v{regs(stores[0])[1]}, receiver is v{this_reg}')
 
     # ---- text editing buttons
     #
@@ -1472,14 +1299,12 @@ def run(dl, apk=None):
             return a.rsplit(', ', 1)[-1].strip()
 
         builder = access_point = None
-        for _pc, mn, a in ins:
-            if mn.startswith('invoke') and '()' in called(a) and not called(a).endswith(')V'):
-                builder = called(a).split(')')[-1]
-                # The type declaring the factory is also what the build method returns, which is
-                # what the patch derives it as.
-                access_point = called(a).split('->')[0]
-                break
-        if check('buttons: the seed opens a builder', builder is not None):
+        opening = ins[0] if ins else None
+        if (opening and opening[1] == 'invoke-static' and
+                '()' in called(opening[2]) and not called(opening[2]).endswith(')V')):
+            builder = called(opening[2]).split(')')[-1]
+            access_point = called(opening[2]).split('->')[0]
+        if check('buttons: the seed opens with a static builder factory', builder is not None):
             setters = [called(a) for _pc, mn, a in ins
                        if mn.startswith('invoke') and called(a).startswith(f'{builder}->')
                        and called(a).endswith('(I)V')]
@@ -1681,6 +1506,7 @@ def run(dl, apk=None):
                 # checks that, and it is the one fact standing between a hotkey and a crash loop.
                 get_string = 'Landroid/content/Context;->getString(I)Ljava/lang/String;'
                 unguarded = []
+                examined = 0
                 for field, methods in int_reads.items():
                     if not field.startswith(f'{access_point}->'):
                         continue
@@ -1696,12 +1522,14 @@ def run(dl, apk=None):
                                          and into in regs(t.split('}')[0])), None)
                             if uses is None:
                                 continue
+                            examined += 1
                             guarded = any(n.startswith('if-eqz') and regs(t)[:1] == [into]
                                           for _p, n, t in ahead[:uses])
                             if not guarded:
                                 unguarded.append(f'{m} @{_pc} ({field})')
                 check('buttons: every resource id read off the access point is zero-guarded',
-                      not unguarded, f'{sorted(unguarded)} would call getString(0)')
+                      examined >= 4 and not unguarded,
+                      f'{examined} examined; {sorted(unguarded)} would call getString(0)')
 
     # The label id is the one fact this feature rests on that has NO anchor in the dex: unlike the
     # icon, 0x7f140576 has zero const sites, because nothing in stock Gboard loads it the way the
@@ -1908,8 +1736,16 @@ def run(dl, apk=None):
         check('native: toolbar start-input register count',
               c['registers'] == E['toolbar_refresh_registers'],
               f'got {c["registers"]}')
-        check('native: toolbar start-input ends in a return',
-              ins and ins[-1][1].startswith('return'), ins[-1][1] if ins else '')
+        returns = [row for row in ins if row[1].startswith('return')]
+        check('native: toolbar start-input has one terminal return',
+              len(returns) == 1 and ins[-1] == returns[0],
+              f'returns={len(returns)} tail={ins[-1][1] if ins else "none"}')
+        tail_pc = ins[-1][0]
+        targeted = [(pc, n) for pc, n, a in ins if n.startswith(('goto', 'if-'))
+                    and (a or '').endswith(f'-> {tail_pc}')]
+        switches = [pc for pc, n, _a in ins if n.endswith('-switch') or n == 'payload']
+        check('native: start-input return has no incoming branch that skips the refresh',
+              not targeted and not switches, f'branches={targeted}, switches={switches}')
         # The refresh emission owns v0/v1/v2/v4 at the tail. Insertion sits ahead of the final
         # return, so the return's *operand* must be a parameter slot: a future build that leaves
         # the value in v0..v4 would have it clobbered by our blocks, with every other pin green.
@@ -1920,7 +1756,6 @@ def run(dl, apk=None):
                   and all(r >= c['registers'] - c['ins'] for r in tail_regs),
                   f'tail reads v{tail_regs}; the refresh emission owns v0/v1/v2/v4')
     module_cls = B['toolbar_module']
-    fdesc = f"{module_cls}->s:{B['bar_controller']}"
     field_hits = []
     modules_with_field = []
     fn_sig = '(Loru;Landroid/view/inputmethod/EditorInfo;ZLjava/util/Map;Lnve;)Z'
@@ -1929,14 +1764,15 @@ def run(dl, apk=None):
             if not cls_data:
                 continue
             if typename == module_cls:
-                field_hits.extend(fd for fd, _static in class_fields(dex, cls_data) if fd == fdesc)
+                field_hits.extend(fd for fd, _static in class_fields(dex, cls_data)
+                                  if fd.endswith(f':{B["bar_controller"]}'))
             declares_fn = any(mn.endswith(f'->fn{fn_sig}')
                               for mn, _maf, _co in dex.class_methods(cls_data))
             if declares_fn and any(fd.endswith(f':{B["bar_controller"]}')
                                    for fd, _st in class_fields(dex, cls_data)):
                 modules_with_field.append(typename)
     check('native: module carries its bar-controller field', len(field_hits) == 1,
-          f'found {len(field_hits)} matching {fdesc}')
+          f'found {len(field_hits)}: {field_hits}')
     # The patch resolves the toolbar module by "declares fn(...)Z AND has a bar-controller
     # field" * because the bare signature is the module-wide base API (75 modules on 18.0.3).
     check('native: the fn+controller-field selector uniquely resolves to the toolbar module',
@@ -1963,9 +1799,13 @@ def run(dl, apk=None):
             free = live_free(ins, c['registers'], 0)
             check('buttons: v0 is dead at onCreate entry', 0 in free, f'free={free}')
 
-    # ---- forced preferences, flick symbols and the first-run seed share this hook
-    c, _ = body(dl, f'{LATIN_APP}->d({store})V')
+    # ---- forced preferences, suggested defaults and the crash recorder share this hook
+    preference_hook = f'{LATIN_APP}->d({store})V'
+    c, _ = body(dl, preference_hook)
     check('prefs: applyPreferenceValues exists', c is not None)
+    maf = method_access_flags(dl, preference_hook)
+    check('prefs: p0 is the Application, not a static method argument',
+          maf is not None and not maf & 0x8, f'access={maf}')
     check('prefs: its register count', c is not None
           and c['registers'] == E['apply_preferences_registers'],
           f'got {c and c["registers"]}')
@@ -1982,7 +1822,7 @@ def run(dl, apk=None):
               receiver < PACKED_INVOKE_REGISTER_LIMIT,
               f'p0 is v{receiver}; the seed would need move-object/from16 first')
 
-    # The three Gboard preferences the extension writes, by the id it resolves each key from.
+    # All Gboard preference ids the extension still reads, including the old ratio for migration.
     if apk is None:
         check.skip('prefs: the preference ids still name the right settings',
                    'no APK given; pass one as the second argument to check resource ids')
@@ -2026,7 +1866,7 @@ def run(dl, apk=None):
               f'access={ctors and hex(ctors[0])}')
         ab = [ (af, co) for m, af, co in methods if m == f'{host}->aB()I']
         check('settings: aB()I exists, public and concrete',
-              bool(ab) and ab[0][0] & 0x1 == 1 and ab[0][0] & 0x400 == 0 and ab[0][1] != 0,
+              bool(ab) and ab[0][0] & 0x1 == 1 and ab[0][0] & 0x410 == 0 and ab[0][1] != 0,
               f'access={ab and hex(ab[0][0])}')
 
     slider = E['native_settings_slider']
@@ -2072,7 +1912,7 @@ def run(dl, apk=None):
         a_a = [(m, af, co) for m, af, co in d_tl.class_methods(cd_tl)
                if m == f'{tree_listener}->aA({pref})Z']
         check('settings: aA(Preference)Z on the tree listener, public and concrete',
-              bool(a_a) and a_a[0][1] & 0x1 == 1 and a_a[0][1] & 0x400 == 0
+              bool(a_a) and a_a[0][1] & 0x1 == 1 and a_a[0][1] & 0x410 == 0
               and a_a[0][2] != 0,
               f'access={a_a and hex(a_a[0][1])}')
 
@@ -2106,8 +1946,8 @@ def run(dl, apk=None):
             if m == f'{tree_listener}->d(Ljava/lang/CharSequence;){pref}'] \
         if cd_tl else []
     check('settings: d(CharSequence)Preference on the tree listener, public',
-          bool(d_fp) and d_fp[0][1] & 0x1 == 1 and d_fp[0][1] & 0x400 == 0
-          and d_fp[0][2] != 0,
+           bool(d_fp) and d_fp[0][1] & 0x1 == 1 and d_fp[0][1] & 0x400 == 0
+           and d_fp[0][1] & 0x10 == 0x10 and d_fp[0][2] != 0,
           f'access={d_fp and hex(d_fp[0][1])}')
     c, ins = body(dl, f'{tree_listener}->d(Ljava/lang/CharSequence;){pref}')
     if check('settings: d(CharSequence)Preference has a body', ins is not None):
@@ -2195,34 +2035,49 @@ def run(dl, apk=None):
                  if mn.startswith('iget') and a.rsplit(', ', 1)[-1] == f'{dlg}->f:I']
         check('settings: exactly one reader of the layout id', len(reads) == 1, str(reads))
 
-    # ---- bypass signature
-    sig_cls = B['sigcheck']
-    c, ins = body(dl, f'{sig_cls}->a({CONTEXT}Ljava/lang/String;)Z')
-    if check('bypass: signature check exists', ins is not None):
-        check('bypass: register count', c['registers'] == E['sigcheck_registers'],
+    # ---- bypass only the self-check call; the exported debug provider must keep using the
+    # original verifier. Pin the bytecode seam, not the returns inside Lrpv; (no longer edited).
+    sig_call = f'{B["sigcheck"]}->a({CONTEXT}Ljava/lang/String;)Z'
+    c, ins = body(dl, f'{B["sigcheck_runner"]}->run()V')
+    if check('bypass: own-startup runner exists', ins is not None):
+        check('bypass: runner frame', c['registers'] == E['sigcheck_runner_registers'],
               f'got {c["registers"]}')
-        returns = [regs(a)[0] for pc, n, a in ins if n == 'return']
-        check('bypass: return registers', returns == E['sigcheck_returns'], str(returns))
-        seen = {a.split(', ')[-1] for pc, n, a in ins if n.startswith(('sget', 'iget'))}
-        for fd in (f'{sig_cls}->e:[B', f'{sig_cls}->d:[B', f'{sig_cls}->c:[B',
-                   f'{B["test_environment"]}->b:Z'):
-            check(f'bypass: reads {fd}', fd in seen)
-        c2, _ = body(dl, f'{sig_cls}->c({CONTEXT}Ljava/lang/String;)[B')
-        check('bypass: digest method exists', c2 is not None)
-
-    # The grammar flag had a bespoke section here, pinning Ljpf; by name and asserting its
-    # triple by hand. It is one entry in hidden_feature_flags now, checked by the same four rules
-    # as the rest -- including "loads its own default", which the hand-written version never
-    # checked and which is the assertion that makes the flip safe at all.
+        sites = [i for i, (_pc, n, a) in enumerate(ins)
+                 if n == 'invoke-static' and a.endswith(sig_call)]
+        if check('bypass: exactly one call in the self-check runner', len(sites) == 1,
+                 str(sites)):
+            i = sites[0]
+            check('bypass: it checks its own package', i >= 2 and
+                  ins[i - 2][2].endswith(f'{CONTEXT}->getPackageName()Ljava/lang/String;'))
+            result = ins[i + 1] if i + 1 < len(ins) else (-1, '', '')
+            branch = ins[i + 2] if i + 2 < len(ins) else (-1, '', '')
+            check('bypass: the branch reads the boolean result',
+                  result[1] == 'move-result' and branch[1] == 'if-nez' and
+                  regs(result[2])[:1] == regs(branch[2])[:1],
+                  f'result={result}, branch={branch}')
+            check('bypass: startup failure message still identifies the seam',
+                  any(n == 'const-string' and 'APK is signed by unrecognized certificates: ' in a
+                      for _pc, n, a in ins))
 
     # ---- hidden features
     #
-    # Each flag is a const-string + const/4 + factory triple in some class's <clinit>. The patch
-    # flips the zero, and the only thing making that safe is that the constant belongs to this
-    # flag alone: the boolean register is reused down the method (six flags in one <clinit> share
-    # v1), so a default loaded before the flag's own name is read by all of them and flipping it
-    # would turn on features nobody asked for. These pins assert the triple, per flag.
+    # A flag may own its zero and still share it forward with later flags. Pin the patch's
+    # `isolating` decision, not just the const-string/const/4/factory triple.
     flag_factory = f"{B['flag_store']}->a(Ljava/lang/String;Z)Lnxp;"
+    hidden_src = os.path.join(os.path.dirname(__file__), '..', '..', 'patches', 'src', 'main',
+                              'kotlin', 'dev', 'jz6', 'flexboard', 'patches', 'features',
+                              'hiddenfeatures', 'HiddenFeaturesPatch.kt')
+    if os.path.exists(hidden_src):
+        with open(hidden_src, encoding='utf-8') as source:
+            hidden_calls = declared_flag_calls(source.read())
+    else:
+        hidden_calls = []
+    check('flags: both Hidden Features declarations are parsed', len(hidden_calls) == 2)
+    hidden_forced = set().union(*(forced for forced, _isolated in hidden_calls))
+    hidden_isolated = set().union(*(isolated for _forced, isolated in hidden_calls))
+    check('flags: the pinned names match both patch declarations',
+          hidden_forced == set(E['hidden_feature_flags']) |
+          {flag for flag, _sharer in E['hidden_feature_flags_shared']})
     for flag in E['hidden_feature_flags']:
         sites = []
         for d_ in dl:
@@ -2258,6 +2113,10 @@ def run(dl, apk=None):
                     check(f'flags: {flag} still ships off',
                           lit is not None and int(lit.group(1), 0) == 0,
                           (ins_[own[-1]][2] or '').strip())
+                layout = flag_layout(ins_, flag)
+                check(f'flags: {flag} isolation matches the patch',
+                      layout is not None and layout['isolate'] == (flag in hidden_isolated),
+                      f'layout={layout}, declared isolated={sorted(hidden_isolated)}')
 
     # The hoisted-default flags. The assertions are deliberately the mirror of the block above:
     # there must be NO constant of the flag's own between its name and its call, because that
@@ -2295,6 +2154,10 @@ def run(dl, apk=None):
                        and re.match(rf"\s*v{breg},", ins_[j][2] or '')]
                 check(f'flags: {flag} default is still hoisted', not own,
                       'it has its own constant now -- drop it from isolating')
+                layout = flag_layout(ins_, flag)
+                check(f'flags: {flag} isolation matches the patch',
+                      layout is not None and layout['isolate'] == (flag in hidden_isolated),
+                      f'layout={layout}, declared isolated={sorted(hidden_isolated)}')
                 # The register the flag reads must be written somewhere earlier, and hold zero.
                 pre = [j for j in range(0, i_)
                        if ins_[j][1].startswith('const')
@@ -2356,8 +2219,23 @@ def run(dl, apk=None):
           'Lpvo;' in (class_interfaces(dl, 'Lozi;') or []), str(class_interfaces(dl, 'Lozi;')))
     check('undo-ac: the route knows its manager', find_instance_field(dl, 'Lozi;', 'b') == 'Lozi;->b:Lozj;',
           str(find_instance_field(dl, 'Lozi;', 'b')))
+    # The patch widens Lozi and b to public, but adding PUBLIC to an already-private/protected
+    # member would make invalid DEX. The owning manager and its owner field stay stock and must
+    # already be public for the scrub handler to read them across packages.
+    route_flags = class_access_flags(dl, 'Lozi;')
+    field_flags = field_access_flags(dl, 'Lozi;->b:Lozj;')
+    check('undo-ac: route can safely be widened', route_flags is not None and
+          not route_flags & 0x6, f'flags={route_flags}')
+    check('undo-ac: route field can safely be widened', field_flags is not None and
+          not field_flags & 0x6, f'flags={field_flags}')
     check('undo-ac: the manager records the gesture owner',
           find_instance_field(dl, 'Lozj;', 'k') == 'Lozj;->k:Lpvn;', str(find_instance_field(dl, 'Lozj;', 'k')))
+    manager_flags = class_access_flags(dl, 'Lozj;')
+    owner_flags = field_access_flags(dl, 'Lozj;->k:Lpvn;')
+    check('undo-ac: the gesture manager is public', manager_flags is not None and
+          bool(manager_flags & 0x1), f'flags={manager_flags}')
+    check('undo-ac: its owner field is public', owner_flags is not None and
+          bool(owner_flags & 0x1), f'flags={owner_flags}')
     for desc in ('Lpvo;->m()V', 'Lpvo;->n(Lnur;)V'):
         maf = method_access_flags(dl, desc)
         check(f'undo-ac: {desc} is a non-static interface method, as invoke-interface requires',
@@ -2441,10 +2319,12 @@ def run(dl, apk=None):
     ramble_src = os.path.join(
         repo, 'patches/src/main/kotlin/dev/jz6/flexboard/patches/features/rambler',
         'RamblerPatch.kt')
-    forced, isolated = (declared_flag_sets(open(ramble_src).read())
-                        if os.path.exists(ramble_src) else (None, None))
+    if os.path.exists(ramble_src):
+        with open(ramble_src, encoding='utf-8') as source:
+            forced, isolated = declared_flag_sets(source.read())
+    else:
+        forced, isolated = None, None
     if check('rambler: the patch declares its flag sets readably', forced is not None):
-        c_, ins_ = body(dl, 'Lmqh;-><clinit>()V')
         holders = {}
         for flag in sorted(forced):
             owner = find_string_holder(dl, flag)
