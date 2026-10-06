@@ -3,7 +3,11 @@
 #
 # Linux start script should use lf
 /gradlew        text eol=lf
+*.sh           text eol=lf
+/tools/gate    text eol=lf
+/tools/bump    text eol=lf
+/tools/promote text eol=lf
+/tools/hooks/* text eol=lf
 
 # These are Windows script files and should use crlf
 *.bat           text eol=crlf
-
