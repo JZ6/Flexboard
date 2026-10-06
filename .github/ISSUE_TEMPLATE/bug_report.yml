@@ -11,7 +11,7 @@ body:
         Before creating a new bug report, please keep the following in mind:
 
         - **Do not submit a duplicate bug report**: Search for existing bug reports [here](https://github.com/JZ6/Flexboard/issues?q=label%3Abug).
-        - **Flexboard targets one Gboard build.** It is pinned to `18.0.3.954559732-release-arm64-v8a`; any other build is refused rather than patched.
+        - **Flexboard targets one Gboard build:** `18.0.3.954559732-release-arm64-v8a`. Other versions are unsupported; the patcher may still apply part of a patch, so a successful install does not prove compatibility.
   - type: textarea
     attributes:
       label: Bug description
@@ -31,7 +31,7 @@ body:
   - type: textarea
     attributes:
       label: Error logs
-      description: Exceptions can be captured by running `logcat | grep AndroidRuntime` in a shell.
+      description: If Swipe up to undo autocorrect is selected, a crash report may be on the clipboard after restarting the keyboard. Otherwise capture logs with `adb logcat` and look for `AndroidRuntime`.
       render: shell
   - type: textarea
     attributes:
