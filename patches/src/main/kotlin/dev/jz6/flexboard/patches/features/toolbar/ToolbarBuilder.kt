@@ -168,7 +168,7 @@ internal fun BytecodePatchContext.resolveAccessPointBuilder(): AccessPointBuilde
     fun property(name: String) = properties[name]
         ?: error("${build.toDescriptor()} never names a$name property")
 
-    val setId = soleBuilderMethod("(Ljava/lang/String;)V", "id setter")
+    val setId = soleBuilderMethod("(Ljava/lang/String;)V", "stringId setter")
     val idFields = setId.body().filter { it.opcodeName() == "IPUT_OBJECT" }.map { it.fieldDescriptor() }
 
     /**

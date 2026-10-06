@@ -1,23 +1,8 @@
 package dev.jz6.flexboard.patches.features.toolbar
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.patch.BytecodePatchContext
-import com.android.tools.smali.dexlib2.iface.ClassDef
-import com.android.tools.smali.dexlib2.iface.Method
-import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
-import com.android.tools.smali.dexlib2.iface.reference.MethodReference
-import dev.jz6.flexboard.patches.shared.assertRegisterCount
-import dev.jz6.flexboard.patches.shared.opcodeName
-import dev.jz6.flexboard.patches.shared.toDescriptor
-import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 
-/**
- * Registering a fixed toolbar button through Gboard's own access-point machinery.
- *
- * The Select all / Copy / Paste buttons, and the native test button. Reads the controller from
- * [ToolbarCanvas.kt]; shares nothing with the hotkey emitters beyond that.
- */
 /**
  * One toolbar button registered through Gboard's **own** access-point machinery, rather than
  * spliced into the split method's list.
@@ -29,7 +14,7 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
  *
  * ## What makes this "native"
  *
- * The access-point id has to be picked from Gboard's allowed set — `res/array/…` id
+ * The access-point id has to be in the allowed set — Flexboard mints its own and widens the `res/array/…` id
  * `0x7f0300dc`, read once at startup into the order manager. Any other string is dropped by the
  * read filter before the customize UI ever writes the order back, so a button keyed on it can
  * be dragged but never persisted.
@@ -124,11 +109,14 @@ internal data class NativeToolbarButton(
         }
         labelLiteral?.let { requireSmaliSafe(it, "labelLiteral", id) }
         contentDescriptionLiteral?.let { requireSmaliSafe(it, "contentDescriptionLiteral", id) }
+        requireSmaliSafe(id, "id", id)
     }
 
     /** The content-description spec: its own if given, the label's otherwise. */
-    val effectiveContentDescriptionRes: String? get() = contentDescriptionRes ?: labelRes
-    val effectiveContentDescriptionLiteral: String? get() = contentDescriptionLiteral ?: labelLiteral
+    val effectiveContentDescriptionRes: String?
+        get() = contentDescriptionRes ?: if (contentDescriptionLiteral == null) labelRes else null
+    val effectiveContentDescriptionLiteral: String?
+        get() = contentDescriptionLiteral ?: if (contentDescriptionRes == null) labelLiteral else null
 }
 
 // Smali constants are uninterpreted text — a `"`, `\`, or a newline breaks assembly.

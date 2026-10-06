@@ -23,8 +23,8 @@ import dev.jz6.flexboard.patches.shared.basePatch
  *  - its definition (icon/label/action) sits in the controller's registry at
  *    `Lmlh;->g(mic, true)` time.
  *
- * The three below are registered with dormant member ids from the allowed set — built dex-side
- * never, listed resource-side always. Customize sees them natively, the pref-write keeps their
+ * The three below use Flexboard-minted ids in the widened allowed set. Customize sees them
+ * natively, the pref-write keeps their
  * position, drag-to-drawer persists.
  *
  * ## The builder is derived, not named
@@ -32,7 +32,7 @@ import dev.jz6.flexboard.patches.shared.basePatch
  * The access-point builder is R8-renamed every Gboard build; nothing about it is named anywhere
  * in dex. The derivation reads it the way Gboard names itself — the completeness-mask strings
  * that `build()` fails with — and falls out of that into the specific setter / pass-through
- * fields this emission needs. See `shared/ToolbarBuilder.kt` for the whole walk.
+ * fields this emission needs. See `features/toolbar/ToolbarBuilder.kt` for the whole walk.
  *
  * The buttons' own click runs through the existing `TextAction` in the extension: the builder's
  * Runnable setter wraps it as an `ACCESS_POINT_ACTION` key-data, which the IME dispatcher runs
@@ -78,6 +78,11 @@ internal const val TEXT_ACTION_SELECT_ALL = 0
 internal const val TEXT_ACTION_COPY = 1
 internal const val TEXT_ACTION_PASTE = 2
 
+/** Shared with ToolbarIdAdmissionPatch: registration and allowed-set entries must agree. */
+internal const val SELECT_ALL_ID = "flexboard_select_all"
+internal const val COPY_ID = "flexboard_copy"
+internal const val PASTE_ID = "flexboard_paste"
+
 private const val TEXT_ACTION_CTOR = "Ldev/jz6/flexboard/extension/textaction/TextAction;-><init>(I)V"
 
 /**
@@ -103,21 +108,21 @@ private const val TEXT_ACTION_CTOR = "Ldev/jz6/flexboard/extension/textaction/Te
  */
 private val BUTTONS = listOf(
     NativeToolbarButton(
-        id = "flexboard_select_all",
+        id = SELECT_ALL_ID,
         icon = "0x7f080218",
         labelRes = "0x7f140576",
         actionCtor = TEXT_ACTION_CTOR,
         actionArgs = listOf(TEXT_ACTION_SELECT_ALL),
     ),
     NativeToolbarButton(
-        id = "flexboard_copy",
+        id = COPY_ID,
         icon = "0x7f080214",
         labelRes = "0x7f140560",
         actionCtor = TEXT_ACTION_CTOR,
         actionArgs = listOf(TEXT_ACTION_COPY),
     ),
     NativeToolbarButton(
-        id = "flexboard_paste",
+        id = PASTE_ID,
         icon = "0x7f080217",
         labelRes = "0x7f140570",
         actionCtor = TEXT_ACTION_CTOR,

@@ -13,6 +13,8 @@ import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.fieldReferenceOrNull
 import dev.jz6.flexboard.patches.shared.indexOfSoleCall
+import dev.jz6.flexboard.patches.shared.invokeRegisterAt
+import dev.jz6.flexboard.patches.shared.invokeRegisterCount
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.stringOrNull
@@ -141,17 +143,10 @@ private fun MutableMethod.raiseFlagDefault() {
         // found is a coin flip over which.
         .sole { "\"$MAX_ACCESS_POINTS_FLAG\" is loaded $it times in ${toDescriptor()}, expected 1" }
         .index
-    check(keyIndex >= 0) {
-        "const-string \"$MAX_ACCESS_POINTS_FLAG\" not found in ${toDescriptor()} — the toolbar " +
-            "capacity flag is no longer initialised here"
-    }
-
-    val defaultOffset = instructions.drop(keyIndex + 1).indexOfFirst { it is WideLiteralInstruction }
-    check(defaultOffset >= 0) {
+    val defaultIndex = (keyIndex + 1 until minOf(keyIndex + 5, instructions.size))
+        .firstOrNull { instructions[it] is WideLiteralInstruction } ?: error(
         "No wide literal follows \"$MAX_ACCESS_POINTS_FLAG\" in ${toDescriptor()} — the flag no " +
-            "longer carries a long default"
-    }
-    val defaultIndex = keyIndex + 1 + defaultOffset
+            "longer carries a nearby long default")
     val default = instructions[defaultIndex]
 
     // `NarrowLiteralInstruction` extends `WideLiteralInstruction`, so the search above also matches
@@ -159,7 +154,7 @@ private fun MutableMethod.raiseFlagDefault() {
     // register *and its successor*, corrupting whatever the neighbour held in this `<clinit>`. The
     // literal check below does not close it: a `const/4 vN, -0x1` has a wideLiteral of -1 and
     // passes. So assert the opcode, not just the interface.
-    check(default.opcodeName().startsWith("CONST_WIDE")) {
+    check(default.opcodeName() == "CONST_WIDE_16") {
         "\"$MAX_ACCESS_POINTS_FLAG\"'s default in ${toDescriptor()} is a " +
             "${default.opcodeName()}, not a const-wide — rewriting a narrow constant as a wide one " +
             "would clobber the register above it"
@@ -179,6 +174,14 @@ private fun MutableMethod.raiseFlagDefault() {
         "$FLAG_FACTORY is not called within three instructions of \"$MAX_ACCESS_POINTS_FLAG\"'s " +
             "default in ${toDescriptor()} — not the const-string + const-wide + invoke triple " +
             "this patch expects"
+    }
+    val call = instructions[defaultIndex + 1 + factoryOffset]
+    val nameRegister = (instructions[keyIndex] as OneRegisterInstruction).registerA
+    val defaultRegister = (default as OneRegisterInstruction).registerA
+    check(call.invokeRegisterCount() == 4 && call.invokeRegisterAt(0) == nameRegister &&
+          call.invokeRegisterAt(1) == defaultRegister &&
+          call.invokeRegisterAt(2) == defaultRegister + 1) {
+        "The $MAX_ACCESS_POINTS_FLAG factory no longer reads this flag name and long default"
     }
 
     replaceInstruction(
@@ -204,7 +207,8 @@ private fun MutableMethod.raiseClamp() {
     )
 
     val ceilingIndex = (flagRead until capacityWrite).firstOrNull { index ->
-        (instructions[index] as? NarrowLiteralInstruction)?.narrowLiteral?.toLong() == STOCK_CEILING
+        instructions[index].opcodeName() == "CONST_16" &&
+            (instructions[index] as? NarrowLiteralInstruction)?.narrowLiteral?.toLong() == STOCK_CEILING
     } ?: error(
         "No literal $STOCK_CEILING between the flag read and the capacity write in $descriptor — " +
             "Gboard's upper bound on the toolbar has moved and this patch would raise nothing"

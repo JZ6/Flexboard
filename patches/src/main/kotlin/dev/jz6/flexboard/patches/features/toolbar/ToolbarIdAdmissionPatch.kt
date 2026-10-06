@@ -36,7 +36,7 @@ internal val toolbarIdAdmissionPatch = resourcePatch(
     finalize { widenAllowedIdSet() }
 }
 
-/** The slot count lives in shared/ToolbarHotkeys.kt, which emits the per-slot blocks and owns it. */
+/** The slot count lives in features/toolbar/ToolbarHotkeys.kt. */
 
 private const val ADMITTED_IDS = "values/flexboard_toolbar_slots.xml"
 
@@ -74,8 +74,13 @@ private fun widenAllowedIdSet() {
     // own too, rather than squatting on ids Gboard ships dormant. Admission without registration
     // is inert by Gboard's own design, so a build that selects only one of the two patches simply
     // carries a few array members nothing draws.
-    val admittedIds = Regex("""name="(flexboard_\w+)"""").findAll(fragment)
-        .map { it.groupValues[1] }.toList()
+    val entries = Regex("""<string name="(flexboard_\w+)"[^>]*>([^<]*)</string>""")
+        .findAll(fragment).map { it.groupValues[1] to it.groupValues[2] }.toList()
+    val admittedIds = entries.map { it.first }
+    require(entries.all { (name, value) -> name == value } &&
+            admittedIds.distinct().size == admittedIds.size) {
+        "$ADMITTED_IDS has duplicate ids or values that do not equal their names: $entries"
+    }
     // Set equality, not a count. The emission spells "$HOTKEY_ID_PREFIX$slot" for slot in
     // 1..HOTKEY_SLOTS; counting alone accepts a file that renames hotkey_8 to hotkey_9 and keeps
     // the total, which registers slot 8's access point against an allowed set that never admits
@@ -85,6 +90,12 @@ private fun widenAllowedIdSet() {
     require(hotkeyIds == expectedHotkeyIds) {
         "$ADMITTED_IDS admits $hotkeyIds, but the hotkey emission registers $expectedHotkeyIds — " +
             "an id registered and not admitted is a button that silently never renders"
+    }
+    val actionIds = admittedIds.toSet() - hotkeyIds
+    val expectedActionIds = setOf(SELECT_ALL_ID, COPY_ID, PASTE_ID)
+    require(actionIds == expectedActionIds) {
+        "$ADMITTED_IDS admits action ids $actionIds, but the text-action emitter registers " +
+            "$expectedActionIds — a missing id would silently hide its button"
     }
     require(admittedIds.size == ADMITTED_ID_COUNT) {
         "$ADMITTED_IDS carries ${admittedIds.size} admitted ids, expected $ADMITTED_ID_COUNT — a new " +

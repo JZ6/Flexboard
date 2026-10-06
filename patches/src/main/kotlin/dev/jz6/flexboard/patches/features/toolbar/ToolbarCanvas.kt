@@ -1,7 +1,5 @@
 package dev.jz6.flexboard.patches.features.toolbar
 
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.patch.BytecodePatchContext
 import com.android.tools.smali.dexlib2.iface.ClassDef
 import com.android.tools.smali.dexlib2.iface.Method
@@ -117,14 +115,16 @@ private fun resolveControllerRegisterCall(controllerClass: ClassDef): String {
 private fun resolveInitDef(
     controllerClass: ClassDef,
 ): com.android.tools.smali.dexlib2.iface.Method {
-    return controllerClass.methods.singleOrNull {
+    val candidates = controllerClass.methods.filter {
         it.name == "<init>" &&
             it.parameterTypes.size == 2 &&
-            it.parameterTypes[0].toString() == "Landroid/content/Context;"
-    } ?: error(
-        "${controllerClass.type} has no <init>(Context, ?) — the bar-controller constructor's " +
-            "shape has changed and the hook point must be re-derived",
-    )
+            it.parameterTypes[0].toString() == "Landroid/content/Context;" &&
+            it.parameterTypes[1].toString().startsWith("L")
+    }
+    return candidates.sole {
+        "${controllerClass.type} has $it <init>(Context, object) candidate(s), expected one — " +
+            "the bar-controller constructor's hook point needs re-derivation"
+    }
 }
 
 // -------------------------------------------------------------------------------------------
@@ -178,6 +178,7 @@ internal fun BytecodePatchContext.resolveControllerInit(scratch: List<Int>): Con
         scratch = scratch,
         avoid = CONTROLLER_INIT_PARAMETERS,
         what = canvas.initDescriptor,
+        registerCount = CONTROLLER_INIT_REGISTER_COUNT,
     )
     return ControllerInit(canvas, init, tailIndex)
 }

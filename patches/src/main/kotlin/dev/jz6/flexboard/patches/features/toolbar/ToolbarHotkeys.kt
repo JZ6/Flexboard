@@ -9,6 +9,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.jz6.flexboard.patches.shared.methodsMatching
 import dev.jz6.flexboard.patches.shared.assertRegisterCount
+import dev.jz6.flexboard.patches.shared.assertTailReturnUntargeted
 import dev.jz6.flexboard.patches.shared.opcodeName
 import dev.jz6.flexboard.patches.shared.sole
 import dev.jz6.flexboard.patches.shared.toDescriptor
@@ -27,8 +28,8 @@ import dev.jz6.flexboard.patches.shared.validateScratchRegisters
 /** The hotkey slots Flexboard registers: everything emitted loops this range once. */
 internal const val HOTKEY_SLOTS = 8
 
-/** Every flexboard toolbar id carries this prefix — how the constants checker tells the
- * generated per-slot keys from a typo. If it changes, the admitted strings move too. */
+/** Every hotkey toolbar id carries this prefix; text actions use separate `flexboard_*` ids.
+ * The constants checker compares generated per-slot names against the admitted strings. */
 internal const val HOTKEY_ID_PREFIX = "flexboard_hotkey_"
 
 // -------------------------------------------------------------------------------------------
@@ -45,12 +46,10 @@ internal const val HOTKEY_ID_PREFIX = "flexboard_hotkey_"
  * derived from the user's settings. The block the patcher builds is therefore identical in
  * *shape* per slot but entirely runtime-populated.
  *
- * Registers (same wiring as the text-action buttons):
- *  - `p0` is the receiver the register call is invoked on;
- *  - `v0` holds the builder then the finished `mic`;
- *  - `v1` carries each argument in turn;
- *  - `v2` is the second Int passed into the action's constructor when it takes an ordinal;
- *  - `v4` is the shown-guard's scratch — dead before and after the block's own use.
+ * Constructor site: `p0` is the controller, `p1` the Context; `v0` holds the builder/mic,
+ * `v1` the staged builder argument, `v2` the **single** slot Int passed to `Hotkey.<init>(I)V`,
+ * and `v4` the shown guard. At refresh, `p0` is the module; v0/v1/v2/v4 take different roles
+ * from [hotkeyRefreshSite]. Both sites assert their register frames and scratch bounds.
  *
  * Admission changed hands since the first implementation: the ids are widened into Gboard's
  * own allowed-set array by `toolbarIdAdmissionPatch` now (docs/toolbar-access-points.md), so no dex
@@ -298,6 +297,7 @@ internal fun BytecodePatchContext.emitHotkeyRefresh(builder: AccessPointBuilder)
     val returnIndex = start.implementation!!.instructions
         .indexOfLast { it.opcodeName().startsWith("RETURN") }
     check(returnIndex >= 0) { "$startDescriptor has no return — shape moved" }
+    assertTailReturnUntargeted(start.implementation!!.instructions.toList(), returnIndex, startDescriptor)
 
     val refreshSite = hotkeyRefreshSite(controllerField)
     val emission = ((1..HOTKEY_SLOTS).joinToString("\n\n") { slot ->
