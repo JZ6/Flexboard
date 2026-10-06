@@ -28,6 +28,7 @@ kotlin {
 // construction. `version` arrives via gradle.properties, and `expand` substitutes it into
 // `flexboard_version.txt` during :patches:processResources.
 tasks.named<ProcessResources>("processResources") {
+    inputs.property("flexboardVersion", project.version.toString())
     filesMatching("flexboard_version.txt") {
         expand(mapOf("VERSION" to project.version.toString()))
     }

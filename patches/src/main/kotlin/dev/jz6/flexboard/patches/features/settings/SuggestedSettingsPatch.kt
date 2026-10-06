@@ -7,10 +7,9 @@ import dev.jz6.flexboard.patches.shared.basePatch
 import dev.jz6.flexboard.patches.shared.callAtAppStart
 
 /**
- * Gboard's suggested settings, written once as defaults on the first run after installing.
+ * Gboard's suggested settings, seeded individually for keys the user has not set.
  *
- * Each of these is a Gboard preference Gboard already ships off or in a state that makes the
- * keyboard worse for a gesture-first user. Writing them once — guarded by `contains`, not forced —
+ * Writing each preference once — guarded by `contains`, not forced —
  * means they behave as genuine defaults: on out of the box, and turning any of them off in
  * Gboard's own settings sticks.
  *
@@ -41,8 +40,8 @@ import dev.jz6.flexboard.patches.shared.callAtAppStart
  *
  * ## The resource ids stay pinned
  *
- * `COMPATIBILITY_GBOARD` ties the bundle to one Gboard build, and `tools/apk/preflight.py` checks
- * that each id still names the preference it is supposed to.
+ * `COMPATIBILITY_GBOARD` is advisory metadata, not a version gate; `tools/apk/preflight.py` checks
+ * that each id still names the preference it is supposed to on the extracted target APK.
  */
 @Suppress("unused")
 val suggestedSettingsPatch = bytecodePatch(

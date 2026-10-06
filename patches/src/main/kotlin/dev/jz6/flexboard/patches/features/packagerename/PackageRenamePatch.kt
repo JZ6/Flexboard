@@ -89,7 +89,7 @@ private fun Document.renameGboardPackage() {
     val unexpected = attributes.firstOrNull { attribute ->
         GBOARD_PACKAGE_NAME in attribute.value &&
             selected.none { it === attribute } &&
-            KEEP_ORIGINAL.none { attribute.matches(it) }
+            KEEP_ORIGINAL.none { attribute.matches(it) && attribute.value == it.original }
     }
     check(unexpected == null) {
         "Unexpected package-derived manifest value at " +

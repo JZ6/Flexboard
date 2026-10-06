@@ -4,8 +4,8 @@
   root settings screen is tapped (the row's android:fragment names the extension fragment that
   returns this resource's runtime id).
 
-  Rows are Gboard's own InlineSliderPreference — the widget the Morse-keyboard screen uses. Two
-  things are why:
+  The "Words per swipe" row uses Gboard's InlineSliderPreference, the widget the Morse-keyboard
+  screen uses. The hotkey and About rows are plain Preferences. The slider is used because:
 
   - It reads its configuration by literal attribute name with a null namespace (slider_min_value,
     slider_max_value, slider_scale, slider_display_scale, slider_unit, slider_text_left,
@@ -14,7 +14,7 @@
     Gboard's fragment-lifecycle hook installs on every hosted fragment, which lands the value in
     the same store the scrub patch reads with the store's string-parsing getInt.
 
-  The keys, defaults and bounds below are mirrored by constants in ScrubTuningPatch.kt, and
+  The slider key, default and bounds below are mirrored by constants in ScrubTuningPatch.kt, and
   .github/scripts/check_shared_constants.py fails the build when the two drift. There is no
   android:defaultValue more native than these literals: Gboard's own binaries carry that
   attribute under the res/android namespace the same way.
