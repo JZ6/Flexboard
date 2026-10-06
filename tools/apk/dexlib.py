@@ -45,7 +45,8 @@ def uleb(b, o):
 class Dex:
     def __init__(self, path):
         self.path = path
-        self.b = open(path, 'rb').read()
+        with open(path, 'rb') as source:
+            self.b = source.read()
         b = self.b
         (self.str_n, self.str_o, self.typ_n, self.typ_o, self.pro_n, self.pro_o,
          self.fld_n, self.fld_o, self.mth_n, self.mth_o, self.cls_n,
@@ -106,7 +107,8 @@ class Dex:
     def code(self, off):
         if not off: return None
         rs, ins, outs, tries, dbg, isz = struct.unpack_from('<HHHHII', self.b, off)
-        return dict(registers=rs, ins=ins, outs=outs, insns_off=off+16, insns_size=isz)
+        return dict(registers=rs, ins=ins, outs=outs, insns_off=off+16,
+                    insns_size=isz, tries_size=tries, code_offset=off)
 
     def walk(self, c):
         """Yield (pc, opcode, mnemonic, operand_text) over one code_item.
@@ -120,7 +122,8 @@ class Dex:
         from being edited. Callers here all filter by mnemonic or operand text, so the extra rows
         are inert to them -- but nothing downstream can now mistake absence for absence.
 
-        For anything that reasons about control flow, use ``dis.show()`` / ``dis.disasm()``, which
+        For anything that reasons about control flow, use ``dalvik_dis.show()`` /
+        ``dalvik_dis.disasm()``, which
         decode operands and branch targets properly. This is a scanner, not a disassembler.
         """
         b = self.b; base = c['insns_off']; end = base + 2*c['insns_size']; p = base
@@ -174,16 +177,16 @@ class Dex:
 def _mnemonic(op):
     """Real mnemonic for an opcode `walk` does not decode.
 
-    Lazily borrows dis.py's table -- dis imports dexlib, so a module-level import here would be
+    Lazily borrows dalvik_dis.py's table -- it imports dexlib, so a module-level import would be
     circular. Falls back to the hex opcode rather than inventing a name.
     """
-    try:
-        import dis as _dis
-        entry = _dis.N.get(op)
-        return entry[0] if entry else f'op:{op:#04x}'
-    except Exception:
-        return f'op:{op:#04x}'
+    import dalvik_dis as _dis
+    entry = _dis.N.get(op)
+    return entry[0] if entry else f'op:{op:#04x}'
 
 
 def load(dirpath='/tmp/gb'):
-    return [Dex(p) for p in sorted(glob.glob(os.path.join(dirpath, '*.dex')))]
+    paths = sorted(glob.glob(os.path.join(dirpath, '*.dex')))
+    if not paths:
+        raise ValueError(f'{dirpath}: no .dex files')
+    return [Dex(p) for p in paths]

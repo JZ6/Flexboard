@@ -2,7 +2,8 @@
 
 The suite runs on stdlib `unittest` and nothing else. There is no pytest here and no virtualenv;
 CI has a bare `python3`, and a test suite that needs installing is a test suite that stops being
-run. `python3 -m unittest discover -s tools/tests -t .` is the whole invocation.
+run. `python3 -B -m unittest discover -s tools/tests -t tools/tests -q` is the invocation the
+gate uses; `dalvik_dis` is named separately from Python's stdlib `dis`.
 
 **Nothing here reads the APK.** Every test builds its own instruction stream, which is what makes
 them able to describe a shape Gboard 18.0.3 does not happen to contain -- a switch, a wide pair
@@ -21,7 +22,7 @@ for _path in (ROOT / "tools" / "apk", ROOT / "tools", ROOT / ".github" / "script
 
 
 def stream(*rows):
-    """An instruction stream in the shape `dis.disasm` returns: (pc, mnemonic, operand text).
+    """An instruction stream in the shape `dalvik_dis.disasm` returns: (pc, mnemonic, operand text).
 
     Program counters are assigned one per instruction. Real dex pcs advance by instruction width,
     so a stream built here is not byte-accurate -- but every consumer under test addresses

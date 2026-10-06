@@ -10,6 +10,7 @@ anything — so the quiet cases are as load-bearing as the loud one.
 """
 
 import unittest
+import struct
 
 from support import goto, if_eqz, stream  # noqa: E402
 
@@ -26,6 +27,7 @@ class FakeHierarchy:
     def __init__(self, parent=None, interfaces=None, known=None):
         self.parent = parent or {}
         self.interfaces = interfaces or {}
+        self.interface_types = set()
         if known:
             for k in known:
                 self.parent.setdefault(k, None)
@@ -70,9 +72,9 @@ class Assignability(unittest.TestCase):
         h = FakeHierarchy({"Lenumish;": "Ljava/lang/Enum;"})
         self.assertTrue(h.assignable("Lenumish;", "Landroid/os/Parcelable;"))
 
-    def test_a_framework_value_is_unknowable(self):
+    def test_a_framework_value_cannot_extend_an_app_class(self):
         h = FakeHierarchy({"Ltarget;": None})
-        self.assertTrue(h.assignable("Landroid/view/View;", "Ltarget;"))
+        self.assertFalse(h.assignable("Landroid/view/View;", "Ltarget;"))
 
 
 class Join(unittest.TestCase):
@@ -96,6 +98,18 @@ class Join(unittest.TestCase):
 
     def test_unrelated_types_conflict(self):
         self.assertEqual(V.join("La;", "Lb;", self.h), V.CONFLICT)
+
+    def test_join_is_commutative_with_framework_and_app_types(self):
+        pairs = [("La;", "Lb;"), ("Lchild;", "La;"),
+                 ("La;", "Landroid/view/MotionEvent;"),
+                 ("Landroid/view/View;", "Landroid/view/MotionEvent;")]
+        for a, b in pairs:
+            with self.subTest(a=a, b=b):
+                self.assertEqual(V.join(a, b, self.h), V.join(b, a, self.h))
+
+    def test_unrelated_framework_types_join_to_unknown_not_an_arbitrary_operand(self):
+        self.assertEqual(V.join("Landroid/view/View;", "Landroid/view/MotionEvent;", self.h),
+                         V.UNKNOWN)
 
 
 class MergeDetection(unittest.TestCase):
@@ -122,6 +136,30 @@ class MergeDetection(unittest.TestCase):
         self.assertTrue(findings, "a conflicting register reaching a typed use must be reported")
         self.assertEqual(findings[0][1], 3)
         self.assertEqual(findings[0][2], "Lpvi;")
+
+    def test_primitive_field_still_demands_a_typed_owner(self):
+        ins = stream(
+            if_eqz(0, 3),
+            ("sget-object", "v3, Lpmy;->c:Lpmy;"),
+            goto(4),
+            ("move-object", "v3, v7"),
+            ("iget", "v1, v3, Lpvi;->count:I"),
+            ("return-void", ""),
+        )
+        self.assertTrue(V.check_method(ins, 8, ["Lpvi;"], self.h),
+                        "primitive fields require their owner to have the right type too")
+
+    def test_unmodelled_destination_write_kills_old_conflict(self):
+        ins = stream(
+            if_eqz(0, 3),
+            ("sget-object", "v3, Lpmy;->c:Lpmy;"),
+            goto(4),
+            ("move-object", "v3, v7"),
+            ("aget-object", "v3, v0, v1"),  # a new reference replaces both incoming types
+            ("iget-object", "v2, v3, Lpvi;->value:Ljava/lang/String;"),
+            ("return-object", "v2"),
+        )
+        self.assertEqual(V.check_method(ins, 8, ["Lpvi;"], self.h), [])
 
     def test_the_fix_silences_it(self):
         # The same shape with the handover the emission should have made.
@@ -182,12 +220,32 @@ class MergeDetection(unittest.TestCase):
         )
         self.assertTrue(V.check_method(ins, 8, ["Lpvi;"], self.h))
 
+    def test_switch_case_is_a_real_edge_not_just_payload_fallthrough(self):
+        ins = stream(
+            ("packed-switch", "v0, -> 6"),
+            ("move-object", "v3, v7"),
+            goto(5),
+            ("sget-object", "v3, Lpmy;->c:Lpmy;"),
+            goto(5),
+            ("iget-object", "v1, v3, Lpvi;->B:Lwzc;"),
+            ("payload", "6 units"),
+        )
+        # Packed payload: tag, count, first case key, target offset relative to pc 0.
+        class Dex:
+            b = bytearray(40)
+        struct.pack_into("<HHii", Dex.b, 12, 0x0100, 1, 10, 3)
+        targets = V.switch_case_targets(Dex, {"insns_off": 0}, ins)
+        self.assertEqual(targets, {0: [3]})
+        self.assertTrue(V.check_method(ins, 8, ["Lpvi;"], self.h, targets))
+        with self.assertRaisesRegex(ValueError, "switch cases were not decoded"):
+            V.check_method(ins, 8, ["Lpvi;"], self.h)
+
 
 class InvokeArguments(unittest.TestCase):
     """Arguments, not just the receiver — the bug class this project keeps writing."""
 
     def setUp(self):
-        self.h = FakeHierarchy({"Lpvi;": None, "Lpmy;": None, "Landroid/content/Context;": None})
+        self.h = FakeHierarchy({"Lpvi;": None, "Lpmy;": None})
 
     def test_a_conflicting_argument_is_reported(self):
         ins = stream(
@@ -195,12 +253,12 @@ class InvokeArguments(unittest.TestCase):
             ("sget-object", "v3, Lpmy;->c:Lpmy;"),
             goto(4),
             ("move-object", "v3, v7"),
-            ("invoke-static", "{v3}, Lfoo;->bar(Landroid/content/Context;)V"),
+            ("invoke-static", "{v3}, Lfoo;->bar(Lpvi;)V"),
             ("return-void", ""),
         )
-        findings = V.check_method(ins, 8, ["Landroid/content/Context;"], self.h)
+        findings = V.check_method(ins, 8, ["Lpvi;"], self.h)
         self.assertTrue(findings, "an argument is as much a use site as a receiver")
-        self.assertEqual(findings[0][2], "Landroid/content/Context;")
+        self.assertEqual(findings[0][2], "Lpvi;")
 
     def test_a_primitive_parameter_demands_nothing(self):
         # The lattice models references; claiming a type for an int would invent findings.
@@ -223,10 +281,13 @@ class InvokeArguments(unittest.TestCase):
     def test_invoke_static_has_no_receiver_slot(self):
         # Treating arg0 as a receiver on a static call shifts every argument by one.
         ins = stream(
-            ("invoke-static", "{v7}, Lfoo;->bar(Lpvi;)V"),
+            ("sget-object", "v3, Lpmy;->c:Lpmy;"),
+            ("invoke-static", "{v3}, Lfoo;->bar(Lpvi;)V"),
             ("return-void", ""),
         )
-        self.assertEqual(V.check_method(ins, 8, ["Lpvi;"], self.h), [])
+        findings = V.check_method(ins, 8, ["Lpvi;"], self.h)
+        self.assertEqual([(i, required) for i, _reg, required, _mn in findings],
+                         [(1, "Lpvi;")])
 
 
 class CatchHandlers(unittest.TestCase):
@@ -235,7 +296,7 @@ class CatchHandlers(unittest.TestCase):
     def setUp(self):
         self.h = FakeHierarchy({"Lpvi;": None, "Lpmy;": None})
 
-    def test_handlers_are_successors_of_everything(self):
+    def test_handler_entries_are_a_fallback_for_synthetic_streams(self):
         ins = stream(
             ("nop", ""),
             ("move-exception", "v0"),
@@ -250,15 +311,35 @@ class CatchHandlers(unittest.TestCase):
 
     def test_a_conflict_reaching_a_handler_is_visible(self):
         ins = stream(
-            ("sget-object", "v3, Lpmy;->c:Lpmy;"),   # one path types v3 as an enum
-            ("move-object", "v3, v7"),               # the other as the pointer
+            if_eqz(0, 4),
+            ("sget-object", "v3, Lpmy;->c:Lpmy;"),
+            ("invoke-static", "{}, Lfoo;->couldThrow()V"),
+            goto(6),
+            ("move-object", "v3, v7"),
+            ("invoke-static", "{}, Lfoo;->couldThrow()V"),
             ("return-void", ""),
             ("move-exception", "v0"),
             ("iget-object", "v1, v3, Lpvi;->B:Lwzc;"),
             ("throw", "v0"),
         )
-        self.assertTrue(V.check_method(ins, 8, ["Lpvi;"], self.h),
-                        "the handler is reachable from both, so v3 conflicts there")
+        self.assertTrue(V.check_method(ins, 8, ["Lpvi;"], self.h,
+                                       exception_targets={2: [7], 5: [7]}),
+                         "the handler is reachable from both, so v3 conflicts there")
+        self.assertEqual(V.check_method(ins, 8, ["Lpvi;"], self.h, exception_targets={}), [])
+
+    def test_the_dex_try_table_limits_which_instructions_reach_a_handler(self):
+        class Dex:
+            b = bytearray(48)
+        # insns_off=16; four code units => try_item at 24, handlers list at 32.
+        # try covers pc 0..1, handler offset 1 points to encoded handler at 33.
+        struct.pack_into('<IHH', Dex.b, 24, 0, 2, 1)
+        Dex.b[32:36] = bytes([1, 1, 0, 3])  # list size, signed size, type, handler pc
+        ins = stream(("nop", ""), ("invoke-static", "{}, Lfoo;->f()V"),
+                     ("return-void", ""), ("move-exception", "v0"))
+        self.assertEqual(V.catch_targets(Dex, {"tries_size": 1, "insns_off": 16,
+                                              "insns_size": 4}, ins), {1: [3]})
+        self.assertFalse(V.can_throw('move-object'))
+        self.assertTrue(V.can_throw('binop93'))  # div-int can raise ArithmeticException
 
 
 class ExtensionReferences(unittest.TestCase):
@@ -433,6 +514,25 @@ class Access(unittest.TestCase):
     def test_packages(self):
         self.assertEqual(V.package_of("Lozi;"), "")
         self.assertEqual(V.package_of("Lcom/a/B$C;"), "com/a")
+
+
+class MethodDiffs(unittest.TestCase):
+    def test_a_same_size_in_place_reference_change_is_still_a_change(self):
+        class Dex:
+            def __init__(self, signature, reference):
+                self.b = b"\0" * 12 + signature * 20 + b"\0" * 16
+                self.reference = reference
+
+        stock = Dex(b"a", "Lold;->a()V")
+        patched = Dex(b"b", "Lnew;->a()V")
+        code = {"registers": 1, "insns_size": 1, "insns_off": 32}
+        original = V.ddis.disasm
+        try:
+            V.ddis.disasm = lambda dex, _code: [(0, "invoke-static", dex.reference)]
+            self.assertFalse(V.same_body((1, 1, stock, code), (1, 1, patched, code)))
+            self.assertTrue(V.same_body((1, 1, stock, code), (1, 1, stock, code)))
+        finally:
+            V.ddis.disasm = original
 
 
 class Parameters(unittest.TestCase):
