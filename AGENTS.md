@@ -6,13 +6,13 @@ narrative version already existed on 2026-09-02 and was not read.
 
 ## Verify
 
-**Run `tools/gate`.** It is the gate — compile, the three CI scripts, preflight, and the resource
+**Run `tools/gate`.** It is the gate — source tests/checks, compile, preflight, driver/verify and resource
 replay. Do not assemble the list yourself; that is how a lane goes missing.
 
-**`263/263 passed` is a statement about Gboard, not about the build.** Preflight and the three
-scripts read the *stock* APK to confirm Gboard's bindings have not moved. Only
-`check_patch_resources.py` looks at what the bundle produces, and it is the slowest lane, so it is
-the one that gets skipped. Never quote a pin count as evidence the output is sound.
+**A preflight pin count is a statement about stock Gboard, not the patched build.** Preflight reads
+the stock APK; the `.github/scripts` lanes read source. The driver applies the bundle; `verify` reads
+its patched dex, while `check_patch_resources.py` replays its resource edits. Never quote a pin
+count as evidence the output is sound.
 
 **A red lane guards nothing.** If a lane is failing for an unrelated reason, fix it or delete it.
 Leaving it red means it is skipped, which means it stays red, which means the next real failure
@@ -30,10 +30,11 @@ gh run download --name patches-bundle --dir /tmp/mpp      # any push
 FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate        # applies it, then verifies it
 ```
 
-That turns on two lanes. `driver` applies the bundle; `verify` reads the result and type-checks
-**every method the patch changed** — seventeen on the current bundle, found by diffing against
-stock rather than by anyone naming them — and checks every reference in them against the access
-rights of the class they are in. Nothing has to be remembered.
+That turns on the driver/verify/diff lanes and a signature guard. `driver` applies the bundle in three selections:
+defaults, +undo, +hidden. `verify` inspects every changed method (including same-size rewrites),
+following switch cases for its type check and checking reference access rights. The diff lanes
+ensure each opt-in patch actually emits something; the signature guard asserts that the exported
+debug provider's shared verifier method stays byte-identical to stock.
 
 **Test a patch change before shipping it, not by shipping it.** Until the artifact step existed the
 only way to get a bundle was to cut a release, which is how two builds of a keyboard that would not
@@ -53,17 +54,17 @@ inspecting them from the outside. It found a real shipped bug within minutes of 
 | **A method rejected at class load** | **no** |
 | **Wrong behaviour on a device** | **no** |
 
-The `dev.0`/`dev.1` crash applies cleanly here. Reading the output with `tools/apk/patched.py` is
-what catches that class, and it is a manual read rather than a lane. Static verification is still
-not device verification, so say which one you did.
+The `dev.0`/`dev.1` crash applies cleanly to the driver, but the `verify` lane catches its typed
+register merge; `tools/apk/patched.py` is for manual inspection beyond that. Static verification
+is still not device verification, so say which one you did.
 
 ## Reading what the patcher produced
 
-**`tools/apk/patched.py` reads a patched APK.** Everything else here reads the APK Gboard ships, so
-until this existed nothing had ever looked at a class the patcher wrote.
+**`tools/apk/patched.py` reads a patched APK.** `verify.py` also reads patched dex automatically;
+before those tools, the gate reasoned entirely from stock Gboard.
 
 ```
-tools/apk/patched.py flexboard.apk 'Lpvf;->t(Lpvi;Landroid/view/MotionEvent;I)V' --stock gboard-apk
+tools/apk/patched.py flexboard.apk 'Lmm;->run()V' --stock gboard-apk
 ```
 
 **An emission that produces nothing looks exactly like one that worked.** A helper returning `""`
@@ -89,11 +90,13 @@ let `verify` confirm the output.
 
 ## Reading Gboard's dex
 
-**Use `dis.show(descriptor, dexes)` from `tools/apk/dis.py`.** It is a complete disassembler.
+**Use `dalvik_dis.show(descriptor, dexes)` from `tools/apk/dalvik_dis.py`.** The old `dis.py`
+path remains a shim; `import dis` may instead load Python's standard library module. Some rare
+opcodes still have family-placeholder names, so check exact opcodes before asserting one.
 
-**Do not reason from `dexlib.walk`.** It renders a partial instruction stream. It silently dropped
-a `const-wide` and every `if-*` from a method and produced a confident, wrong conclusion about a
-clamp. It now refuses rather than dropping, but prefer `dis.show()` regardless.
+**Do not reason from `dexlib.walk`.** It yields every instruction, but undecoded operands come back
+as `None`; filtering on operands can still silently drop a `const-wide` or an `if-*`. Use
+`dalvik_dis.show()` to inspect the full method.
 
 ## Changing things
 
@@ -121,9 +124,10 @@ expresses "remove this icon" as *lowering `pref`*. Anything that forces the coun
 removed buttons back. Two separate implementations broke this way. Raise the capacity, never the
 count, and never write Gboard's own count preference. See `docs/toolbar-capacity.md`.
 
-**Toolbar id admission fails silently.** Ids are spliced in as text; a bad fragment throws inside
-the patch, Morphe catches it and continues, and the build ships with the allowed set untouched.
-Every Flexboard button then disappears at once with nothing in the log naming the cause. Run the
+**Toolbar id admission can fail while Morphe continues.** Ids are spliced in as text; a bad fragment
+throws inside the patch, Morphe catches it and continues, and the build ships with the allowed set
+untouched. Every Flexboard button disappears; Gboard logs "Invalid access point <id> is added",
+but does not explain the failed resource splice. Run the
 resource lane after touching anything under `patches/src/main/resources/`.
 
 **Morphe never gates on `compatibleWith`** — it is advisory metadata. A patch with `name == null`
@@ -131,9 +135,9 @@ is hidden from the patch list; that, not `internal`, is what makes a patch inter
 
 **A forced Phenotype flag opens a gate, it does not supply what is behind it.** Two of seven
 hand-picked flags did anything; one stopped Gboard starting because it fronts a downloaded model and
-a version allowlist that a resigned build never receives. Flags ship opt-in until watched working on
-a device, and an unproven set ships one patch per flag so a bisect costs installs rather than
-releases. See `docs/phenotype-flags.md`.
+a version allowlist that a resigned build never receives. Test each flag separately before grouping
+it with other opt-in flags; only features seen working should ship default-on. See
+`docs/phenotype-flags.md`.
 
 **Morphe keys patch selection by name.** Renaming a user-facing patch resets anyone who had
 deselected it back to the default.

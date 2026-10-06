@@ -4,20 +4,20 @@ Read-only inspection of a Gboard APK in pure Python. No apktool, no aapt, no adb
 exist because every binding in this project has to be re-derived by hand whenever Gboard moves,
 and the usual tooling is either unavailable or overkill for "what does this one method do".
 
-Everything the `docs/` findings rest on was produced with these three files.
+The dex and resource research in `docs/` uses these tools (some worked examples predate 18.0.3).
 
 | | |
 |---|---|
 | `dexlib.py` | DEX reader — strings, types, methods, fields, classes, code items, and a coarse instruction walk that decodes calls, field access and constants |
-| `dis.py` | Full-format Dalvik disassembler on top of `dexlib`, with registers and branch targets |
+| `dalvik_dis.py` | Dalvik disassembler on top of `dexlib`, with registers and branch targets. Use this module name rather than stdlib `dis`; `dis.py` is a compatibility path. |
 | `axml.py` | Binary XML (AXML) reader — walks elements and attributes of compiled `res/**.xml` |
 | `arsc.py` | Resource table reader — resource id to name and value, and the reverse lookup from a packed path back to its id |
 | `glyphs.py` | Matches the APK's stripped vector drawables against published Material Icons SVGs, by geometry rather than by name. |
 | `preflight.py` | Runs every patch-time assertion against a dex, so a moved binding fails here instead of on a phone |
-| `check_patch_resources.py` | Dress rehearsal of the resource half of a release: decodes the APK with arsclib (once, cached), replays the bundle's resource writes onto the tree, DOM-parses every touched file, then rebuilds the whole resource table. Fails on the desk exactly where Morphe would fail on the phone (bad type names, malformed XML). Cache: `~/.cache/flexboard`. |
-| `patched.py` | Reads a *patched* APK and diffs one method against the stock one. The only thing here that looks at what the patcher produced rather than at what Gboard ships |
+| `check_patch_resources.py` | Dress rehearsal: mirrors patch-side resource writes onto an arsclib-decoded tree, checks the minimal and maximal settings XML shapes, parses touched files and rebuilds the resource table. It does not rerun all Morphe processors. Cache: `~/.cache/flexboard`. |
+| `patched.py` | Manual diff of a patched method; the driver/verify lanes also inspect patched output |
 | `verify.py` | Type-merge, extension-reference and access checks over every method a patch changed — the bugs ART only reports on a phone |
-| `ArsclibRoundTrip.java` | 60-line java shim used by `check_patch_resources.py` (`decode`/`encode` modes); compiles on demand, needs only the pinned arsclib jar |
+| `ArsclibRoundTrip.java` | Java shim used by `check_patch_resources.py` (`decode`/`encode` modes); compiles on demand, needs only the pinned arsclib jar |
 
 ## Setup
 
@@ -39,10 +39,9 @@ Then run from this directory, or add it to `sys.path`.
 python3 preflight.py /tmp/gb
 ```
 
-Re-implements each patch's `check(...)`/`error(...)` against the real dex and exits non-zero if any
-fails. Worth running before every release and *first* after a Gboard bump: nothing else in the
-pipeline ever applies the bundle to an APK, so this is the only step between "the Kotlin compiles"
-and a device.
+Re-implements patch assertions against the stock dex and exits non-zero if any fail. Run it first
+after a Gboard bump. The driver subsequently applies the bundle and `verify.py` checks patched dex;
+none of these substitutes for a device test.
 
 It is a proof of *breakage*, not of correctness — it cannot tell you a patch works, only that every
 binding it names is still there and still shaped the way the patch assumes. On a Gboard bump, edit
@@ -52,17 +51,16 @@ the signal a patch does too.
 ## Disassemble a method
 
 ```python
-import dexlib, dis
+import dexlib, dalvik_dis as dis
 dl = dexlib.load('/tmp/gb')
-dis.show('Lpnp;->at(I)Z', dl)
+dis.show('Lmm;->run()V', dl)
 ```
 
 ```
-=== Lpnp;->at(I)Z  regs=3 ins=2 outs=3 static=False ===
-     0: const/4                v0, #0
-     1: invoke-virtual         {v1, v2, v0}, Lcbv;->x(IZ)Z
-     4: move-result            v1
-     5: return                 v1
+=== Lmm;->run()V  regs=18 ins=1 outs=8 static=False ===
+   492: invoke-virtual         {v0}, Landroid/content/Context;->getPackageName()Ljava/lang/String;
+   496: invoke-static          {v0, v1}, Lrpv;->a(Landroid/content/Context;Ljava/lang/String;)Z
+   499: move-result            v1
 ```
 
 ## List a class
@@ -70,7 +68,7 @@ dis.show('Lpnp;->at(I)Z', dl)
 ```python
 for d in dl:
     for cname, af, cd in d.classes():
-        if cname != 'Lgmb;':
+        if cname != 'Lmm;':
             continue
         for m, maf, code_off in d.class_methods(cd):
             c = d.code(code_off)
@@ -79,7 +77,8 @@ for d in dl:
 
 ## Find callers of a method, or readers of a field
 
-`d.walk(code)` yields `(pc, opcode, mnemonic, reference)` for the interesting opcodes, so a full
+`d.walk(code)` yields `(pc, opcode, mnemonic, operand_text)` for every opcode (unknown operands
+are `None`), so a full
 sweep is a nested loop. It takes a couple of minutes across ~21,000 classes.
 
 ```python
@@ -90,7 +89,7 @@ for d in dl:
             if not c:
                 continue
             for pc, op, mn, ref in d.walk(c):
-                if ref == 'Lgmb;->c()V':
+                if ref == 'Lrpv;->a(Landroid/content/Context;Ljava/lang/String;)Z':
                     print(f'{mn} @{pc} in {m}')
 ```
 
@@ -109,11 +108,11 @@ it stored a resource reference.
 ## Finding which resource declares something
 
 Resource *names* are stripped from a release build but *values* are not, and references are
-stored as little-endian ids. So to find every XML that mentions resource `0x7f14097b`:
+stored as little-endian ids. So to find every XML that mentions resource `0x7f140a05`:
 
 ```python
 import struct
-needle = struct.pack('<I', 0x7f14097b)
+needle = struct.pack('<I', 0x7f140a05)
 hits = [n for n in z.namelist()
         if n.startswith('res/') and n.endswith('.xml') and needle in z.read(n)]
 ```
@@ -134,9 +133,9 @@ The two encodings never match as text — Gboard's `M3,5h2L5,3c-1.1,0 -2,0.9 -2,
 Material's `M3 5h2V3c-1.1 0-2 .9-2 2z` — so each path is evaluated to the absolute points it
 visits, which both agree on exactly.
 
-**The bundled set is known exhaustively**, so there is nothing left to guess at: all 2,170
-published Material Icons were matched against the APK's 496 vector drawables, and 29 shapes are
-present at 35 ids. The table is in
+The historical inventory matched 2,170 published Material Icons against 496 vector drawables;
+29 shapes were found at 35 ids in that pass. Treat a miss as inconclusive: compact SVG arcs and
+other shapes may escape `glyphs.py`. The table is in
 [`../../docs/gboard-bindings.md`](../../docs/gboard-bindings.md#material-icons-gboard-bundles).
 Read it before reaching for an icon — the hit rate is 1.3% and the misses are not the predictable
 ones.
@@ -151,11 +150,11 @@ curl -s https://api.github.com/repos/google/material-design-icons/contents/src \
         | python3 -c "import json,sys; [print('$c/'+e['name']) for e in json.load(sys.stdin)]"
     done > /tmp/mi_index.txt        # ~2,200 icons, 18 category listings
 
-mkdir -p /tmp/mi && cd /tmp/mi
-sed 's#/#|#' /tmp/mi_index.txt | xargs -P 24 -I{} bash -c \
+mkdir -p /tmp/mi
+(cd /tmp/mi && sed 's#/#|#' /tmp/mi_index.txt | xargs -P 24 -I{} bash -c \
   'IFS="|" read -r c n <<< "{}"
    curl -sf -o "$n.svg" \
-     "https://raw.githubusercontent.com/google/material-design-icons/master/src/$c/$n/materialicons/24px.svg" || true'
+     "https://raw.githubusercontent.com/google/material-design-icons/master/src/$c/$n/materialicons/24px.svg" || true')
 
 python3 glyphs.py gboard.apk /tmp/mi/*.svg | grep BUNDLED
 ```
@@ -184,10 +183,10 @@ import zipfile, arsc
 z = zipfile.ZipFile('gboard.apk')
 t = arsc.load(z.read('resources.arsc'))
 
-t.value(0x7f14097b)            # 'enable_gesture_input'
-t.name(0x7f170e7e)             # 'xml/settings'
-t.value(0x7f170e7e)            # 'res/B_o.xml'      — the packed path
-t.find_value('res/aDh.xml')    # [(0x7f170779, 'xml/0_resource_name_obfuscated')]
+t.value(0x7f140a05)            # 'enable_gesture_input'
+t.name(0x7f170f34)             # 'xml/settings'
+t.value(0x7f170f34)            # 'res/B_o.xml'      — the packed path
+t.find_value('res/aDh.xml')    # [(0x7f1706ec, 'xml/0_resource_name_obfuscated')]
 t.find_name('setting_')        # every settings screen, by name
 ```
 
@@ -215,12 +214,13 @@ FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate          # driver + verify la
 Or by hand, against an APK Morphe Manager built:
 
 ```bash
-tools/apk/patched.py flexboard.apk 'Lpvf;->t(Lpvi;Landroid/view/MotionEvent;I)V' --stock gboard-apk
+tools/apk/patched.py flexboard.apk 'Lmm;->run()V' --stock gboard-apk
 tools/apk/verify.py  flexboard.apk --changed-from gboard-apk
+tools/apk/verify.py  flexboard.apk --unchanged-from gboard-apk 'Lrpv;->a(Landroid/content/Context;Ljava/lang/String;)Z'
 ```
 
-`patched.py` diffs the instruction sequence, not the pcs — inserting instructions renumbers every
-pc after the seam, and aligning on pc reports the whole tail as changed. It flags a frame that
+`patched.py` diffs instructions with absolute branch targets normalized — inserting instructions
+renumbers both pcs and their targets. Open the full patched listing for exact targets. It flags a frame that
 changed size, and removed instructions, because these emissions insert and none should excise.
 
 `verify.py` propagates register types over the real control-flow graph and reports a conflict that
@@ -250,24 +250,24 @@ undeclared, which is correct for that hybrid and not a finding about the change.
 `arsc.py` does not chase references, resolve styles or bags, or decide which configuration variant
 wins. Those were never needed; a caller that needs them should read `values()` and choose.
 
-The instruction walk in `dexlib.walk` only decodes opcodes worth searching for. `dis.disasm`
+The instruction walk in `dexlib.walk` yields all instructions but decodes only selected operands.
+`dalvik_dis.disasm`
 decodes every format properly and is what to use when reading a method rather than scanning for
 one.
 
-**`dis.py` does not print real names for every opcode.** Arithmetic and conversion opcodes come out
+**`dalvik_dis.py` does not print real names for every opcode.** Arithmetic and conversion opcodes come out
 as family placeholders — `binop2addrbb` for `add-long/2addr`, `unop82`, `binop2addrc7` and so on.
 The operands and control flow are correct; only those mnemonics are cosmetic. Do not write a patch
 assertion against a mnemonic read out of `dis.py` without checking it against dexlib2's `Opcode`
 enum first — asserting `ADD_LONG_2ADDR` from a dump that says `binop2addrbb` has already produced
 one false failure. Anchoring on branches and field references instead avoids the question.
 
-**`dexlib.walk` does not report `const` literals.** Scanning it for a resource id returns nothing
-whether or not the id is used — verified against `0x7f0c00ef`, which is `const v1, 0x7f0c00ef` at
-offset 4 of `ScrubMotionEventHandler.<init>` and yields zero matches. To find where a resource id is
-used in code, search the raw instruction bytes for it, exactly as you would for `res/**.xml`:
+**`dexlib.walk` does report `const` literals** as hex operand strings. Compare with
+`int(ref, 0)`, not the integer literal directly. It still leaves `const-wide` operands undecoded.
+For a raw-byte sweep of a resource id across code, search instruction bytes:
 
 ```python
-needle = struct.pack('<I', 0x7f140977)
+needle = struct.pack('<I', 0x7f140a05)
 for d in dl:
     for cname, af, cd in d.classes():
         for m, maf, co in d.class_methods(cd):

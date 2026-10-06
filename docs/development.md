@@ -32,8 +32,9 @@ is what every finding above was read from.
 | `stubs/` | Signatures of the Gboard and AndroidX types the extension compiles against |
 | `extension-check/` | Compiles the extension's sources with javac against `stubs/`, so the SDK is not needed to typecheck them |
 | `driver/` | Applies a built bundle to an APK locally, end to end, without Morphe Manager |
+| `patches-check/`, `tools/tests/`, `tools/gate` | JVM helper tests, Python tests and the single verification gate |
 | `patches/src/main/kotlin/util/PatchListGenerator.kt` | Builds `patches-list.json` from the built bundle |
-| `.github/workflows/release.yml`, `.github/scripts/check_version.sh`, `tools/bump` | The release pipeline — see [`releasing.md`](releasing.md) |
+| `.github/workflows/release.yml`, `.github/scripts/check_version.sh`, `tools/bump`, `tools/promote` | The release pipeline — see [`releasing.md`](releasing.md) |
 | `.github/scripts/generate_patches_readme.py` | Injects the patches table into the README at release time |
 | `patches-bundle.json` | Source metadata Morphe reads straight from the branch. **Generated** |
 | `patches-list.json` | Published inventory. **Generated** |
@@ -92,19 +93,18 @@ anything `identical` in the first group needs nothing; anything `differs` or `ab
 be accounted for by the second, third or fourth. **A name the lists do not mention is the only real
 output** — that is a template change nobody has triaged yet.
 
-As of the last sweep the counts were 13 identical, 13 differing and 9 absent, and every one of the
-22 non-identical files is named below.
+At the **2026-08-17** sweep the counts were 13 identical, 13 differing and 9 absent. They are a
+historical snapshot, not a claim about today's working tree: the README generator and patch-list
+generator have since been deliberately hardened here and now differ from upstream.
 
 **Upstream's — keep byte-identical.** These are deliberately untouched so a future comparison is a
 clean yes/no. `gradle/libs.versions.toml` is the busiest file in the template's history, and
-`PatchListGenerator.kt` had a two-line comment reworded once and reverted for exactly this reason.
+`PatchListGenerator.kt` was once kept identical too, but now has local release safety fixes.
 
 | | |
 |---|---|
 | `gradle/libs.versions.toml`, `gradle/wrapper/`, `gradlew`, `gradlew.bat` | Build tooling and dependency versions |
-| `.github/scripts/generate_patches_readme.py` | README patches table |
-| `patches/src/main/kotlin/util/PatchListGenerator.kt` | Builds `patches-list.json` |
-| `NOTICE`, `LICENSE`, `.editorconfig`, `.gitattributes` | Legal and formatting |
+| `NOTICE`, `LICENSE` | Legal and formatting |
 | `.github/ISSUE_TEMPLATE/config.yml`, `extensions/extension/src/main/AndroidManifest.xml` | Untouched by chance, worth keeping so |
 
 **Ours — never take upstream's.** The release pipeline is a deliberate departure (see
@@ -113,7 +113,9 @@ version of `release.yml` is never the answer, and neither is its README, which i
 for a fresh template.
 
 `release.yml` · `.github/scripts/check_version.sh` · `compare_versions.py` ·
-`check_shared_constants.py` · `tools/bump` · `tools/apk/` · `docs/` · `README.md` ·
+`check_shared_constants.py` · `.editorconfig` (root scope) · `.gitattributes` (line endings) ·
+`.github/scripts/generate_patches_readme.py` ·
+`patches/src/main/kotlin/util/PatchListGenerator.kt` · `tools/bump` · `tools/apk/` · `docs/` · `README.md` ·
 everything under `patches/src/main/kotlin/dev/jz6/` and `extensions/.../dev/jz6/`
 
 **Shared — the template expects these to be edited**, so a diff against upstream is signal, not
@@ -124,8 +126,9 @@ the two issue templates (links), `.github/dependabot.yml`, `.gitignore`.
 Of those, `settings.gradle.kts` is the one to watch: it carries the `app.morphe.patches` plugin
 version, which upstream bumps and this project should follow.
 
-**Generated, never hand-edited:** `patches-bundle.json`, `patches-list.json`, `CHANGELOG.md`, and
-the `README.md` block between the `PATCHES_START` and `PATCHES_END` markers.
+**Generated in normal releases, never hand-edited for a source-only change:** `patches-bundle.json`,
+`patches-list.json`, `CHANGELOG.md`, and the `README.md` block between the `PATCHES_START` and
+`PATCHES_END` markers. One-time repairs to historical changelog entries are documented separately.
 
 **Absent on purpose — do not restore.** These exist upstream and are missing here by decision, which
 a sweep cannot distinguish from an oversight. That is exactly the trap this group exists to close: a
@@ -160,8 +163,8 @@ alone once a few months have passed.
 |---|---|---|
 | **JDK 21** | everything Gradle | `JAVA_HOME=$(/usr/libexec/java_home -v 21)` |
 | **GitHub Packages credentials** | Gradle cannot *configure* without them | below |
-| **Python 3.9+** | seven of the twelve gate lanes, the unit tests, every tool in `tools/apk/` | `tools/gate` asserts the floor and prints the version. Not pinned exactly: CI runs whatever `ubuntu-latest` ships, so the floor is the only thing both sides can agree on |
-| **`gh`, authenticated** | downloading the bundle artifact, watching CI | `gh auth status` |
+| **Python 3.9+** | Python test/check, preflight, verify and resource lanes | `tools/gate` asserts the floor and prints the version; CI uses the runner's Python |
+| **`gh`, authenticated** | downloading the bundle artifact | `gh auth status` |
 | **The pinned APK** as `gboard.apk`, and its dex extracted to `gboard-apk/` | every dex and resource pin, the driver, the verifier | gitignored; not redistributable |
 | **Android SDK** | `buildAndroid` and `generatePatchesList` **only** | not needed for anything else, including applying a bundle |
 
@@ -208,13 +211,13 @@ gh run download --name patches-bundle --dir /tmp/mpp
 FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate
 ```
 
-That turns on the `driver` and `verify` lanes. The only thing the SDK adds is building a bundle from
+That turns on the driver, verify and emission-diff lanes. The SDK adds building a bundle from
 *uncommitted* work, rather than from what CI built for your last push.
 
 Which is the catch, and the gate now enforces it: **a bundle is a build artifact, so it tests the
 code it was built from.** `tools/bundle_freshness.py` asks three things — does its version match
-`gradle.properties`, was it built after the last commit touching patch sources, and are those
-sources committed at all — and the driver and verify lanes skip rather than pass when any answer is
+`gradle.properties`, does its embedded source SHA have the same patch-source tree as HEAD, and are
+those sources free of uncommitted edits — and the bundle lanes skip rather than pass when any answer is
 no. Version alone was the first attempt and was not enough: two bundles can both say `2.5.0-dev.3`
 and differ by every commit in between. A stale bundle passing looks exactly like a current one
 passing. That is not hypothetical — these lanes ran green for a session against the dev.2 bundle
@@ -224,20 +227,15 @@ with a matching bundle failed immediately.
 The driver applies the **default selection**, plus any patch named with a leading `+`:
 
 ```bash
-./gradlew :driver:run --args="<abs>/gboard.apk bundle.mpp out.apk +Swipe up to undo autocorrect"
+./gradlew :driver:run --args="<abs>/gboard.apk <abs>/bundle.mpp <abs>/out.apk +Swipe up to undo autocorrect"
 ```
 
-Applying all of them sounds more thorough and is impossible. The two swipe-up patches ship
-default-off and both attach to `Lpvf;->t`, so they refuse to coexist; an apply-everything run tests
-a combination no install can produce and fails on a guard doing its job. The gate therefore runs the
-driver five times: the defaults, then the defaults plus each of the three default-off patches, and
-finally both swipe-up patches together — that last one through `lane_must_fail`, which passes only
-when the run fails *and* says why. Morphe cannot declare two patches mutually exclusive, so a guard
-in the emitter is the only thing enforcing it, and a guard nobody watches fire is a comment.
+The gate runs the driver three times: defaults, defaults plus the default-off swipe-up patch, and
+defaults plus the default-off Hidden Features (unconfirmed) patch. It verifies each output and
+diffs each opt-in result against defaults; a patch that silently emits nothing fails its diff.
 
-`verify` runs on the defaults build and on the `+undo` build. Both, because the undo emission is the
-largest and riskiest in the project and it is default-off — so reading only the defaults build
-quietly stopped checking the one thing most worth checking.
+`verify` runs on all three builds. It includes the default-off undo emission, which reading only
+the defaults build once quietly left unchecked.
 
 ### What each check can and cannot see
 
@@ -251,11 +249,11 @@ quietly stopped checking the one thing most worth checking.
 | `tools/apk/preflight.py` | bindings that moved or changed shape | Kotlin that does not compile; behaviour |
 | `tools/apk/check_patch_resources.py` | resource write/merge/encode failures, with arsclib itself | dex; needs the target APK, so it is local-only |
 | `./gradlew :driver:run --args="<abs>/gboard.apk <bundle>.mpp out.apk [+Patch Name]"` | the whole pipeline, executed for real — patch-time crashes, failing assertions, resource encode | **class loading** (it writes a dex, never loads one) and behaviour. Needs no SDK; paths must be absolute |
-| `tools/apk/verify.py <out.apk> --changed-from gboard-apk` | a register holding conflicting types where an instruction requires one — what ART rejects at class load | anything a type cannot express; unknown types are never reported |
-| `tools/apk/patched.py <out.apk> '<descriptor>' --stock gboard-apk` | what an emission *actually* produced, diffed against stock | nothing automatically — it is a read, not a check — the only gate that *runs* the patches. Needs a built bundle (any released/CI one); with an SDK installed, `patches/build/libs/*.mpp` works too | the artifact is unsigned and lacks the merged extension dex — it proves the pipeline, it is not for installing |
+| `tools/apk/verify.py <out.apk> --changed-from gboard-apk` | register type uses across switch cases, extension references and inaccessible members in every changed method | device behaviour; framework members without android.jar |
+| `tools/apk/patched.py <out.apk> '<descriptor>' --stock gboard-apk` | a manual read of an emitted method, diffed against stock | no automatic verification; see `verify.py` and the driver above |
 | Morphe + a device | everything else | nothing — but it is the slowest loop |
 
-**CI runs `tools/gate`, and seven of its seventeen lanes do anything there.** `preflight.py` and `check_patch_resources.py` both need the
+**CI runs `tools/gate`, and nine of its twenty lanes do anything there.** `preflight.py` and `check_patch_resources.py` both need the
 Gboard APK, which is gitignored and cannot be redistributed, so the ~260 dex and resource pins —
 the whole defence against a Gboard bump — are a local gate. `git config core.hooksPath tools/hooks`
 installs a pre-push hook that runs them, and warns loudly rather than passing quietly when the APK
@@ -276,7 +274,7 @@ They are three different axes, and no two of them substitute for each other. `0.
 compiled and had correct bindings and still bricked the keyboard; `0.0.3-dev.1` compiled, had
 correct bindings, applied cleanly, and silently called the wrong method.
 
-`2.1.1-dev.0` added a fourth to that list, and it is the one to read before trusting a green run.
+`2.1.1-dev.0` added another failure mode; see "A green gate that was not a gate" below.
 
 ### Three beliefs that were wrong, and what they cost
 
@@ -292,7 +290,8 @@ device round-trips in one session, all avoidable.
 push. Until then, the only way to test a patch change was to publish it — which is how two builds of
 a keyboard that would not open reached everyone who had selected the patch.
 
-**"The driver's output lacks the merged extension dex."** It carries all seventeen extension classes.
+**"The driver's output lacks the merged extension dex."** It carries the extension classes; the
+exact count can change with a release.
 
 The pattern is the same each time: a limitation asserted once, never re-checked, and treated as
 fact. When something here says you cannot do a thing locally, try it before believing it.
@@ -304,15 +303,14 @@ once — while `compileKotlin`, all three CI scripts and preflight's 263 pins pa
 four characters: `fe64807` put a literal `--` inside an XML comment in
 `values/flexboard_toolbar_slots.xml`, which XML forbids, and that fragment is spliced into
 Gboard's `strings.xml`. The merged file was malformed, `widenAllowedIdSet` threw, Morphe caught
-the failing patch and continued, and the build shipped with no ids admitted. `Lmlh.w` then dropped
+the failing patch and continued, and the build shipped with no ids admitted. `Lmlh.g` then refused
 every access point registered against an id that never reached the allowed set.
 
 Three things conspired, and each is worth carrying:
 
-1. **The five checks above cannot see this, and the table already said so.** Everything except
-   `check_patch_resources.py` reads the *stock* APK to confirm Gboard's bindings have not moved.
-   Not one of them looks at what the bundle produces. "263/263 passed" is a statement about
-   Gboard, not about the build.
+1. **The five checks the table held then could not see this.** The resource-replay lane was the
+   only one that inspected what its resource edits produced. Today the driver and verifier also
+   read the patched output. A preflight pin count describes stock Gboard, not the build.
 2. **A red lane guards nothing.** `check_patch_resources.py` is the one check that would have
    caught it, and it had been failing for unrelated reasons since the settings template grew
    section sentinels — it knew only `@FLEXBOARD_VERSION@`, hit `@SECTION_SWIPE_TO_DELETE@`, and
@@ -355,19 +353,18 @@ Commit subjects are copied verbatim into the release notes, so write them for us
 
 ## Testing without a stable release
 
-Push to `dev` as often as you like: an ordinary push compiles and publishes nothing, so it is a free
-compile check. When you want something installable, bump to a new version — Morphe Manager will
-offer the `.mpp` once **pre-release** is enabled on the patch source. No throwaway tags, no
-downloading artifacts by hand.
+Push to `dev` as often as you like: an ordinary push runs the gate, builds an artifact and
+publishes nothing. Download that artifact for local driver/verify tests without cutting a release.
+When you want Morphe to offer a build, bump to a new version and enable **pre-release** on the source.
 
 ## Which Gboard resources a patch can address
 
 `ResourcePatchContext.document(path)` returns a decoded W3C DOM, and the path is the resource's
 *decoded* name — `res/xml/settings.xml`, never the packed `res/B_o.xml`. That only works for
-resources whose name survived: Gboard is built with aapt2 `--collapse-resource-names`, and 32,668
-of its 33,287 entries report `0_resource_name_obfuscated`.
+resources whose name survived: Gboard is built with aapt2 `--collapse-resource-names`, and 33,399
+of its 34,029 entries report `0_resource_name_obfuscated`.
 
-The survivors are the ones Android itself resolves by name at runtime. For `xml` that is 33
+The survivors are the ones Android itself resolves by name at runtime. For `xml` that is 37
 resources — the settings screens plus `method`, `file_provider_paths` and `spell_checker`. The
 keyboard layouts are **not** among them, so `res/aDh.xml` has no clean name to address it by.
 
@@ -379,9 +376,9 @@ regenerates it.
 
 ## Supporting a new Gboard
 
-`COMPATIBILITY_GBOARD` pins the bundle to one build, so a different Gboard is refused rather than
-mispatched. Moving to a new version means re-deriving the obfuscated names and the resource ids
-against that APK, then updating the pin.
+`COMPATIBILITY_GBOARD` describes the tested build but Morphe does not enforce it: a different Gboard
+can be patched, possibly only partially. Moving to a new version means re-deriving names and
+resource ids against that APK, testing the driver/verify lanes, and updating the metadata.
 
 The 17.7.7 → 18.0.3 move is the worked example, and the mapping it produced is in
 [`gboard-bindings.md`](gboard-bindings.md). What it taught, in order of how much time it saves:

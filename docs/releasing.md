@@ -17,22 +17,23 @@ agree. CI does the rest: build, `patches-bundle.json`, tag, publish.
 Or do it by hand — edit the line, commit, push. `tools/bump` only runs the same checks CI runs,
 before the push rather than after it, because the push is the point of no return.
 
-Ordinary pushes compile and stop. Only a version with no matching tag releases, so commit to `dev`
-as often as you like.
+Ordinary pushes run `tools/gate`, compile and upload a test bundle; they do not publish. Only a
+version with no matching tag starts a new release, so commit to `dev` as often as you like.
 
 ### From a phone
 
 Edit the `version` line in `gradle.properties` on github.com and commit to `dev`. Same trigger, no
-laptop. The **Run workflow** button takes no input — it re-evaluates the same rule, which is for
-re-running a run that failed partway.
+laptop. **Run workflow** takes no input: a tagged release missing its asset rebuilds from that tag;
+a published release rechecks the published URL and can retry attestation without tagging again.
 
 ### The rule
 
-> `gradle.properties` says `1.0.1-dev.1` **and** no `v1.0.1-dev.1` tag exists → release it.
+> `gradle.properties` says `1.0.1-dev.1` and no matching tag exists → release it. A tag with no
+> asset → rebuild from the tag and complete publication; a tag with an asset → verify the published
+> metadata and download URL without publishing again.
 
-Deliberately not "the file changed in this commit". This version is idempotent: amends,
-force-pushes, re-runs and several commits in one push all behave, and re-running on an
-already-released version does nothing instead of publishing a duplicate.
+Deliberately not "the file changed in this commit". Already-published versions do not produce a
+duplicate release; a failed post-tag publish has a separate recovery path.
 
 ### Why `gradle.properties`
 
@@ -81,10 +82,9 @@ release is labelled stable besides, because `release.yml` sets `prerelease` from
 not from the version. It corrects itself at the next stable — `3.0.0` outranks `3.0.0-dev.0` — but
 until then the stable channel is serving a dev build.
 
-Nothing upstream prevents this. `tools/promote` refuses a suffixed version, but that is a
-convenience wrapper; `check_version.sh`, which is what CI always runs, currently permits it, and
-the documented "edit the version line on github.com" path bypasses `promote` entirely. If that
-gap matters, close it in `check_version.sh`, not in `promote`.
+Both `tools/promote` and CI's shared `check_version.sh` reject a suffixed version on `main`.
+The manager itself does not enforce this, so a manual publication outside those tools still can
+serve a dev version from the stable channel.
 
 ## Choosing the version
 
@@ -102,8 +102,9 @@ Two consequences worth internalising:
 
 - Once `main` ships `1.0.0`, no `1.0.0-dev.N` can ever be seen again. Move the base up to
   `1.0.1-dev.1` rather than continuing the counter.
-- Cutting a stable release is therefore just bumping `dev` to the bare version and fast-forwarding
-  to `main`, which then outranks every pre-release that preceded it.
+- Cutting a stable release uses `tools/promote 1.0.0`: it builds the bare-version bump on top of
+  released `origin/dev` and pushes it to `main`; after CI publishes, fast-forward `dev` to main to
+  keep identical history. `check_version.sh` rejects a bare version on `dev`.
 
 `1.0.0-pr0` predates this rule. It orders correctly against stable versions so it stays published,
 but it gets no `-pr1`: the next pre-release is `1.0.1-dev.1`, because `1.0.0-dev.1` would rank
@@ -184,23 +185,23 @@ design. The workflow now re-merges after the inventory and asserts `classes.dex`
 publishing. **Any new Gradle invocation added after the build must come before that re-merge**, or
 it will silently undo it again.
 
-**A tag left behind by a rewrite.** Nothing reads tags to *decide* a version any more — they only
-answer "have I already shipped this exact string" — so the worst a rewrite can do is make CI attempt
-a version that already exists, which fails loudly. The commit and the tag are still pushed in one
-command so they cannot separate.
+**A tag left behind by a rewrite.** A tag already holding an asset is not republished. If one has no
+asset, CI verifies it is an ancestor with the right version, checks it out and rebuilds that exact
+source before completing the release. New commits and tags are pushed atomically.
 
 None of this relies on you remembering to check. After publishing, the workflow re-fetches
 `patches-bundle.json` **from the raw URL a phone would hit** (retrying, because the CDN lags),
 asserts the four required fields and the timezone-less `created_at`, downloads `download_url`, and
-compares the bytes against the bundle it just built. Any mismatch fails the run.
+compares the bytes against the bundle it just built on a new or resumed release. An ordinary push
+rechecks availability; private repositories skip the unauthenticated download and attestation.
 
 ## The version rules live in one place
 
 `.github/scripts/check_version.sh` — the branch check, the format, the pre-release shape, the
 tag-already-exists check and the must-beat-`main` comparison, the last of which it delegates to
 `.github/scripts/compare_versions.py`. Both `tools/bump` and the workflow call it, so there is a
-single definition rather than two that drift. It reads only and changes nothing, so it is safe to
-run whenever you want to know if a version is usable:
+single definition rather than two that drift. It may fetch `origin/main` for ranking; run it when
+you want to know if a version is usable:
 
 ```bash
 .github/scripts/check_version.sh 1.0.1-dev.1 dev
@@ -213,8 +214,8 @@ run whenever you want to know if a version is usable:
   short lag between the workflow finishing and Morphe noticing.
 - `download_url` is fetched unauthenticated. A private repository fails at download even though the
   listing may appear to work.
-- `gradle.properties`'s `version` line is owned by the workflow. Editing it by hand does nothing —
-  it is overwritten from the input on every release.
+- Editing `gradle.properties`'s `version` line and pushing it is the release trigger; CI reads the
+  version from that file, and generates the patch inventory and bundle URL from it.
 
 ## Why not semantic-release
 
