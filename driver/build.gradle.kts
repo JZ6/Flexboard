@@ -11,8 +11,8 @@ plugins {
 // (the dev.3/dev.4 class of bug) shows up here in about a minute with the real stack and the
 // real filename, instead of after CI plus an install plus a phone.
 //
-// The produced APK is unsigned and does not carry the merged extension dex — it exists to prove
-// the pipeline succeeds, not to be installed.
+// The produced APK is unsigned but carries the merged extension dex. It is for verification,
+// not for installation.
 repositories {
     mavenCentral()
     google()
@@ -30,9 +30,8 @@ repositories {
 }
 
 dependencies {
-    // Same version gradle/libs.versions.toml pins for the patches build; bump them together.
-    implementation("app.morphe:morphe-patcher:1.8.0")
-    // Explicit: morphe-patcher's published POM carries no transitive coordinates.
+    implementation("app.morphe:morphe-patcher:${libs.versions.morphe.patcher.get()}")
+    // Explicit because the coroutines dependency is not exposed on this compile classpath.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 }
 
@@ -49,8 +48,4 @@ kotlin {
 
 application {
     mainClass.set("dev.jz6.flexboard.driver.DriverKt")
-
-    // gboard.apk is a symlink into this directory in this repo; a sensible default
-    // keeps two-argument use down to just the bundle.
-    applicationDefaultJvmArgs = emptyList()
 }

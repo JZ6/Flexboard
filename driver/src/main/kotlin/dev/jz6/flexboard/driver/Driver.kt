@@ -22,31 +22,26 @@ import kotlin.system.exitProcess
  * Applies a built patch bundle to the stock APK exactly the way Morphe Manager does on a phone.
  *
  * Usage:
- *   ./gradlew :driver:run --args="gboard.apk patches-1.4.0-dev.1.mpp /tmp/patched.apk"
- *   ./gradlew :driver:run --args="gboard.apk bundle.mpp /tmp/p.apk +Swipe up to undo autocorrect"
+ *   ./gradlew :driver:run --args="/absolute/gboard.apk /absolute/bundle.mpp /tmp/patched.apk"
+ *   ./gradlew :driver:run --args="/absolute/gboard.apk /absolute/bundle.mpp /tmp/p.apk +Swipe up to undo autocorrect"
  *
- * **It applies the patches a user would get, not all of them.** Only those declaring
- * `default = true`, plus any named with a leading `+`. Applying everything sounds more thorough and
- * is in fact impossible: "Swipe up to undo autocorrect" and "Swipe up diagnostic (temporary)" both
- * attach to `Lpvf;->t` and refuse to coexist, so an apply-everything run tests a combination no
- * install can produce and fails on a guard doing its job. That is not hypothetical -- it is exactly
- * how this lane greeted the 2.5.0-dev.3 bundle, having passed all session against a stale one built
- * before the guard was tightened.
+ * **It applies the patches a user would get, not all of them.** Named default-on patches plus
+ * those requested with `+Name`; unnamed foundations arrive through dependencies. Swipe up to
+ * undo autocorrect and Hidden Features (unconfirmed) are default-off and get separate driver
+ * runs in tools/gate.
  *
  * Exit 0 means every patch executed, dexes compiled, and arsclib rebuilt the full resource
  * table — the entire pipeline that failed on-device for dev.3 through dev.5.
  *
- * **What this does not prove.** It writes a dex; it does not load one. ART's verifier never runs,
- * so a method that is rejected at class load — the 2.5.0-dev.0 and dev.1 crash — applies here
- * without complaint. Use `tools/apk/patched.py` on the output to read what was actually emitted;
- * that is what found the missing register handover after two releases of guessing.
+ * **What this does not prove.** It writes a dex; it does not load one. ART's verifier never runs.
+ * Use `tools/apk/verify.py` on its output and `tools/apk/patched.py` to inspect an emission; device
+ * behaviour remains a separate check.
  *
- * The output is unsigned. It *does* carry the merged extension dex, despite what this comment said
- * for a long time — 17 `dev.jz6.flexboard.extension.*` classes are present in the result.
+ * The output is unsigned. It does carry the merged extension dex.
  */
 private fun main0(args: Array<String>): Int {
     if (args.size < 2) {
-        System.err.println("usage: driver <base.apk> <bundle.mpp> [out.apk]")
+        System.err.println("usage: driver <base.apk> <bundle.mpp> [out.apk] [+Patch Name ...]")
         return 2
     }
     val base = File(args[0])
@@ -88,7 +83,7 @@ private fun main0(args: Array<String>): Int {
         }
 
         // What a phone would install: the default selection, plus whatever was asked for.
-        val selected = patches.filter { it.use || it.name in extras }.toSet()
+        val selected = patches.filter { it.name != null && (it.default || it.name in extras) }.toSet()
         System.err.println(
             "driver: ${selected.size} of ${patches.size} patches in $bundle" +
                 if (extras.isEmpty()) " (defaults)" else " (defaults + ${extras.joinToString(", ")})",
@@ -117,7 +112,7 @@ private fun main0(args: Array<String>): Int {
         }
         writePatchedApk(base, result, out)
     }
-    System.err.println("driver: OK → $out (unsigned, extension dex not merged — proof only)")
+    System.err.println("driver: OK → $out (unsigned, merged extension included — proof only)")
     return 0
 }
 
@@ -190,7 +185,8 @@ private fun writePatchedApk(base: File, result: PatcherResult, out: File) {
                     name.matches(Regex("META-INF/[^/]+\\.(SF|RSA|DSA|EC)"))
                 ) continue
                 if (name.matches(Regex("classes[0-9]*\\.dex"))) continue
-                if (name == "AndroidManifest.xml" || name == "resources.arsc") continue
+                if ((name == "AndroidManifest.xml" || name == "resources.arsc") &&
+                    result.resources.resourcesApk != null) continue
                 if (name.startsWith("res/") && result.resources.resourcesApk != null) continue
                 put(name, baseZip.getInputStream(entry).readBytes(),
                     compress = entry.method == ZipEntry.DEFLATED)
