@@ -1,3 +1,27 @@
+# [2.5.1-dev.11](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.10...v2.5.1-dev.11) (2026-10-07)
+
+* **Gboard:** docs: correct issue forms for unsupported builds and roadmap
+* **Gboard:** chore: pin editor scope and shell script line endings
+* **Gboard:** docs: mark superseded gesture analyses and current undo path
+* **Gboard:** docs: correct settings, toolbar and flag derivations
+* **Gboard:** docs: refresh contributor gate, APK tooling and release guide
+* **Gboard:** docs: align feature guide and roadmap with shipped behavior
+* **Gboard:** docs: restore missing dev and stable release entries
+* **Gboard:** docs: record full-repository findings and fix status
+* **Gboard:** fix: protect provider and verify the pushed tree
+* **Gboard:** fix: make recovery resumable and stamp bundle sources
+* **Gboard:** fix: enforce patch selection and output handling
+* **Gboard:** fix: enforce generated artifacts and source contracts
+* **Gboard:** fix: pin current Gboard bindings and flag defaults
+* **Gboard:** fix: validate resource replay and improve APK readers
+* **Gboard:** fix: follow real control flow and inspect same-size edits
+* **Gboard:** fix: harden settings, hotkeys, and crash diagnostics
+* **Gboard:** fix: guard resource metadata and defaults
+* **Gboard:** fix: validate native registration and capacity seams
+* **Gboard:** fix: validate isolated and long-valued flag rewrites
+* **Gboard:** fix: harden shared resolution and gesture emissions
+* **Gboard:** fix: bypass only Gboard's own startup check
+
 # [2.5.1-dev.10](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.9...v2.5.1-dev.10) (2026-10-02)
 
 * **Gboard:** fix(swipe-up): make Lozi; public so the takeover read-back can run
