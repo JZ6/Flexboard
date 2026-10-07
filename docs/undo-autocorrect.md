@@ -1,7 +1,8 @@
 # Undoing an autocorrect, and the gesture layer underneath it
 
 > **Historical research, superseded by [the staged plan](undo-autocorrect-plan.md).** The current
-> stage 2 runs in `ScrubMotionEventHandler->g` (`SwipeUp.java`/`SwipeUpEmitter.kt`). Several early
+> stage 3 runs in `ScrubMotionEventHandler->g` (`SwipeUp.java`/`SwipeUpEmitter.kt`) and reverts
+> through the decoder with REVERT_AUTO_CORRECTION (-10076), not the general UNDO (-10045). Several early
 > conclusions below proved wrong: the Basic handler call site was a **hover** path, a letter key's
 > `j(SLIDE_UP)` falls back to PRESS rather than null, and `-10045` is general UNDO, not a
 > revert-only no-op when unarmed. Keep the derivation as history, not as implementation guidance.

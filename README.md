@@ -183,15 +183,23 @@ Swipe up on the keyboard to put back the word an autocorrect just replaced. Gboa
 this on backspace, behind its **Undo autocorrect with backspace** setting; this adds a gesture for
 it.
 
-**Work in progress, built in stages.** The first attempt went straight to the finished behaviour
-and crashed the keyboard on a swipe up, so it is now being rebuilt one step per release from the
-measuring code that worked:
+The revert is Gboard's own. The swipe asks Gboard's decoder for the same autocorrect revert it uses
+for a physical keyboard's delete-word, so the decoder decides whether there is an autocorrection to
+undo, as it does for backspace. If there is none, the swipe does nothing: it does not delete a word
+or undo some other edit. Either way the key you swiped on is not typed.
+
+**Built in stages, and not yet confirmed on a device.** The first attempt went straight to the
+finished behaviour and crashed the keyboard on a swipe up, so it was rebuilt one step per release
+from the measuring code that worked:
 
 1. Detect, and type a 6. Confirmed on a device.
-2. **Take the swipe over, so the key is not typed.** The current build: a swipe up types a `6` in
-   place of the key, or an `x` if the swipe could not be taken over. Nothing is undone yet.
-3. Send an undo in place of the `6`.
-4. Undo only when an autocorrection is pending, as Gboard's own backspace does.
+2. Take the swipe over, so the key is not typed: a 6, or an `x` if the swipe could not be taken over.
+3. **Revert the last autocorrection.** The current build. Gboard's decoder is also the "is one
+   pending?" check the plan once listed as a separate step.
+
+Whether Gboard's decoder honours this request from the on-screen keyboard as it does from a physical
+one, and whether it also respects the **Undo autocorrect with backspace** setting, is decided inside
+its native code and can only be seen on a device.
 
 The swipe has to be reasonably vertical, at least twice as far up as sideways, which keeps it apart
 from **Swipe left to delete** and **Swipe right to undo**.

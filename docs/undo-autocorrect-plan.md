@@ -4,11 +4,14 @@
 > supersedes the design in [`undo-autocorrect.md`](undo-autocorrect.md), which is kept as historical
 > research. Some of its conclusions (null SLIDE_UP action, revert-only -10045, hover path) were wrong.
 >
-> **Current as of dev.10:** stage 2 in `SwipeUp.java`/`SwipeUpEmitter.kt` takes the swipe over and
-> types 6 (or x if refused). dev.9's crash was an illegal-access owner read-back; the patch widens
-> Lozi and its manager field. This is not yet a device confirmation of dev.10. The 0.6 slide ratio
-> does not control this gesture; Suggested Settings no longer seeds it. The sections below preserve
-> the reasoning and intermediate attempts, including plans since superseded.
+> **Current (after dev.11):** stage 3. After the takeover, `SwipeUpEmitter.kt` sends a
+> REVERT_AUTO_CORRECTION (-10076) event, and `RevertEmitter.kt` makes `LatinIme->q` hand it to the
+> decoder exactly as physical-keyboard delete-word does, minus the delete-word fallback. See
+> [Stage 3](#stage-3-the-decoders-own-revert). Verified statically on a hybrid bundle; not yet on a
+> device. dev.9's crash was an illegal-access owner read-back; the patch widens Lozi and its manager
+> field. The 0.6 slide ratio does not control this gesture; Suggested Settings no longer seeds it.
+> The sections below preserve the reasoning and intermediate attempts, including plans since
+> superseded.
 
 ## The goal, stated properly
 
@@ -560,10 +563,60 @@ removed: one patch, one capability added per release.
    hybrid bundle (dev.9's, with today's compiled patches): both are public in the swipe-up build,
    untouched in the default build, and `verify` passes the access check on both. That is static
    verification; whether a swipe up now types a 6 is the next install.
-3. Send the undo in place of the 6.
-4. Undo only when an autocorrection is armed. Gboard's own revert checks the edit tracker's `d` flag
-   before sending -10045; gating on the same state makes this "undo autocorrect" rather than general
-   undo. This reverses the 2026-09-30 decision to accept general undo, now as the end goal.
+3. ~~Send the undo in place of the 6.~~
+4. ~~Undo only when an autocorrection is armed.~~ This stage was planned on the reading that Gboard's
+   backspace revert checks the edit tracker's `d` flag before sending -10045. That reading was
+   incomplete: `d` belongs to GenAI post-corrections only. Stages 3 and 4 became one stage, below.
+
+## Stage 3: the decoder's own revert
+
+Re-derived from the 18.0.3 dex before writing any emission. Gboard has three things that look like
+"undo autocorrect", and only one is backspace's:
+
+| Mechanism | What it is | Fit |
+|---|---|---|
+| -10045 `UNDO` | UndoExtension (post-IME) steps its undo stack back one chunk: typing, a deletion or an autocorrection, whichever was last | General undo; with no autocorrection pending it undoes something else |
+| `EditTrackingImeWrapper->q` | On keycode 67 with `d` set, sends -10045 and consumes the backspace. `d` is armed only by `Lfyh;->g` for a POST_CORRECTION (reason 3) edit with the setting on, and the wrapper is installed only behind `writing_helper_enable_by_word_revert` | GenAI post-corrections only |
+| The Delight5 decoder | Backspace reaches it as key 8 (`LatinIme->M` → `Lful;->c` → `Lfsf;->k`); the native decoder decides between reverting the last autocorrection and deleting. The setting reaches it through `Lyfq;->O` | **This is backspace's revert.** No Java field mirrors its "revert pending" state |
+
+Gboard already asks the decoder for that revert explicitly, in one place: `LatinIme->q`'s
+physical-keyboard delete-word branch (pc ~1498–1570). It guards on `Lftq;->o`, builds a request with
+`Lful;->d(event, -10076, m, p, o, n, ap)`, calls `Lfsf;->k`, and on a result calls `E(true, j, false)`;
+only when the decoder returns nothing does it fall back to deleting a word. -10076 is
+`REVERT_AUTO_CORRECTION` in Gboard's key-code name table, appears nowhere else in the dex, and is
+never dispatched as an event.
+
+So the swipe sends a -10076 event, and `LatinIme->q` learns to treat it as that branch without the
+fallback. Two insertions:
+
+- **Route** (before the `D()` sub-handler query that closes the handled-key list): stock drops any
+  key code not in that list, -10076 included. `if-eq` sends it to the shared handled-key path that
+  delete-word takes, so it passes the same input-state checks (`V()`, the "Cannot handle invalid
+  input state" guard, `Lftq;->u()`) on the way. Neither key-code switch on that path (cases
+  -10063…-10061 and -10054…-10050) can catch it.
+- **Revert** (before the delete-word `const/16 #-10133`): `if-ne` returns every other key to the
+  stock comparison; -10076 runs a copy of the stock block and leaves by the stock block's own
+  continuation (latency metric, then `return true`), whether or not anything was reverted.
+
+The event is built as Gboard's own revert code builds its undo event,
+`Lnur.d(new Lpnu(code, null, null, 0x7fffffff))`, which makes it synthetic (source 1): the input
+dispatcher does not rewrite its meta state or run shift logic, and EditTrackingImeWrapper does not
+treat it as real input. Its time is stamped from the MotionEvent, like the scrub's own events. It is
+sent synchronously through `Lpvo;->n`, the route the scrub's own deletes use, which reaches
+`Loup;->au` and then `LatinIme->q`. The swipe-right undo patch also inserts into `q`, in the
+scrub-delete finish handler. Its anchors are untouched, and both patches verify together.
+
+**Checked:** preflight pins the block's shape, both seams, and liveness over `q`'s real control-flow
+graph (`live_free` now takes decoded switch and try-handler edges). The seams' constant registers
+are dead, and the continuation reads none of the copy's temporaries. Applied with a hybrid bundle
+(dev.11's extension with today's compiled patches), `verify` passes all 19 changed methods, and the
+emitted branches land on the intended instructions.
+
+**Not knowable from the dex:** what the native decoder does with a -10076 request built from a
+source-1 event. `Lful;->d` sets the request's `u` flag where a physical event sets `v`. Also whether
+it applies the "Undo auto-correct on backspace" setting to -10076. If it refuses, the swipe does
+nothing, and nothing else breaks. That is the device test: autocorrect a word, swipe up, and the
+typed word should come back. With nothing to revert, the swipe should do nothing visible.
 
 ## Reading a crash without logcat
 
