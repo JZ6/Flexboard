@@ -4,14 +4,14 @@
 > supersedes the design in [`undo-autocorrect.md`](undo-autocorrect.md), which is kept as historical
 > research. Some of its conclusions (null SLIDE_UP action, revert-only -10045, hover path) were wrong.
 >
-> **Current (after dev.11):** stage 3. After the takeover, `SwipeUpEmitter.kt` sends a
-> REVERT_AUTO_CORRECTION (-10076) event, and `RevertEmitter.kt` makes `LatinIme->q` hand it to the
-> decoder exactly as physical-keyboard delete-word does, minus the delete-word fallback. See
-> [Stage 3](#stage-3-the-decoders-own-revert). Verified statically on a hybrid bundle; not yet on a
-> device. dev.9's crash was an illegal-access owner read-back; the patch widens Lozi and its manager
-> field. The 0.6 slide ratio does not control this gesture; Suggested Settings no longer seeds it.
-> The sections below preserve the reasoning and intermediate attempts, including plans since
-> superseded.
+> **Done: confirmed on a device in 2.5.2-dev.0, and now on by default.** After the takeover,
+> `SwipeUpEmitter.kt` sends a REVERT_AUTO_CORRECTION (-10076) event, and `RevertEmitter.kt` makes
+> `LatinIme->q` hand it to the decoder exactly as physical-keyboard delete-word does, minus the
+> delete-word fallback. See [Stage 3](#stage-3-the-decoders-own-revert). It reaches only the word just
+> corrected, as Gboard's backspace does; going further back was declined. dev.9's crash was an
+> illegal-access owner read-back; the patch widens Lozi and its manager field. The 0.6 slide ratio
+> does not control this gesture; Suggested Settings no longer seeds it. The sections below preserve
+> the reasoning and intermediate attempts, including plans since superseded.
 
 ## The goal, stated properly
 
@@ -612,15 +612,28 @@ are dead, and the continuation reads none of the copy's temporaries. Applied wit
 (dev.11's extension with today's compiled patches), `verify` passes all 19 changed methods, and the
 emitted branches land on the intended instructions.
 
-**Not knowable from the dex:** what the native decoder does with a -10076 request built from a
-source-1 event. `Lful;->d` sets the request's `u` flag where a physical event sets `v`. Also whether
-it applies the "Undo auto-correct on backspace" setting to -10076. If it refuses, the swipe does
-nothing, and nothing else breaks. That is the device test: autocorrect a word, swipe up, and the
-typed word should come back. With nothing to revert, the swipe should do nothing visible.
+**Not knowable from the dex, so left to the device:** what the native decoder does with a -10076
+request built from a source-1 event (`Lful;->d` sets the request's `u` flag where a physical event
+sets `v`), and whether it applies the "Undo auto-correct on backspace" setting to -10076.
+
+**Result on 2.5.2-dev.0, on a device:** a swipe up right after an autocorrection brings the typed
+word back. This was with "Undo auto-correct on backspace" **off**, so -10076 does not depend on that
+setting. The revert reaches only the word just corrected: once anything else is typed, even a
+letter, the decoder no longer offers it and the swipe does nothing. Gboard's backspace revert has the
+same limit, which fits both being one native state.
+
+**Going further back was considered and declined.** It would mean Flexboard keeping its own history
+of corrections and replacing text itself. Gboard reports each autocorrection in one place
+(`Lopg;->o`, "IC.commitAutoCorrection"), but the `CorrectionInfo` it builds there has an empty
+original text, so the typed word would have to be captured separately. A plain text replacement
+would also bypass whatever the decoder learns from a revert. The native behaviour is the product, so
+the patch went default-on as it is. The crash recorder that rode along during testing moved to its
+own opt-in patch, "Crash reporter (debug)".
 
 ## Reading a crash without logcat
 
-`CrashRecorder` (extension, installed at app start by the swipe-up patch only) saves an uncaught
+`CrashRecorder` (extension, installed at app start by the opt-in "Crash reporter (debug)" patch;
+until swipe up went default-on, by the swipe-up patch only) saves an uncaught
 exception with a synchronous `commit()` — `apply()` writes on a background thread and the process is
 about to be killed — hands it on to Android's own handler so crash handling is unchanged, and on the
 next start copies it to the clipboard and forgets it. A report that cannot be delivered because the
@@ -629,8 +642,8 @@ clipboard is unreachable is kept, not lost.
 In the event, the stage 2 crash was found statically before the recorder ever shipped (see stage 2
 above). It ships anyway, as a net: the next crash in this feature names itself.
 
-It is temporary, tied to the swipe-up patch so only testers get it, and overwrites the clipboard
-after a crash, which the patch description and README say. Everything in it catches `Throwable`: a
+It is opt-in so only people debugging get it, and overwrites the clipboard after a crash, which the
+patch description and README say. Everything in it catches `Throwable`: a
 crash reporter that can crash the keyboard, or swallow a crash so the process is never killed and the
 keyboard freezes instead of restarting, is worse than none. Both of those are tested, and
 mutation-tested.

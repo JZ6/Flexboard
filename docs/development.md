@@ -227,15 +227,15 @@ with a matching bundle failed immediately.
 The driver applies the **default selection**, plus any patch named with a leading `+`:
 
 ```bash
-./gradlew :driver:run --args="<abs>/gboard.apk <abs>/bundle.mpp <abs>/out.apk +Swipe up to undo autocorrect"
+./gradlew :driver:run --args="<abs>/gboard.apk <abs>/bundle.mpp <abs>/out.apk +Crash reporter (debug)"
 ```
 
-The gate runs the driver three times: defaults, defaults plus the default-off swipe-up patch, and
-defaults plus the default-off Hidden Features (unconfirmed) patch. It verifies each output and
-diffs each opt-in result against defaults; a patch that silently emits nothing fails its diff.
+The gate runs the driver three times: defaults, defaults plus the default-off Crash reporter
+(debug), and defaults plus the default-off Hidden Features (unconfirmed). It verifies each output
+and diffs each opt-in result against defaults; a patch that silently emits nothing fails its diff.
 
-`verify` runs on all three builds. It includes the default-off undo emission, which reading only
-the defaults build once quietly left unchecked.
+`verify` runs on all three builds. Reading only the defaults build once quietly left the swipe-up
+emission unchecked, back when that patch was default-off.
 
 ### What each check can and cannot see
 

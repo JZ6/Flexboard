@@ -181,32 +181,24 @@ when you swipe on the backspace key, so it works there too.
 
 Swipe up on the keyboard to put back the word an autocorrect just replaced. Gboard can already do
 this on backspace, behind its **Undo autocorrect with backspace** setting; this adds a gesture for
-it.
+it, and the gesture works with that setting off.
 
 The revert is Gboard's own. The swipe asks Gboard's decoder for the same autocorrect revert it uses
 for a physical keyboard's delete-word, so the decoder decides whether there is an autocorrection to
 undo, as it does for backspace. If there is none, the swipe does nothing: it does not delete a word
 or undo some other edit. Either way the key you swiped on is not typed.
 
-**Built in stages, and not yet confirmed on a device.** The first attempt went straight to the
-finished behaviour and crashed the keyboard on a swipe up, so it was rebuilt one step per release
-from the measuring code that worked:
-
-1. Detect, and type a 6. Confirmed on a device.
-2. Take the swipe over, so the key is not typed: a 6, or an `x` if the swipe could not be taken over.
-3. **Revert the last autocorrection.** The current build. Gboard's decoder is also the "is one
-   pending?" check the plan once listed as a separate step.
-
-Whether Gboard's decoder honours this request from the on-screen keyboard as it does from a physical
-one, and whether it also respects the **Undo autocorrect with backspace** setting, is decided inside
-its native code and can only be seen on a device.
+**It reaches only the word just corrected.** As soon as you type anything after the correction,
+even one letter, Gboard forgets it and the swipe has nothing to undo. Backspace's undo behaves the
+same way. Keeping Flexboard's own history of corrections to reach further back was considered, and
+the native behaviour kept instead.
 
 The swipe has to be reasonably vertical, at least twice as far up as sideways, which keeps it apart
 from **Swipe left to delete** and **Swipe right to undo**.
 
-**While this patch is on, a keyboard crash is recorded.** It is saved, and copied to your clipboard
-the next time the keyboard starts, so it can be pasted into a bug report. That overwrites whatever
-was on the clipboard, which is why it only happens with this patch enabled. **Off by default.**
+Confirmed on a device in 2.5.2-dev.0. It was rebuilt one step per release after the first attempt
+crashed the keyboard on a swipe up; [`docs/undo-autocorrect-plan.md`](docs/undo-autocorrect-plan.md)
+has the story. **On by default.**
 
 ## Text action buttons
 
@@ -339,6 +331,16 @@ patching it out.
 Gboard hides its own vibration-strength slider on some devices and sends users to Android's
 system haptic settings instead. This patch makes Gboard use its own slider on every device; the
 keypress vibration toggle still governs whether vibration runs at all.
+
+## Crash reporter (debug)
+
+For reporting a bug. With this patch on, a keyboard crash is recorded: the error is saved, and the
+next time the keyboard starts it is copied to your clipboard, ready to paste into a bug report.
+Android's own crash handling is unchanged.
+
+Copying the report replaces whatever was on your clipboard, which is why it is a patch you opt into.
+It was built while **Swipe up to undo autocorrect** was crashing the keyboard on devices with no
+other way to read the error. **Off by default.**
 
 ## Development
 

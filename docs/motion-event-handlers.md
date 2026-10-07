@@ -10,7 +10,7 @@
 
 The original design used pointer hooks on `Lpbl;` and a dispatch veto on `Lpbj;`. That design was
 replaced: **Swipe Left to Delete** now widens Gboard's own word-scrub handler, and **Swipe up to undo
-autocorrect** is staged in `ScrubMotionEventHandler->g`. The old proposal below (especially its
+autocorrect** takes the gesture over in `ScrubMotionEventHandler->g`. The old proposal below (especially its
 instruction to patch `p()`) is historical; patching `p()` caused a VerifyError and was replaced by
 a hold-delay substitution in the constructor. See [the current review ledger](code-review-2026-10-02.md).
 
