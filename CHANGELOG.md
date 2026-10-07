@@ -1,3 +1,9 @@
+# [2.5.2-dev.1](https://github.com/JZ6/Flexboard/compare/v2.5.2-dev.0...v2.5.2-dev.1) (2026-10-07)
+
+* **Gboard:** feat: remove Hidden Features (unconfirmed)
+* **Gboard:** docs: swipe up confirmed on a device, and on by default
+* **Gboard:** feat: on by default; crash recorder moves to its own opt-in patch
+
 # [2.5.2-dev.0](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.11...v2.5.2-dev.0) (2026-10-07)
 
 * **Gboard:** docs: swipe up reverts through the decoder, not the undo stack
