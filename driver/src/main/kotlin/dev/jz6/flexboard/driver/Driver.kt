@@ -27,8 +27,7 @@ import kotlin.system.exitProcess
  *
  * **It applies the patches a user would get, not all of them.** Named default-on patches plus
  * those requested with `+Name`; unnamed foundations arrive through dependencies. Crash reporter
- * (debug) and Hidden Features (unconfirmed) are default-off and get separate driver runs in
- * tools/gate.
+ * (debug) is default-off and gets a separate driver run in tools/gate.
  *
  * Exit 0 means every patch executed, dexes compiled, and arsclib rebuilt the full resource
  * table — the entire pipeline that failed on-device for dev.3 through dev.5.
@@ -50,7 +49,7 @@ private fun main0(args: Array<String>): Int {
     // Anything after the output path, prefixed with '+', is a non-default patch to add.
     //
     // Rejoined before splitting because Gradle's `--args` tokenises on whitespace with no way to
-    // quote through it, so `+Hidden Features (unconfirmed)` arrives as three arguments. Splitting on
+    // quote through it, so `+Crash reporter (debug)` arrives as three arguments. Splitting on
     // the '+' instead of on the spaces recovers the name, and still allows several.
     val extras = args.drop(3).joinToString(" ")
         .split(Regex("(^|\\s)\\+"))

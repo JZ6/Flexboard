@@ -230,11 +230,11 @@ The driver applies the **default selection**, plus any patch named with a leadin
 ./gradlew :driver:run --args="<abs>/gboard.apk <abs>/bundle.mpp <abs>/out.apk +Crash reporter (debug)"
 ```
 
-The gate runs the driver three times: defaults, defaults plus the default-off Crash reporter
-(debug), and defaults plus the default-off Hidden Features (unconfirmed). It verifies each output
-and diffs each opt-in result against defaults; a patch that silently emits nothing fails its diff.
+The gate runs the driver twice: defaults, and defaults plus the default-off Crash reporter (debug).
+It verifies both outputs and diffs the opt-in result against defaults; a patch that silently emits
+nothing fails its diff. A new default-off patch needs its own three lanes in `tools/gate`.
 
-`verify` runs on all three builds. Reading only the defaults build once quietly left the swipe-up
+`verify` runs on both builds. Reading only the defaults build once quietly left the swipe-up
 emission unchecked, back when that patch was default-off.
 
 ### What each check can and cannot see
@@ -253,7 +253,7 @@ emission unchecked, back when that patch was default-off.
 | `tools/apk/patched.py <out.apk> '<descriptor>' --stock gboard-apk` | a manual read of an emitted method, diffed against stock | no automatic verification; see `verify.py` and the driver above |
 | Morphe + a device | everything else | nothing — but it is the slowest loop |
 
-**CI runs `tools/gate`, and nine of its twenty lanes do anything there.** `preflight.py` and `check_patch_resources.py` both need the
+**CI runs `tools/gate`, and nine of its seventeen lanes do anything there.** `preflight.py` and `check_patch_resources.py` both need the
 Gboard APK, which is gitignored and cannot be redistributed, so the ~260 dex and resource pins —
 the whole defence against a Gboard bump — are a local gate. `git config core.hooksPath tools/hooks`
 installs a pre-push hook that runs them, and warns loudly rather than passing quietly when the APK

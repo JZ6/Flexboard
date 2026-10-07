@@ -170,18 +170,15 @@ if [ -n "${FLEXBOARD_BUNDLE:-}" ]; then
 fi
 
 if [ "${bundle_ready:-0}" = 1 ]; then
-    # Three runs: defaults, and the two default-off patches (+crash, +hidden) each alongside them.
-    # Applying every patch at once would test a selection nobody asked for. Swipe up to undo
-    # autocorrect is default-on, so the defaults run covers it.
+    # Two runs: defaults, and the one default-off patch (+crash) alongside them. Applying every
+    # patch at once would test a selection nobody asked for. Swipe up to undo autocorrect is
+    # default-on, so the defaults run covers it. A new default-off patch gets its own driver,
+    # verify and emits lanes here.
     lane "driver" ./gradlew :driver:run -q \
         --args="$apk_path $FLEXBOARD_BUNDLE $patched_out"
     crash_out="$work_dir/crash.apk"
     lane "driver +crash" ./gradlew :driver:run -q \
         --args="$apk_path $FLEXBOARD_BUNDLE $crash_out +Crash reporter (debug)"
-    hidden_out="$work_dir/hidden.apk"
-    lane "driver +hidden" ./gradlew :driver:run -q \
-        --args="$apk_path $FLEXBOARD_BUNDLE $hidden_out +Hidden Features (unconfirmed)"
-
 
     # The driver proves the patches *apply*. It writes a dex and never loads one, so a method ART
     # would reject at class load passes it without complaint -- that is exactly what shipped twice.
@@ -207,11 +204,6 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     else
         skip "verify +crash" "the +crash driver run produced no APK"
     fi
-    if [ -e "$hidden_out" ]; then
-        lane "verify +hidden" python3 tools/apk/verify.py "$hidden_out" --changed-from gboard-apk
-    else
-        skip "verify +hidden" "the +hidden driver run produced no APK"
-    fi
 
     # And that each opt-in patch changed anything at all. `verify` checks what was emitted; it
     # cannot notice that nothing was, and an emission that produces nothing applies cleanly and
@@ -223,37 +215,26 @@ if [ "${bundle_ready:-0}" = 1 ]; then
     else
         skip "crash emits" "needs both the defaults and the +crash build"
     fi
-    if [ -e "$hidden_out" ] && [ -e "$patched_out" ]; then
-        lane "hidden emits" python3 tools/apk/verify.py "$hidden_out" --differs-from "$patched_out"
-    else
-        skip "hidden emits" "needs both the defaults and the +hidden build"
-    fi
 elif [ -n "${bundle_error:-}" ]; then
     # Asked for and unusable: one lane fails so the gate does, and the rest say why they did not run.
     fail_lane "bundle" "$bundle_error"
-    for name in "driver" "driver +crash" "driver +hidden" "verify" "provider guard" "verify +crash" "verify +hidden" "crash emits" "hidden emits"; do
+    for name in "driver" "driver +crash" "verify" "provider guard" "verify +crash" "crash emits"; do
         skip "$name" "FLEXBOARD_BUNDLE is set but unusable"
     done
 elif [ -n "${stale_reason:-}" ]; then
     skip "driver" "$stale_reason"
     skip "driver +crash" "$stale_reason"
-    skip "driver +hidden" "$stale_reason"
     skip "verify" "needs a bundle built from this tree"
     skip "provider guard" "needs a bundle built from this tree"
     skip "verify +crash" "$stale_reason"
-    skip "verify +hidden" "$stale_reason"
     skip "crash emits" "$stale_reason"
-    skip "hidden emits" "$stale_reason"
 else
     skip "driver" "set FLEXBOARD_BUNDLE to a built .mpp to execute the patches (gh run download --name patches-bundle)"
     skip "driver +crash" "set FLEXBOARD_BUNDLE to a built .mpp"
-    skip "driver +hidden" "set FLEXBOARD_BUNDLE to a built .mpp"
     skip "verify" "needs the driver's output; set FLEXBOARD_BUNDLE"
     skip "provider guard" "needs the driver's output; set FLEXBOARD_BUNDLE"
     skip "verify +crash" "needs the driver's output; set FLEXBOARD_BUNDLE"
-    skip "verify +hidden" "needs the driver's output; set FLEXBOARD_BUNDLE"
     skip "crash emits" "needs the driver's output; set FLEXBOARD_BUNDLE"
-    skip "hidden emits" "needs the driver's output; set FLEXBOARD_BUNDLE"
 fi
 
 if [ "$run_resources" -eq 0 ]; then

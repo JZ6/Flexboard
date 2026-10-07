@@ -128,10 +128,6 @@ EXPECTED = {
     # warning here otherwise.
     'hidden_feature_flags': [
         'enable_grammar_checker',
-        'enable_emoji_kitchen_browse',
-        'enable_custom_sticker_tab',
-        'offline_translate',
-        'enable_settings_search',
     ],
     # Flags whose default is hoisted: Gboard loads one zero and feeds it to several flags in the
     # same <clinit>, so no constant belongs to this flag alone. Hidden Features handles these with
@@ -371,7 +367,7 @@ def flag_layout(ins, flag):
 
 
 def declared_flag_calls(source):
-    """Each forced/isolation set in the source (Hidden Features has two calls)."""
+    """Each forced/isolation set in the source, one per forceFlagsOn call."""
     source = re.sub(r'//[^\n]*', '', source)
     out = []
     for call in re.finditer(r'forceFlagsOn\((.*?)\n\s*\)\n', source, re.S):
@@ -2083,10 +2079,11 @@ def run(dl, apk=None):
             hidden_calls = declared_flag_calls(source.read())
     else:
         hidden_calls = []
-    check('flags: both Hidden Features declarations are parsed', len(hidden_calls) == 2)
+    check('flags: the Hidden Features declaration is parsed', len(hidden_calls) == 1,
+          f'{len(hidden_calls)} forceFlagsOn calls')
     hidden_forced = set().union(*(forced for forced, _isolated in hidden_calls))
     hidden_isolated = set().union(*(isolated for _forced, isolated in hidden_calls))
-    check('flags: the pinned names match both patch declarations',
+    check('flags: the pinned names match the patch declaration',
           hidden_forced == set(E['hidden_feature_flags']) |
           {flag for flag, _sharer in E['hidden_feature_flags_shared']})
     for flag in E['hidden_feature_flags']:

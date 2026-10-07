@@ -266,22 +266,16 @@ drag more icons onto the bar, because that number is your setting and the patch 
 
 Gboard gates features behind per-signature flags that a resigned build may not receive. The
 default-on patch enables **grammar check** and **dismissable suggestion chips**; both were seen
-working on a device. Five other flags were tried: on-device Proofread prevented Gboard from
-starting and was removed, while the other four showed no visible effect and remain opt-in below.
-Forcing a flag does not supply downloaded models, locale allowlists or language packs behind it.
+working on a device. Five other flags were tried and removed: on-device Proofread prevented Gboard
+from starting, and Emoji Kitchen browse, the custom sticker tab, offline translation and settings
+search never showed any effect. Forcing a flag does not supply downloaded models, locale allowlists
+or language packs behind it.
 
 ## Enable Rambler
 
 Rambler is Gboard's agentic dictation option in **Voice** settings. Flexboard reveals the choice;
 it does not select it or give consent on your behalf. The feature uses a server and has its own
 quota. Choosing Rambler in Gboard is what switches it on.
-
-## Hidden Features (unconfirmed)
-
-This default-off patch lets you try Emoji Kitchen browse, custom sticker tab, offline translation
-and settings search. None was seen working when tested separately. Emoji browse, stickers and offline
-translation have other data or locale requirements; settings search has no companion parameters in
-the dex. None of the four caused a startup crash during those tests.
 
 ## Modern keypress haptics
 

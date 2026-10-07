@@ -30,8 +30,8 @@ gh run download --name patches-bundle --dir /tmp/mpp      # any push
 FLEXBOARD_BUNDLE=/tmp/mpp/patches-*.mpp tools/gate        # applies it, then verifies it
 ```
 
-That turns on the driver/verify/diff lanes and a signature guard. `driver` applies the bundle in three selections:
-defaults, +crash, +hidden. `verify` inspects every changed method (including same-size rewrites),
+That turns on the driver/verify/diff lanes and a signature guard. `driver` applies the bundle in two selections:
+defaults and +crash. `verify` inspects every changed method (including same-size rewrites),
 following switch cases for its type check and checking reference access rights. The diff lanes
 ensure each opt-in patch actually emits something; the signature guard asserts that the exported
 debug provider's shared verifier method stays byte-identical to stock.

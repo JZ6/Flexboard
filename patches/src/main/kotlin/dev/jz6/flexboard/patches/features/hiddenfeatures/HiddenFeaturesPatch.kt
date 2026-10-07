@@ -32,17 +32,19 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  * | flag | outcome on a device |
  * |---|---|
  * | `enable_on_device_proofread` | **Gboard would not start at all** — removed |
- * | `enable_emoji_kitchen_browse` | no effect seen — kept, opt-in |
- * | `enable_custom_sticker_tab` | no effect seen — kept, opt-in |
- * | `offline_translate` | no effect seen — kept, opt-in |
- * | `enable_settings_search` | no effect seen — kept, opt-in |
+ * | `enable_emoji_kitchen_browse` | no effect seen — removed |
+ * | `enable_custom_sticker_tab` | no effect seen — removed |
+ * | `offline_translate` | no effect seen — removed |
+ * | `enable_settings_search` | no effect seen — removed |
  *
- * Only proofread is settled: it crashes, which is unambiguous. "No effect seen" is a weaker claim
- * than "no effect", because each of those four shows up somewhere that has to be gone looking for
- * — the emoji picker, the sticker picker's tab strip, the translate bar with the network off, a
- * search affordance inside Gboard's settings. Absence of a sighting is not absence. They stay
- * behind [hiddenFeaturesUnconfirmedPatch] so retesting costs a tick rather than a release, and
- * they are off by default so nobody is told they work.
+ * Proofread crashes, which is unambiguous. "No effect seen" is a weaker claim than "no effect",
+ * because each of the other four would show up somewhere a tester has to go looking: the emoji
+ * picker, the sticker picker's tab strip, the translate bar with the network off, a search
+ * affordance inside Gboard's settings. So they were kept for a month as a default-off patch,
+ * "Hidden Features (unconfirmed)", where retesting cost a tick. Nobody saw any of them work, and
+ * the dex says why (below): each needs something a resigned build does not receive, or has nothing
+ * behind it at all. The patch was removed after 2.5.2-dev.0, whose bundle still has it if one
+ * ever needs retesting.
  *
  * The full write-up, including the inventory and a classifier that did not work, is
  * `docs/phenotype-flags.md`.
@@ -68,7 +70,7 @@ import dev.jz6.flexboard.patches.shared.forceFlagsOn
  * The companions that exist are server-delivered too, so forcing the parent on does not supply
  * the configuration — it skips it. A boolean that reveals finished *local* code is safe to force.
  * A boolean that is the entry point to server-*configured* machinery is not, however public the
- * feature is. The two that are default-on are the two that gate code already sitting in the APK,
+ * feature is. The two this patch forces on are the two that gate code already sitting in the APK,
  * and the two that have been watched working.
  *
  * Excluded before testing, and still excluded: anything ending `_promo` (`handwriting`, `language`,
@@ -114,57 +116,6 @@ val hiddenFeaturesPatch = bytecodePatch(
                 "enable_grammar_checker",
                 "enable_close_proactive_suggestions_access_point",
             ),
-        )
-    }
-}
-
-
-/**
- * The four flags that were tried, did nothing visible, and are not proven harmless-and-useless
- * enough to delete.
- *
- * None of them crashes — that was checked one at a time on a device, which is the only reason they
- * can be offered at all. What is *not* established is that they do nothing: each surfaces somewhere
- * a tester has to navigate to, so the evidence is "looked, did not see it", which is a weaker
- * statement than it sounds.
- *
- * Where to look, if you are the one retesting:
- *
- * | flag | where it would show |
- * |---|---|
- * | `enable_emoji_kitchen_browse` | a browse surface in the emoji picker, not just suggested combos |
- * | `enable_custom_sticker_tab` | a tab for your own stickers in the sticker picker |
- * | `offline_translate` | the translate bar continuing to work with the network off |
- * | `enable_settings_search` | a search affordance inside Gboard's own settings |
- *
- * Three depend on data a resigned build may not receive — download groups, an empty locale
- * allowlist, language packs — and settings search has no companion parameters in the dex. Off by
- * default for exactly that reason: a patch that probably does nothing must not claim otherwise in the
- * picker.
- */
-@Suppress("unused")
-val hiddenFeaturesUnconfirmedPatch = bytecodePatch(
-    name = "Hidden Features (unconfirmed)",
-    description = "Turns on four finished Gboard features that a resigned build can never " +
-        "receive: Emoji Kitchen browse, the custom sticker tab, offline translation, and search " +
-        "in Gboard's settings. Off by default because none of the four has been seen working on " +
-        "a device — the flags flip, but some also need data Google only sends to an " +
-        "unpatched install. Safe to try: none of them crashes.",
-    default = false,
-) {
-    compatibleWith(COMPATIBILITY_GBOARD)
-
-    dependsOn(basePatch)
-
-    execute {
-        forceFlagsOn(
-            "enable_emoji_kitchen_browse",
-            "enable_custom_sticker_tab",
-            "offline_translate",
-            "enable_settings_search",
-            // Sticker tab shares its zero with allow_u18_for_custom_sticker and its loading
-            // indicator; emoji kitchen browse shares with three of its own search flags.
-            isolating = setOf("enable_custom_sticker_tab", "enable_emoji_kitchen_browse"),
         )
     }
 }

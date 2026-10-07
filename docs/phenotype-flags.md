@@ -69,7 +69,10 @@ they are applied.
 "No effect seen" is deliberately weaker than "no effect". Each of those four surfaces somewhere a
 tester has to navigate to — inside the emoji picker, in the sticker picker's tab strip, in the
 translate bar with the network off, behind a search affordance in Gboard's settings. Not having
-spotted one is not proof it is absent. They are kept, opt-in, so a retest costs a tick.
+spotted one is not proof it is absent. So they were kept for a month as one default-off patch,
+"Hidden Features (unconfirmed)", where a retest cost a tick. No one saw any of them work, and the
+reasons below say why none was likely to, so the patch was removed after 2.5.2-dev.0. That release's
+bundle still has it if a retest is ever wanted.
 
 ## The rule
 
@@ -294,8 +297,8 @@ built because the currently selected flags do not need it.
   no device in the pipeline and no log access from a released build. Every flag ships opt-in until
   it has been watched working.
 - **Test unproven flags separately before grouping them.** Bisecting a compiled-in list costs a
-  release per step. The four individually tested but unconfirmed flags are now one default-off
-  patch for optional retesting; only the two observed working ship default-on.
+  release per step. Only the two observed working ship; the four that showed nothing were kept
+  opt-in for a month, then removed.
 - **Expect roughly two in seven.** Most flags shipping `false` are off for everyone — experiments,
   staged rollouts, dead code — and forcing one of those on enables an unfinished path rather than
   restoring a feature.
