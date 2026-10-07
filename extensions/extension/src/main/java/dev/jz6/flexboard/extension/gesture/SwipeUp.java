@@ -6,13 +6,14 @@ import android.view.MotionEvent;
 /**
  * Swipe up to undo autocorrect, built up one step at a time from the diagnostic that measured it.
  *
- * <p><b>Stage 3: revert the last autocorrection.</b>
+ * <p><b>Stage 3: revert the last autocorrection</b> — confirmed on a device in 2.5.2-dev.0.
  * <ol>
  *   <li>detect, and type "6" — confirmed on a device;</li>
  *   <li>take the gesture over — "6" if it took and the key is not typed, "x" if refused;</li>
  *   <li><b>revert</b> — once the takeover is confirmed, the emission asks Gboard's decoder for the
  *   same autocorrect revert it uses for a physical keyboard's delete-word. The decoder is the
- *   armed check: with no autocorrection to revert, nothing happens.</li>
+ *   armed check: with no autocorrection to revert, nothing happens. As with Gboard's backspace,
+ *   typing anything after the correction clears it.</li>
  * </ol>
  *
  * <p>This class decides and the emission acts. The takeover and the revert have to be done in

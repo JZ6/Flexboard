@@ -8,8 +8,8 @@ import com.android.tools.smali.dexlib2.AccessFlags
 /**
  * Handing a `Context` to the extension at Gboard's Application start.
  *
- * Two settings patches need an early preference Context, and the swipe-up patch installs its
- * crash recorder at the same point. `LatinApp.applyPreferenceValues` is reached from
+ * Two settings patches need an early preference Context, and the opt-in crash reporter installs
+ * its recorder at the same point. `LatinApp.applyPreferenceValues` is reached from
  * `Lmsp;->onCreate()V` before any keyboard is built.
  *
  * ## Why a `Context` and not the store

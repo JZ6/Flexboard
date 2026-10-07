@@ -16,9 +16,9 @@ import java.io.StringWriter;
  * that all looked equally plausible. The exception is one line of fact; the guesses were not. This
  * turns a crash into a thing you can paste.
  *
- * <p>Installed at app start, only by builds of the swipe-up patch. It is a diagnostic for that
- * patch, not a feature: it overwrites the clipboard after a crash, which is a side effect nobody who
- * has not asked for it should have.
+ * <p>Installed at app start, only by the opt-in "Crash reporter (debug)" patch. It is a diagnostic,
+ * not a feature: it overwrites the clipboard after a crash, which is a side effect nobody who has
+ * not asked for it should have.
  *
  * <p>Two steps, because a process that is dying cannot do anything slow:
  * <ol>
