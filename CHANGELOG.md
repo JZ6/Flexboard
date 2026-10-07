@@ -1,3 +1,13 @@
+# [2.5.2-dev.0](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.11...v2.5.2-dev.0) (2026-10-07)
+
+* **Gboard:** docs: swipe up reverts through the decoder, not the undo stack
+* **Gboard:** feat: revert the last autocorrection through Gboard's decoder
+* **Gboard:** refactor: resolve branch targets in one shared helper
+* **Gboard:** chore: store gradlew.bat with LF, as .gitattributes declares
+* **Gboard:** chore: bump gradle-wrapper from 9.7.1 to 9.8.0
+* **Gboard:** chore: bump actions/upload-artifact from 4 to 7
+* **Gboard:** chore: bump actions/setup-java from 6.0.0 to 6.0.1
+
 # [2.5.1-dev.11](https://github.com/JZ6/Flexboard/compare/v2.5.1-dev.10...v2.5.1-dev.11) (2026-10-07)
 
 * **Gboard:** docs: correct issue forms for unsupported builds and roadmap
