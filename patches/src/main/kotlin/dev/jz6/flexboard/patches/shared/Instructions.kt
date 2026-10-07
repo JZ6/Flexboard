@@ -206,6 +206,35 @@ internal fun List<Instruction>.indexOfSoleCall(descriptor: String, context: Stri
         .index
 }
 
+/** The code-unit address of every instruction, which is what a branch's relative offset is in. */
+internal fun List<Instruction>.codeAddresses(): IntArray {
+    val addresses = IntArray(size)
+    var pc = 0
+    forEachIndexed { i, instruction ->
+        addresses[i] = pc
+        pc += instruction.codeUnits
+    }
+    return addresses
+}
+
+/**
+ * The index of the instruction the `goto`/`if-*` at [index] jumps to.
+ *
+ * Restricted to those two families on purpose: a switch's or `fill-array-data`'s offset points at
+ * a payload, not at code, and treating it as a branch target would hand an emitter a label on data.
+ */
+internal fun List<Instruction>.branchTargetIndex(index: Int, what: String): Int {
+    val branch = getOrNull(index)
+    val name = branch?.opcodeName().orEmpty()
+    check(branch is OffsetInstruction && (name.startsWith("GOTO") || name.startsWith("IF_"))) {
+        "$what: instruction $index (`$name`) is not a goto or if-* branch"
+    }
+    val addresses = codeAddresses()
+    val target = addresses.indexOfFirst { it == addresses[index] + branch.codeOffset }
+    check(target >= 0) { "$what: the branch at $index lands between instructions" }
+    return target
+}
+
 /** Appending a block before a terminal return is safe only if no stock edge jumps past that block. */
 internal fun assertTailReturnUntargeted(body: List<Instruction>, index: Int, what: String) {
     check(index in body.indices && body[index].opcodeName().startsWith("RETURN")) {
@@ -214,12 +243,7 @@ internal fun assertTailReturnUntargeted(body: List<Instruction>, index: Int, wha
     check(body.none { it is SwitchPayload }) {
         "$what contains a switch payload; case offsets need inspection before a tail insertion"
     }
-    val addresses = IntArray(body.size)
-    var pc = 0
-    body.forEachIndexed { i, instruction ->
-        addresses[i] = pc
-        pc += instruction.codeUnits
-    }
+    val addresses = body.codeAddresses()
     check(body.withIndex().none { (i, instruction) ->
         instruction is OffsetInstruction && addresses[i] + instruction.codeOffset == addresses[index]
     }) { "$what has a branch into its return, which would skip the refresh block" }

@@ -7,6 +7,7 @@ import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstructio
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction10t
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction12x
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction21c
+import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction21t
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction22c
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction23x
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction35c
@@ -18,6 +19,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import dev.jz6.flexboard.patches.shared.booleanFlagCallIndex
 import dev.jz6.flexboard.patches.shared.assertNotReadBeforeWritten
 import dev.jz6.flexboard.patches.shared.assertTailReturnUntargeted
+import dev.jz6.flexboard.patches.shared.branchTargetIndex
 import dev.jz6.flexboard.patches.shared.callsMethod
 import dev.jz6.flexboard.patches.shared.destinationRegisterOrNull
 import dev.jz6.flexboard.patches.shared.destinationRegistersOrEmpty
@@ -199,6 +201,25 @@ private fun readsAndWrites() {
         assertTailReturnUntargeted(
             listOf(ImmutableInstruction11n(Opcode.CONST_4, 0, 1),
                 ImmutableInstruction11x(Opcode.RETURN, 0)), 1, "T")
+    }
+
+    // Offsets are in code units from the branch, not instruction counts: if-eqz is two units wide.
+    val branchy = listOf(
+        ImmutableInstruction21t(Opcode.IF_EQZ, 0, 3),     // addr 0 -> addr 3
+        ImmutableInstruction11n(Opcode.CONST_4, 0, 1),    // addr 2
+        ImmutableInstruction11x(Opcode.RETURN, 0),        // addr 3
+    )
+    equal("an if-* resolves to the instruction at its offset", "2",
+        branchy.branchTargetIndex(0, "T").toString())
+    equal("a goto resolves the same way", "2",
+        listOf(ImmutableInstruction10t(Opcode.GOTO, 2), ImmutableInstruction10x(Opcode.NOP),
+            ImmutableInstruction11x(Opcode.RETURN, 0)).branchTargetIndex(0, "T").toString())
+    rejects("a branch into the middle of an instruction has no target", "lands between") {
+        listOf(ImmutableInstruction21t(Opcode.IF_EQZ, 0, 1), ImmutableInstruction11x(Opcode.RETURN, 0))
+            .branchTargetIndex(0, "T")
+    }
+    rejects("only a goto or if-* has a branch target", "is not a goto or if-* branch") {
+        branchy.branchTargetIndex(1, "T")
     }
 
     // `setsRegister` is the assembler's own flag. invoke-virtual does not set one: its result
