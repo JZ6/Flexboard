@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import dexlib
 import dalvik_dis as ddis
+import verify  # switch and try-handler edges, for liveness in methods that have them
 from dexlib import uleb
 
 # --------------------------------------------------------------------------- what to expect
@@ -697,27 +698,33 @@ def writes_before(ins, reg, after_pc, before_pc):
             and regs(a)[:1] == [reg]]
 
 
-def live_free(ins, register_count, at_pc):
+def live_free(ins, register_count, at_pc, switch_targets=None, exception_targets=None):
     """Registers that are dead at `at_pc`, by backward liveness over the real control flow.
 
     A forward "is the next touch a write?" scan is not sound here and gets a real answer wrong:
     in `r()` it reports v3 free because the table walk writes it, but the `if-gt` guarding that
     walk branches straight past the write to a path that reads v3. Borrowing it would corrupt the
     extrapolated word count on long swipes, silently. So this does the fixpoint properly.
+
+    `switch_targets` and `exception_targets` are `verify.switch_case_targets` and
+    `verify.catch_targets` for the same method: instruction index -> target indices, decoded from
+    the dex. Without them a switch is refused, and every instruction is edged to every handler.
     """
     n = len(ins)
     pcs = [i[0] for i in ins]
     index = {p: k for k, p in enumerate(pcs)}
 
-    # A switch's case targets live in a payload this function does not read, so its edges would be
-    # missing entirely and every register the cases read would look dead. Refuse rather than answer:
-    # no call site analyses a switch today, and a wrong answer here is not visible on a device.
-    if any(mnemonic.startswith(('packed-switch', 'sparse-switch')) for _pc, mnemonic, _a in ins):
-        raise ValueError('live_free cannot model a method containing a switch')
+    # A switch's case targets live in a payload the instruction stream does not carry, so without
+    # decoded targets its edges would be missing and every register the cases read would look dead.
+    # Refuse rather than answer: a wrong answer here is not visible until it is on a device.
+    if switch_targets is None and any(
+            mnemonic.startswith(('packed-switch', 'sparse-switch')) for _pc, mnemonic, _a in ins):
+        raise ValueError('live_free cannot model a switch without its decoded case targets')
 
-    # Every handler entry is a `move-exception`, and an exception can be raised anywhere inside the
-    # try. Edging every instruction to every handler over-approximates -- some of those instructions
-    # are outside any try -- which keeps registers live that might not be, the safe direction.
+    # Without the try table: every handler entry is a `move-exception`, and an exception can be
+    # raised anywhere inside the try. Edging every instruction to every handler over-approximates --
+    # some of those instructions are outside any try -- which keeps registers live that might not
+    # be, the safe direction. With it, only instructions that can throw inside a range are edged.
     handlers = [k for k, (_pc, mnemonic, _a) in enumerate(ins)
                 if mnemonic.startswith('move-exception')]
 
@@ -734,6 +741,10 @@ def live_free(ins, register_count, at_pc):
             out = []
         else:
             out = target + ([k + 1] if k + 1 < n else [])
+        if mnemonic in ('packed-switch', 'sparse-switch'):
+            out = out + list(switch_targets[k])
+        if exception_targets is not None:
+            return out + list(exception_targets.get(k, ()))
         return out + handlers
 
     live = [set() for _ in range(n + 1)]
@@ -2186,8 +2197,9 @@ def run(dl, apk=None):
     #
     # The patch runs inside the scrub engine's g(MotionEvent): it asks the extension whether this
     # event completes a swipe up, takes the gesture over with the call the scrub uses for its own
-    # swipes, confirms the takeover took, and sends Gboard's UNDO through the handler's route. These
-    # pin what that rests on -- above all that a takeover cannot outlive its gesture.
+    # swipes, confirms the takeover took, and sends a REVERT_AUTO_CORRECTION request through the
+    # handler's route. These pin what that rests on -- above all that a takeover cannot outlive its
+    # gesture. The `revert:` checks below pin the receiving end in LatinIme->q.
     S_ = ('Lcom/google/android/libraries/inputmethod/motioneventhandler/scrubmove/'
           'ScrubMotionEventHandler;')
     c_, ins_ = body(dl, f'{S_}->g(Landroid/view/MotionEvent;)V')
@@ -2266,7 +2278,7 @@ def run(dl, apk=None):
         calls = [a for _pc, n_, a in ins_ if n_.startswith('invoke') and 'Lozj;->o(Landroid/view/MotionEvent;)V' in (a or '')]
         check('undo-ac: the dispatcher runs the owner-release step', len(calls) == 1, str(len(calls)))
 
-    # The event the undo builds. Existence is not the property the emission depends on: an invoke
+    # The event the request builds. Existence is not the property the emission depends on: an invoke
     # of the wrong kind assembles and fails verification on a device. ACC_STATIC is 0x8.
     for desc, want_static in ((f"{B['key_data']}-><init>(IL{B['key_data_arg'][1:]}"
                                'Ljava/lang/Object;I)V', False),
@@ -2276,14 +2288,120 @@ def run(dl, apk=None):
             check(f'undo-ac: {desc.split("->")[1][:28]} staticness is what the invoke assumes',
                   bool(maf & 0x8) == want_static, f'static={bool(maf & 0x8)}')
 
-    # Pinned on Gboard's own producer rather than on our copy of it: backspace after an
-    # autocorrection sends this same code, which is how it was found.
-    c_, ins_ = body(dl, 'Lcom/google/android/apps/inputmethod/libs/edittracker/'
-                        'EditTrackingImeWrapper;->q(Lnur;)Z')
-    if check('undo-ac: the stock backspace revert exists', ins_ is not None):
-        codes = [i for i, (_pc, n_, a_) in enumerate(ins_)
-                 if n_.startswith('const') and re.search(r'#-10045\b', a_ or '')]
-        check('undo-ac: it still sends the undo code', len(codes) == 1, str(len(codes)))
+    # The request is stamped with the swipe's time, the way the scrub stamps its own events.
+    check('undo-ac: the event timestamp is a public long',
+          bool((field_access_flags(dl, f"{B['ime_event']}->j:J") or 0) & 0x1),
+          f"flags={field_access_flags(dl, B['ime_event'] + '->j:J')}")
+
+    # ---- the receiving end: LatinIme->q hands -10076 to the decoder
+    #
+    # -10045 would be a generic undo-stack step. Backspace's autocorrect revert is the decoder's,
+    # and Gboard reaches it explicitly in one place: physical-keyboard delete-word builds a decoder
+    # request with REVERT_AUTO_CORRECTION (-10076) and only deletes a word when that returns
+    # nothing. RevertEmitter routes -10076 down delete-word's path and runs that block without the
+    # fallback. These pin the block, the two seams, and the registers the copy may clobber.
+    ime = 'Lcom/google/android/apps/inputmethod/libs/latin5/LatinIme;'
+    qd, qc, _qf = ddis.find(f'{ime}->q(Lnur;)Z', dl)
+    if check('revert: the IME dispatcher exists', qc is not None):
+        check('revert: its frame is the one the emission was derived against',
+              (qc['registers'], qc['ins']) == (34, 2), f"{qc['registers']}/{qc['ins']}")
+        qi = ddis.disasm(qd, qc)
+        q_switches = verify.switch_case_targets(qd, qc, qi)
+        q_handlers = verify.catch_targets(qd, qc, qi)
+
+        def q_live(pc):
+            return set(range(qc['registers'])) - set(
+                live_free(qi, qc['registers'], pc, q_switches, q_handlers))
+
+        def q_target(i):
+            m = re.search(r'-> (\d+)$', qi[i][2] or '')
+            return next((k for k, row in enumerate(qi) if m and row[0] == int(m.group(1))), None)
+
+        def const16(i, value):
+            return qi[i][1] == 'const/16' and re.search(rf'#{value}$', qi[i][2] or '') is not None
+
+        targeted = {qi[t][0] for t in (q_target(i) for i, row in enumerate(qi)
+                                       if row[1].startswith(('goto', 'if-'))) if t is not None}
+        check('revert: no switch in q has a case for -10076', -10076 not in switch_keys(qd, qc))
+        codes = [i for i in range(len(qi)) if const16(i, -10076)]
+        if check('revert: -10076 is loaded once, by the physical-keyboard revert', len(codes) == 1,
+                 str([qi[i][0] for i in codes])):
+            i = codes[0]
+            args = [f'{ime}->m:Z', f'{ime}->p:J', f'{ime}->o:I', f'{ime}->n:Z', f'{ime}->ap:Lppa;']
+            shape = (i >= 8 and i + 16 < len(qi)
+                     and qi[i - 8][2].endswith(f'{ime}->x:Lftq;')
+                     and qi[i - 7][2].endswith('Lftq;->o:Z') and qi[i - 6][1] == 'if-nez'
+                     and all(qi[i - 5 + k][2].endswith(f) for k, f in enumerate(args))
+                     and qi[i + 1][1] == 'move-object/from16'
+                     and qi[i + 2][1] == 'invoke-static/range'
+                     and qi[i + 2][2].endswith('Lful;->d(Lnur;IZJIZLppa;)Lyhg;')
+                     and qi[i + 5][2].endswith(f'{ime}->B()Lfsf;')
+                     and qi[i + 7][2].endswith(f'{ime}->z()J')
+                     and qi[i + 10][2].endswith('Lfsf;->k(JLyhg;Z)Lyct;')
+                     and qi[i + 13][2].endswith(f"{B['ime_event']}->j:J")
+                     and qi[i + 15][2].endswith(f'{ime}->E(ZJZ)V')
+                     and qi[i + 16][1].startswith('goto'))
+            if check('revert: the block guards, builds, decodes and applies as the emission copies it',
+                     shape):
+                e = invoke_regs(qi[i + 2][2])[0]
+                self_reg = regs(qi[i + 1][2])[0]
+                check('revert: the key code is the builder\'s second argument',
+                      regs(qi[i][2])[:1] == [e + 1], qi[i][2])
+                check('revert: the decoder and the update run on the `this` copy',
+                      invoke_regs(qi[i + 5][2])[:1] == [self_reg]
+                      and invoke_regs(qi[i + 15][2])[:1] == [self_reg])
+                cont = q_target(i + 16)
+                if check('revert: its continuation is an instruction', cont is not None):
+                    live = q_live(qi[cont][0])
+                    check('revert: the continuation reads none of the copy\'s temporaries',
+                          not live & set(range(e, e + 8)), f'live={sorted(live)}')
+                    check('revert: the continuation reads the `this` copy the copy sets',
+                          self_reg in live and self_reg not in range(e, e + 8),
+                          f'live={sorted(live)} self=v{self_reg}')
+
+                # The delete-word test in front of it, where the revert test is inserted.
+                compares = [k for k in range(max(1, i - 24), i) if const16(k, -10133)]
+                if check('revert: one delete-word comparison leads into the block', len(compares) == 1,
+                         str(len(compares))):
+                    k = compares[0]
+                    key = regs(qi[k - 1][2])[:1]
+                    const_reg = regs(qi[k][2])[0]
+                    check('revert: the comparison tests the key code it just read',
+                          qi[k - 1][1] == 'iget' and qi[k - 1][2].endswith(f"{B['key_data']}->c:I")
+                          and qi[k + 1][1] == 'if-ne' and regs(qi[k + 1][2])[:2] == key + [const_reg])
+                    check('revert: then asks whether the event it builds from is physical',
+                          qi[k + 2][2].endswith(f"{B['ime_event']}->k()Z")
+                          and invoke_regs(qi[k + 2][2])[:1] == [e])
+                    check('revert: nothing overwrites the event between the test and the block',
+                          not writes_before(qi, e, qi[k][0] - 1, qi[i + 2][0] - 1))
+                    check('revert: the comparison\'s constant register is dead there',
+                          const_reg not in q_live(qi[k][0]), f'v{const_reg}')
+                    check('revert: nothing branches to the comparison', qi[k][0] not in targeted)
+
+        # The route: -10076 joins the handled-key list where delete-word leaves it.
+        claims = [k for k, row in enumerate(qi) if row[2].endswith('Lrqp;->h(I)Z')]
+        if check('revert: the handled-key list ends at one sub-handler query', len(claims) == 1,
+                 str(len(claims))):
+            s = claims[0] - 2
+            ok = (s >= 1 and qi[s][2].endswith(f'{ime}->D()Lrqp;')
+                  and qi[s + 1][1] == 'move-result-object' and qi[s - 1][1] == 'if-eq')
+            if check('revert: a key-code test, the sub-handler fetch, then the query', ok):
+                scratch = regs(qi[s + 1][2])[0]
+                key = invoke_regs(qi[claims[0]][2])[1]
+                handled = q_target(s - 1)
+                check('revert: the last listed key is compared in the route\'s registers',
+                      regs(qi[s - 1][2])[:2] == [key, scratch])
+                lists = [k for k in range(s) if const16(k, -10133)]
+                tests = [k for k in range(lists[0] + 1, s) if qi[k][1] == 'if-eq'
+                         and regs(qi[k][2])[:2] == [key, regs(qi[lists[0]][2])[0]]] if lists else []
+                check('revert: delete-word takes the same handled-key path the route joins',
+                      len(lists) == 1 and len(tests) == 1 and q_target(tests[0]) == handled,
+                      f'lists={len(lists)} tests={len(tests)}')
+                check('revert: the route\'s scratch register is dead at the query',
+                      scratch not in q_live(qi[s][0]), f'v{scratch}')
+                check('revert: and dead where it jumps',
+                      handled is not None and scratch not in q_live(qi[handled][0]), f'v{scratch}')
+                check('revert: nothing branches to the sub-handler query', qi[s][0] not in targeted)
 
     # ---- long-flag holders: the shape that broke dev.6
     #

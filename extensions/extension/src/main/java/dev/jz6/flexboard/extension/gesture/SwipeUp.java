@@ -2,36 +2,30 @@ package dev.jz6.flexboard.extension.gesture;
 
 import android.content.res.Resources;
 import android.view.MotionEvent;
-import android.view.inputmethod.InputConnection;
-
-import dev.jz6.flexboard.extension.ime.ImeService;
 
 /**
  * Swipe up to undo autocorrect, built up one step at a time from the diagnostic that measured it.
  *
- * <p><b>Stage 2 of 4: take the gesture over, and say whether it took.</b> Stage 1 typed a "6" on
- * every swipe up, mid-swipe, and was confirmed on a device. Stage 2 adds the takeover — exactly the
- * takeover path of the build that crashed (2.5.1-dev.7), with its undo replaced by a marker.
- * dev.9 identified the crash in the owner read-back: Lozi's class/field were not accessible from
- * the scrub handler. The patch widens their visibility before installing this stage.
+ * <p><b>Stage 3: revert the last autocorrection.</b>
  * <ol>
- *   <li>detect, and type "6" — confirmed;</li>
- *   <li><b>take the gesture over</b> — "6" if it took and the key is not typed, "x" if refused;</li>
- *   <li>send an undo in place of the "6";</li>
- *   <li>undo only when an autocorrection is armed, which is what Gboard's own backspace checks.</li>
+ *   <li>detect, and type "6" — confirmed on a device;</li>
+ *   <li>take the gesture over — "6" if it took and the key is not typed, "x" if refused;</li>
+ *   <li><b>revert</b> — once the takeover is confirmed, the emission asks Gboard's decoder for the
+ *   same autocorrect revert it uses for a physical keyboard's delete-word. The decoder is the
+ *   armed check: with no autocorrection to revert, nothing happens.</li>
  * </ol>
  *
- * <p>This class decides and the emission acts. The takeover has to be done in Gboard's own terms,
- * which are obfuscated, so they stay in the emission where the patcher checks them; nothing
- * obfuscated is compiled in here. {@link #decide} answers pass, claim or swallow, and the emission
- * reports back through {@link #tookOver}.
+ * <p>This class decides and the emission acts. The takeover and the revert have to be done in
+ * Gboard's own terms, which are obfuscated, so they stay in the emission where the patcher checks
+ * them; nothing obfuscated is compiled in here. {@link #decide} answers pass, claim or swallow, and
+ * the emission reports back through {@link #tookOver}.
  *
  * <p>Fed from the scrub engine's {@code g(MotionEvent)} — the motion-event-handler layer swipe left
  * and swipe right run on — which sees DOWN, every MOVE and UP for the keyboard whether or not the key
  * pipeline still considers the finger to be on a key. Measured there on a device, most real flicks
  * met the 24dp threshold and the 2:1 corridor <em>during</em> the swipe, which is why this acts on a
  * move rather than at release: on release the key handler types the letter before the scrub handler
- * sees the event, so stage 2 has to act mid-swipe or not at all.
+ * sees the event, so the takeover has to act mid-swipe or not at all.
  *
  * <p>Measurement, as the diagnostic did it: from touchdown, reading the positions Android batches
  * into each move event, each pointer tracked separately.
@@ -52,10 +46,6 @@ public final class SwipeUp {
     public static final int PASS = 0;
     public static final int CLAIM = 1;
     public static final int SWALLOW = 2;
-
-    /** Stage 2's markers: the takeover took, or it was refused. Replaced by the undo in stage 3. */
-    private static final String TOOK = "6";
-    private static final String REFUSED = "x";
 
     private static final boolean[] active = new boolean[SLOTS];
     private static final boolean[] fired = new boolean[SLOTS];
@@ -130,16 +120,13 @@ public final class SwipeUp {
      * <p>The takeover call returns nothing and silently does nothing when the gesture already has an
      * owner, so the emission reads the owner back and reports. A refused takeover releases the
      * claim, so the rest of the gesture is the scrub engine's again; the swipe stays marked as
-     * fired, so it is not attempted twice.
+     * fired, so it is not attempted twice. A takeover that took keeps the claim, and the emission
+     * sends the revert request; nothing is typed either way.
      */
     public static void tookOver(boolean took) {
         try {
             if (!took && lastClaimed >= 0 && lastClaimed < SLOTS) {
                 claimed[lastClaimed] = false;
-            }
-            InputConnection connection = ImeService.connection();
-            if (connection != null) {
-                connection.commitText(took ? TOOK : REFUSED, 1);
             }
         } catch (Throwable oops) {
             // A report must never be the thing that breaks the keyboard.

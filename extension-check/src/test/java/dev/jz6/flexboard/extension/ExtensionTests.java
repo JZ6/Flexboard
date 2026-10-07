@@ -54,6 +54,8 @@ public final class ExtensionTests {
         preferenceFilesStaySeparate();
         aNewDownClearsAStaleSwipeClaim();
         aDiagonalMoveDoesNotClaimTheGesture();
+        aRefusedTakeoverReleasesTheSwipe();
+        aConfirmedTakeoverKeepsTheSwipe();
 
         System.out.printf("%d checks, %d failed%n", checks, failures);
         if (failures > 0) {
@@ -244,6 +246,35 @@ public final class ExtensionTests {
         equal("diagonal move remains a stock gesture", "0", String.valueOf(
             SwipeUp.decide(handler, motion(MotionEvent.ACTION_MOVE, 30, 60))));
         SwipeUp.decide(handler, motion(MotionEvent.ACTION_CANCEL, 30, 60));
+    }
+
+    /** Another handler already owned the gesture: no revert was sent, and the rest is stock again. */
+    private static void aRefusedTakeoverReleasesTheSwipe() {
+        Object handler = new ScrubDeleteMotionEventHandler();
+        SwipeUp.decide(handler, motion(MotionEvent.ACTION_DOWN, 0, 100));
+        equal("swipe up claims", "1", String.valueOf(
+            SwipeUp.decide(handler, motion(MotionEvent.ACTION_MOVE, 0, 60))));
+        SwipeUp.tookOver(false);
+        equal("after a refusal the next move is the scrub engine's", "0", String.valueOf(
+            SwipeUp.decide(handler, motion(MotionEvent.ACTION_MOVE, 0, 20))));
+        equal("and the release is not swallowed either", "0", String.valueOf(
+            SwipeUp.decide(handler, motion(MotionEvent.ACTION_UP, 0, 20))));
+    }
+
+    /** The revert was sent: the swipe stays ours until it ends, so no key is typed on release. */
+    private static void aConfirmedTakeoverKeepsTheSwipe() {
+        Object handler = new ScrubDeleteMotionEventHandler();
+        SwipeUp.decide(handler, motion(MotionEvent.ACTION_DOWN, 0, 100));
+        equal("swipe up claims", "1", String.valueOf(
+            SwipeUp.decide(handler, motion(MotionEvent.ACTION_MOVE, 0, 60))));
+        SwipeUp.tookOver(true);
+        equal("later moves are swallowed", "2", String.valueOf(
+            SwipeUp.decide(handler, motion(MotionEvent.ACTION_MOVE, 0, 20))));
+        equal("the release is swallowed", "2", String.valueOf(
+            SwipeUp.decide(handler, motion(MotionEvent.ACTION_UP, 0, 20))));
+        equal("the next gesture starts clean", "0", String.valueOf(
+            SwipeUp.decide(handler, motion(MotionEvent.ACTION_DOWN, 0, 100))));
+        SwipeUp.decide(handler, motion(MotionEvent.ACTION_CANCEL, 0, 100));
     }
 
     // ---------------------------------------------------------------- the blob

@@ -259,6 +259,39 @@ class LiveFree(unittest.TestCase):
         with self.assertRaises(ValueError):
             P.live_free(ins, 4, 0)
 
+    def test_a_decoded_switch_case_keeps_its_reads_live(self):
+        # With the payload decoded (verify.switch_case_targets), the case edge is real: v3 is read
+        # only in a case, so it is live at the switch; the default arm alone would call it dead.
+        ins = stream(
+            ("packed-switch", "v0, -> 5"),                # 0
+            ("return-void", ""),                          # 1 -- default arm
+            ("invoke-static", "{v3}, Lfoo;->bar(I)V"),   # 2 -- case target
+            ("return-void", ""),                          # 3
+            ("nop", ""),                                  # 4
+            ("payload", "6 units"),                       # 5
+        )
+        self.assertNotIn(3, P.live_free(ins, 8, 0, switch_targets={0: [2]}))
+        self.assertIn(3, P.live_free(ins, 8, 0, switch_targets={0: []}),
+                      "the positive control: with no case edge, nothing reads v3")
+
+    def test_decoded_handler_edges_only_reach_from_inside_the_try(self):
+        # An instruction outside every try range does not reach the handler, so a register only the
+        # handler reads is dead there; the move-exception heuristic would have kept it live.
+        ins = stream(
+            ("nop", ""),                                  # 0 -- outside the try
+            ("invoke-static", "{}, Lfoo;->mayThrow()V"),  # 1 -- inside the try
+            ("return-void", ""),                          # 2
+            ("move-exception", "v0"),                     # 3
+            ("invoke-static", "{v6}, Lfoo;->log(I)V"),    # 4
+            ("throw", "v0"),                              # 5
+        )
+        self.assertNotIn(6, P.live_free(ins, 8, 0, exception_targets={1: [3]}),
+                         "the throwing call inside the try still reaches the handler")
+        self.assertIn(6, P.live_free(ins, 8, 2, exception_targets={1: [3]}),
+                      "the return after the try does not reach it")
+        self.assertNotIn(6, P.live_free(ins, 8, 2),
+                         "without the try table every instruction is edged to every handler")
+
     def test_unreachable_code_after_a_goto_does_not_make_a_register_live(self):
         """The shape that broke a real build.
 

@@ -15,13 +15,15 @@ import dev.jz6.flexboard.patches.shared.callAtAppStart
  * failure names its own cause:
  *
  *  1. detect, and type a single "6" — confirmed on a device;
- *  2. **take the gesture over, so the swiped key is not typed** — the current stage: "6" if the
- *     takeover took, "x" if it was refused;
- *  3. send an undo in place of the "6";
- *  4. undo only when an autocorrection is armed, as Gboard's own backspace revert does.
+ *  2. take the gesture over, so the swiped key is not typed — "6" if the takeover took, "x" if it
+ *     was refused;
+ *  3. **revert the last autocorrection** — the current stage. Stages 3 and 4 of the original plan
+ *     ("send an undo", then "only when an autocorrection is armed") collapse into one: the swipe
+ *     asks Gboard's decoder for its own autocorrect revert, and the decoder is the armed check.
  *
- * It runs in the motion-event-handler layer, beside swipe left to delete and swipe right to undo.
- * See SwipeUpEmitter.kt, SwipeUp.java and docs/undo-autocorrect-plan.md.
+ * Two emissions: SwipeUpEmitter.kt takes the gesture over and sends the request, and
+ * RevertEmitter.kt teaches `LatinIme->q` to hand it to the decoder. See SwipeUp.java and
+ * docs/undo-autocorrect-plan.md.
  *
  * Replaces "Swipe up diagnostic (temporary)", whose measuring code this now is.
  *
@@ -34,11 +36,12 @@ import dev.jz6.flexboard.patches.shared.callAtAppStart
 @Suppress("unused")
 val undoAutocorrectPatch = bytecodePatch(
     name = "Swipe up to undo autocorrect",
-    description = "Work in progress, being built in stages. This build takes the swipe over: swipe " +
-        "up on the keyboard and it types a 6 instead of the key you swiped on, or an x if it could " +
-        "not take the swipe over. It does not undo anything yet. While it is on, a keyboard crash " +
-        "is saved and copied to your clipboard the next time the keyboard starts, so it can be " +
-        "pasted into a bug report. Off by default.",
+    description = "Swipe up on the keyboard to undo the last autocorrection: the word you typed " +
+        "comes back, as with Gboard's own undo autocorrect on backspace. Gboard's decoder decides " +
+        "whether there is one to undo; if not, the swipe does nothing. The key you swiped on is " +
+        "not typed. Not yet confirmed on a device. While it is on, a keyboard crash is saved and " +
+        "copied to your clipboard the next time the keyboard starts, so it can be pasted into a " +
+        "bug report. Off by default.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -46,6 +49,9 @@ val undoAutocorrectPatch = bytecodePatch(
     dependsOn(basePatch)
 
     execute {
+        // The receiving end first: if it cannot apply, nothing has been changed yet. A request with
+        // no receiver would be harmless anyway, since no stock code acts on -10076 as an event.
+        routeRevertsToTheDecoder()
         emitSwipeUp()
         applyPreferenceValuesFingerprint().method.callAtAppStart(CRASH_RECORDER_INSTALL)
     }

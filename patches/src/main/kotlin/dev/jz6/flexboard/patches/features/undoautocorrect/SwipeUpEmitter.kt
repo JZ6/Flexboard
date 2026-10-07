@@ -32,6 +32,23 @@ private const val SCRUB_HANDLER =
 private const val HANDLER_ROUTE_FIELD = "$SCRUB_HANDLER->p:Lpvo;"
 private const val TAKE_OVER = "Lpvo;->m()V"
 
+/** How the scrub sends an IME event: the same route call it uses for its own word deletes. */
+private const val SEND_EVENT = "Lpvo;->n(Lnur;)V"
+
+/**
+ * The revert request, built the way Gboard's own revert code builds its undo event:
+ * `Lnur.d(new Lpnu(code, null, null, 0x7fffffff))`. That gives a synthetic event (source 1), so the
+ * input dispatcher neither rewrites its meta state nor treats it as a keystroke.
+ */
+private const val KEY_DATA = "Lpnu;"
+private const val KEY_DATA_CTOR = "$KEY_DATA-><init>(ILpnt;Ljava/lang/Object;I)V"
+private const val EVENT_FROM_KEY_DATA = "Lnur;->d(Lpnu;)Lnur;"
+private const val EVENT_PRIORITY = 0x7fffffff
+
+/** Stamped like the scrub's own events, so the decoder request carries the swipe's time. */
+private const val EVENT_TIME_FIELD = "Lnur;->j:J"
+private const val MOTION_EVENT_TIME = "Landroid/view/MotionEvent;->getEventTime()J"
+
 /**
  * The route implementation handed to scrub handlers, and how to ask it who owns the gesture.
  *
@@ -53,21 +70,26 @@ private const val END = "flexboard_swipe_up_end"
 private const val REPORT = "flexboard_swipe_up_report"
 
 /**
- * Stage 2: take the gesture over, and report whether it took.
+ * Stage 3: take the gesture over, then ask Gboard to revert the last autocorrection.
  *
- * Stage 2 of the rebuild. dev.7 and dev.9 crashed in the owner read-back after takeover, because
- * Lozi and its field were not accessible from the scrub handler. The class and field are widened
- * before this code is emitted; on the fixed build a swipe is expected to type a 6 or x.
+ * Stage 2 (the takeover, reported as a typed 6 or x) is this code minus the request. dev.7 and
+ * dev.9 crashed in the owner read-back after takeover, because Lozi and its field were not
+ * accessible from the scrub handler; the class and field are widened before this code is emitted.
  *
  * Every event reaching `ScrubMotionEventHandler->g` is first offered to `SwipeUp.decide`:
  *
  *  - **pass**: stock `g`, untouched.
  *  - **claim**: call `Lpvo;->m()` — the takeover the scrub makes for its own swipes — then read back
- *    the gesture's owner and report whether it is this handler, then skip to the end of `g`.
+ *    the gesture's owner and report whether it is this handler. If it is, send a
+ *    [REVERT_AUTO_CORRECTION] event through the same route, then skip to the end of `g`.
  *  - **swallow**: the gesture is already ours; skip to the end of `g`.
  *
  * Why the owner is read back: `m()` returns nothing, and does nothing when the gesture already has
- * an owner. Reporting regardless would hide a refused takeover.
+ * an owner. A refused takeover must send nothing, and the report releases the claim.
+ *
+ * The event is synchronous: the route reaches the IME's dispatcher and `LatinIme->q` on this call,
+ * exactly as the scrub's own word deletes do. [routeRevertsToTheDecoder] is what makes `q` act on it;
+ * the decoder then reverts the last autocorrection or, with none to revert, nothing happens.
  *
  * Why skipped events jump to the end rather than returning: the end of `g` asks the scrub's own
  * `t(event)` and, when its pointer has finished, runs its `l()` reset, then closes the trace section
@@ -76,8 +98,8 @@ private const val REPORT = "flexboard_swipe_up_report"
  * Why the takeover cannot leave the keyboard stuck: the dispatcher clears the owner itself, in
  * `Lozj;->o`, after every UP and CANCEL, whatever the handler did. Pinned in preflight.
  *
- * v0-v3 are the only registers written; preflight.live_free pins v0-v5 dead at the insertion point
- * and jump target.
+ * v0-v5 are the only registers written (v4-v5 hold the event time); preflight.live_free pins v0-v5
+ * dead at the insertion point and jump target.
  *
  * **Why `Lozi;` is made public first.** 2.5.1-dev.7 and dev.9 crashed on every swipe up, from every
  * row, before the report could type anything. Reading the owner back means `instance-of`,
@@ -99,6 +121,10 @@ internal fun BytecodePatchContext.emitSwipeUp() {
     checkFieldExists(ROUTE_MANAGER_FIELD, "the route's manager")
     checkFieldExists(GESTURE_OWNER_FIELD, "the manager's record of who owns the gesture")
     checkMethodExists(SCRUB_POINTER_ENDED, "the scrub's end-of-pointer test")
+    checkInvokeKind(SEND_EVENT, InvokeKind.INTERFACE, "the handler's route for IME events")
+    checkInvokeKind(KEY_DATA_CTOR, InvokeKind.DIRECT, "the key-data constructor the request builds")
+    checkInvokeKind(EVENT_FROM_KEY_DATA, InvokeKind.STATIC, "the event wrapper the request uses")
+    checkFieldExists(EVENT_TIME_FIELD, "the event's timestamp")
 
     val body = method.instructions.toList()
     check(body.none { it.callsMethod(SWIPE_UP_DECIDE) }) {
@@ -112,7 +138,7 @@ internal fun BytecodePatchContext.emitSwipeUp() {
 
     val registerCount = method.assertRegisterCount(SCRUB_FRAME_REGISTERS, what)
     validateScratchRegisters(
-        scratch = listOf(0, 1, 2, 3),
+        scratch = listOf(0, 1, 2, 3, 4, 5),
         avoid = listOf(registerCount - 2, registerCount - 1),
         what = what,
         registerCount = registerCount,
@@ -141,6 +167,18 @@ internal fun BytecodePatchContext.emitSwipeUp() {
             const/4 v3, 0x1
             :$REPORT
             invoke-static { v3 }, $SWIPE_UP_TOOK_OVER
+            if-eqz v3, :$END
+            new-instance v2, $KEY_DATA
+            const/16 v3, $REVERT_AUTO_CORRECTION
+            const v0, $EVENT_PRIORITY
+            const/4 v4, 0x0
+            invoke-direct { v2, v3, v4, v4, v0 }, $KEY_DATA_CTOR
+            invoke-static { v2 }, $EVENT_FROM_KEY_DATA
+            move-result-object v2
+            invoke-virtual { p1 }, $MOTION_EVENT_TIME
+            move-result-wide v4
+            iput-wide v4, v2, $EVENT_TIME_FIELD
+            invoke-interface { v1, v2 }, $SEND_EVENT
             goto :$END
         """.trimIndent(),
         ExternalLabel(STOCK, body[insertAt]),
