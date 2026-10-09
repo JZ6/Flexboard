@@ -1,3 +1,61 @@
+# [2.5.0](https://github.com/JZ6/Flexboard/compare/v2.4.2...v2.5.0) (2026-10-09)
+
+* **Gboard:** feat: remove Hidden Features (unconfirmed)
+* **Gboard:** docs: swipe up confirmed on a device, and on by default
+* **Gboard:** feat: on by default; crash recorder moves to its own opt-in patch
+* **Gboard:** docs: swipe up reverts through the decoder, not the undo stack
+* **Gboard:** feat: revert the last autocorrection through Gboard's decoder
+* **Gboard:** refactor: resolve branch targets in one shared helper
+* **Gboard:** chore: store gradlew.bat with LF, as .gitattributes declares
+* **Gboard:** chore: bump gradle-wrapper from 9.7.1 to 9.8.0
+* **Gboard:** chore: bump actions/upload-artifact from 4 to 7
+* **Gboard:** chore: bump actions/setup-java from 6.0.0 to 6.0.1
+* **Gboard:** docs: correct issue forms for unsupported builds and roadmap
+* **Gboard:** chore: pin editor scope and shell script line endings
+* **Gboard:** docs: mark superseded gesture analyses and current undo path
+* **Gboard:** docs: correct settings, toolbar and flag derivations
+* **Gboard:** docs: refresh contributor gate, APK tooling and release guide
+* **Gboard:** docs: align feature guide and roadmap with shipped behavior
+* **Gboard:** docs: restore missing dev and stable release entries
+* **Gboard:** docs: record full-repository findings and fix status
+* **Gboard:** fix: protect provider and verify the pushed tree
+* **Gboard:** fix: make recovery resumable and stamp bundle sources
+* **Gboard:** fix: enforce patch selection and output handling
+* **Gboard:** fix: enforce generated artifacts and source contracts
+* **Gboard:** fix: pin current Gboard bindings and flag defaults
+* **Gboard:** fix: validate resource replay and improve APK readers
+* **Gboard:** fix: follow real control flow and inspect same-size edits
+* **Gboard:** fix: harden settings, hotkeys, and crash diagnostics
+* **Gboard:** fix: guard resource metadata and defaults
+* **Gboard:** fix: validate native registration and capacity seams
+* **Gboard:** fix: validate isolated and long-valued flag rewrites
+* **Gboard:** fix: harden shared resolution and gesture emissions
+* **Gboard:** fix: bypass only Gboard's own startup check
+* **Gboard:** fix: make Lozi; public so the takeover read-back can run
+* **Gboard:** feat: check what a patched class is allowed to reach
+* **Gboard:** docs: the swipe-up crash happens from every row
+* **Gboard:** feat: a crash recorder, so the next crash names its own cause
+* **Gboard:** feat: swipe up stage 2 — take the gesture over, and say whether it took
+* **Gboard:** refactor: one swipe-up patch, rebuilt in stages from the diagnostic
+* **Gboard:** feat: swipe up to undo, rebuilt in the motion-event-handler layer
+* **Gboard:** docs: record that swipe up sends Gboard's general undo, by decision
+* **Gboard:** fix: the gate honours FLEXBOARD_BUNDLE as documented, and proves opt-in patches emit
+* **Gboard:** refactor: delete the dead swipe-up paths and correct what the rest claims
+* **Gboard:** test: report whether the flick crossed the threshold before the finger lifted
+* **Gboard:** feat: move the swipe-up diagnostic into the motion-event-handler layer
+* **Gboard:** fix: the tracker leaked state between gestures, and a tap inherited it
+* **Gboard:** test: report the measurement, not a verdict on it
+* **Gboard:** fix: measure the flick from the touch stream, not from Gboard's start fields
+* **Gboard:** test: make the device say why the up-flick did not fire
+* **Gboard:** revert: drop two patches that did not do what I claimed
+* **Gboard:** feat: recognise the up-flick by its journey, not by where the finger lifted
+* **Gboard:** feat: restore inline autofill suggestions, which a clone install loses
+* **Gboard:** docs: the intermittency is the detection mechanism, not the threshold
+* **Gboard:** feat: a patch for more sensitive slide gestures
+* **Gboard:** docs: the pointer can be claimed — goal 2 confirmed on a device
+* **Gboard:** fix: read the gesture direction from h(), not i() — dev.0 could never fire
+* **Gboard:** feat: claim the pointer in Lpvi;->G instead of un-deciding a keypress
+
 # [2.5.2-dev.1](https://github.com/JZ6/Flexboard/compare/v2.5.2-dev.0...v2.5.2-dev.1) (2026-10-07)
 
 * **Gboard:** feat: remove Hidden Features (unconfirmed)
